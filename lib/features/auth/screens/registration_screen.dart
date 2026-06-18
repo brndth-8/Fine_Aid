@@ -132,11 +132,13 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
               children: [
                 const SizedBox(height: 16),
                 Center(
-                  child: Text(
-                    'FINE AID',
-                    style: theme.textTheme.headlineMedium,
+                  child: Image.asset(
+                    'assets/images/FINE_AID_Logo.png',
+                    width: 160,
+                    height: 160,
                   ),
                 ),
+
                 const SizedBox(height: 32),
                 Text('Create Account', style: theme.textTheme.headlineSmall),
                 const SizedBox(height: 24),

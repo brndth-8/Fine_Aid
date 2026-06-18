@@ -8,7 +8,7 @@ class LoginScreen extends StatelessWidget {
     return Scaffold(
       body: Stack(
         children: [
-          // ── Background image ───────────────────────────────────────────
+          //Background
           Positioned.fill(
             child: Image.asset(
               'assets/images/FINE_AID_Background.png',
@@ -16,7 +16,7 @@ class LoginScreen extends StatelessWidget {
             ),
           ),
 
-          // ── Buttons ────────────────────────────────────────────────────
+          //Buttons
           SafeArea(
             child: Align(
               alignment: Alignment.bottomCenter,
@@ -28,7 +28,7 @@ class LoginScreen extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // ── Log In ─────────────────────────────────────────
+                    //Log In
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
@@ -52,7 +52,7 @@ class LoginScreen extends StatelessWidget {
 
                     const SizedBox(height: 12),
 
-                    // ── Create Account ─────────────────────────────────
+                    //Create Account
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton(
@@ -76,7 +76,7 @@ class LoginScreen extends StatelessWidget {
 
                     const SizedBox(height: 16),
 
-                    // ── or divider ─────────────────────────────────────
+                    //divider
                     const Row(
                       children: [
                         Expanded(child: Divider(color: Colors.grey)),
@@ -93,7 +93,7 @@ class LoginScreen extends StatelessWidget {
 
                     const SizedBox(height: 16),
 
-                    // ── Continue as Guest ──────────────────────────────
+                    //Continue as Guest
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton(
