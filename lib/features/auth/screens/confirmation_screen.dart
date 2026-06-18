@@ -15,7 +15,7 @@ class ConfirmationScreen extends StatelessWidget {
             const SizedBox(height: 16),
             ElevatedButton(
               onPressed: () => Navigator.pushNamed(context, '/terms'),
-              child: const Text('Next: Terms & Conditions'),
+              child: const Text('Terms & Conditions'),
             ),
           ],
         ),

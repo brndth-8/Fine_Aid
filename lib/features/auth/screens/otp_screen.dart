@@ -15,7 +15,7 @@ class OtpScreen extends StatelessWidget {
             const SizedBox(height: 16),
             ElevatedButton(
               onPressed: () => Navigator.pushNamed(context, '/confirmation'),
-              child: const Text('Next: Confirmation'),
+              child: const Text('Confirmation'),
             ),
           ],
         ),

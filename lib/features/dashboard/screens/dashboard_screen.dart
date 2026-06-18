@@ -6,7 +6,7 @@ class DashboardScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Fine Aid - Dashboard')),
+      appBar: AppBar(title: const Text('Fine Aid')),
       body: const Center(child: Text('Main Dashboard (placeholder)')),
     );
   }

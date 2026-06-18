@@ -11,7 +11,7 @@ class RegistrationScreen extends StatefulWidget {
 
 class _RegistrationScreenState extends State<RegistrationScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
+  final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   final _authService = AuthService();
@@ -22,19 +22,21 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
   @override
   void dispose() {
-    _emailController.dispose();
+    _usernameController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
   }
 
-  String? _validateEmail(String? value) {
+  String? _validateUsername(String? value) {
     if (value == null || value.trim().isEmpty) {
-      return 'Email is required';
+      return 'Username is required';
     }
-    final emailRegex = RegExp(r'^[\w.+-]+@[\w-]+\.[\w.-]+$');
-    if (!emailRegex.hasMatch(value.trim())) {
-      return 'Enter a valid email address';
+    if (value.trim().length < 3) {
+      return 'Username must be at least 3 characters';
+    }
+    if (!RegExp(r'^[a-zA-Z0-9_.]+$').hasMatch(value.trim())) {
+      return 'Only letters, numbers, _ and . allowed';
     }
     return null;
   }
@@ -62,14 +64,14 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     return null;
   }
 
-  Future<void> _handleRegister() async {
+  Future<void> _handleSignUp() async {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
 
     try {
-      await _authService.registerWithEmail(
-        email: _emailController.text.trim(),
+      await _authService.registerWithUsername(
+        username: _usernameController.text.trim(),
         password: _passwordController.text,
       );
 
@@ -77,12 +79,10 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       Navigator.pushNamed(context, '/otp');
     } on FirebaseAuthException catch (e) {
       String message = 'Registration failed. Please try again.';
-      if (e.code == 'email-already-in-use') {
-        message = 'This email is already registered.';
+      if (e.code == 'username-already-in-use') {
+        message = 'This username is already taken.';
       } else if (e.code == 'weak-password') {
         message = 'Password is too weak.';
-      } else if (e.code == 'invalid-email') {
-        message = 'Invalid email address.';
       }
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -102,94 +102,97 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Create Account')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'Join Fine Aid',
-                style: Theme.of(context).textTheme.headlineMedium,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Create an account to access AI wound scanning and your health journal.',
-                style: Theme.of(context).textTheme.bodyMedium,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 32),
-              TextFormField(
-                controller: _emailController,
-                keyboardType: TextInputType.emailAddress,
-                decoration: const InputDecoration(
-                  labelText: 'Email',
-                  prefixIcon: Icon(Icons.email_outlined),
-                ),
-                validator: _validateEmail,
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _passwordController,
-                obscureText: _obscurePassword,
-                decoration: InputDecoration(
-                  labelText: 'Password',
-                  prefixIcon: const Icon(Icons.lock_outline),
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _obscurePassword
-                          ? Icons.visibility_outlined
-                          : Icons.visibility_off_outlined,
-                    ),
-                    onPressed: () =>
-                        setState(() => _obscurePassword = !_obscurePassword),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 16),
+                Center(
+                  child: Text(
+                    'FINE AID',
+                    style: theme.textTheme.headlineMedium,
                   ),
                 ),
-                validator: _validatePassword,
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _confirmPasswordController,
-                obscureText: _obscureConfirm,
-                decoration: InputDecoration(
-                  labelText: 'Confirm Password',
-                  prefixIcon: const Icon(Icons.lock_outline),
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _obscureConfirm
-                          ? Icons.visibility_outlined
-                          : Icons.visibility_off_outlined,
-                    ),
-                    onPressed: () =>
-                        setState(() => _obscureConfirm = !_obscureConfirm),
+                const SizedBox(height: 32),
+                Text('Create Account', style: theme.textTheme.headlineSmall),
+                const SizedBox(height: 24),
+                Text('Username', style: theme.textTheme.titleSmall),
+                const SizedBox(height: 6),
+                TextFormField(
+                  controller: _usernameController,
+                  decoration: const InputDecoration(
+                    hintText: 'Enter a username',
                   ),
+                  validator: _validateUsername,
                 ),
-                validator: _validateConfirmPassword,
-              ),
-              const SizedBox(height: 32),
-              ElevatedButton(
-                onPressed: _isLoading ? null : _handleRegister,
-                child: _isLoading
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Text('Register'),
-              ),
-              const SizedBox(height: 16),
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Already have an account? Log in'),
-              ),
-            ],
+                const SizedBox(height: 16),
+                Text('Password', style: theme.textTheme.titleSmall),
+                const SizedBox(height: 6),
+                TextFormField(
+                  controller: _passwordController,
+                  obscureText: _obscurePassword,
+                  decoration: InputDecoration(
+                    hintText: 'Create password',
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscurePassword
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
+                      ),
+                      onPressed: () =>
+                          setState(() => _obscurePassword = !_obscurePassword),
+                    ),
+                  ),
+                  validator: _validatePassword,
+                ),
+                const SizedBox(height: 16),
+                Text('Confirm Password', style: theme.textTheme.titleSmall),
+                const SizedBox(height: 6),
+                TextFormField(
+                  controller: _confirmPasswordController,
+                  obscureText: _obscureConfirm,
+                  decoration: InputDecoration(
+                    hintText: 'Repeat Password',
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscureConfirm
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
+                      ),
+                      onPressed: () =>
+                          setState(() => _obscureConfirm = !_obscureConfirm),
+                    ),
+                  ),
+                  validator: _validateConfirmPassword,
+                ),
+                const SizedBox(height: 32),
+                ElevatedButton(
+                  onPressed: _isLoading ? null : _handleSignUp,
+                  child: _isLoading
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('Sign Up'),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton(
+                  onPressed: _isLoading ? null : () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+              ],
+            ),
           ),
         ),
       ),

@@ -15,7 +15,7 @@ class TermsScreen extends StatelessWidget {
             const SizedBox(height: 16),
             ElevatedButton(
               onPressed: () => Navigator.pushNamed(context, '/permission'),
-              child: const Text('I Agree - Next: Camera Permission'),
+              child: const Text('I Agree - Camera Permission'),
             ),
           ],
         ),

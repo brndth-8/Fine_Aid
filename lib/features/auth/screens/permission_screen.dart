@@ -16,7 +16,7 @@ class PermissionScreen extends StatelessWidget {
             ElevatedButton(
               onPressed: () =>
                   Navigator.pushNamed(context, '/health-checklist'),
-              child: const Text('Next: Health Checklist'),
+              child: const Text('Health Checklist'),
             ),
           ],
         ),

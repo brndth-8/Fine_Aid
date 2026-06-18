@@ -15,7 +15,7 @@ class HealthChecklistScreen extends StatelessWidget {
             const SizedBox(height: 16),
             ElevatedButton(
               onPressed: () => Navigator.pushNamed(context, '/onboarding'),
-              child: const Text('Next: Onboarding'),
+              child: const Text('Onboarding'),
             ),
           ],
         ),
