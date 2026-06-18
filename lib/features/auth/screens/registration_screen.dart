@@ -12,6 +12,7 @@ class RegistrationScreen extends StatefulWidget {
 class _RegistrationScreenState extends State<RegistrationScreen> {
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
+  final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   final _authService = AuthService();
@@ -23,6 +24,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   @override
   void dispose() {
     _usernameController.dispose();
+    _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
@@ -37,6 +39,17 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     }
     if (!RegExp(r'^[a-zA-Z0-9_.]+$').hasMatch(value.trim())) {
       return 'Only letters, numbers, _ and . allowed';
+    }
+    return null;
+  }
+
+  String? _validateEmail(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Email is required for account recovery';
+    }
+    final emailRegex = RegExp(r'^[\w.+-]+@[\w-]+\.[\w.-]+$');
+    if (!emailRegex.hasMatch(value.trim())) {
+      return 'Enter a valid email address';
     }
     return null;
   }
@@ -73,14 +86,18 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       await _authService.registerWithUsername(
         username: _usernameController.text.trim(),
         password: _passwordController.text,
+        email: _emailController.text.trim(),
       );
-
+      // AuthGate in main.dart will detect the new session and switch
+      // to the Dashboard automatically.
       if (!mounted) return;
-      Navigator.pushNamed(context, '/otp');
+      Navigator.of(context).popUntil((route) => route.isFirst);
     } on FirebaseAuthException catch (e) {
       String message = 'Registration failed. Please try again.';
       if (e.code == 'username-already-in-use') {
         message = 'This username is already taken.';
+      } else if (e.code == 'email-already-in-use') {
+        message = 'This email is already registered.';
       } else if (e.code == 'weak-password') {
         message = 'Password is too weak.';
       }
@@ -131,6 +148,22 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                     hintText: 'Enter a username',
                   ),
                   validator: _validateUsername,
+                ),
+                const SizedBox(height: 16),
+                Text('Email', style: theme.textTheme.titleSmall),
+                const SizedBox(height: 4),
+                Text(
+                  'Used only for account recovery, not for logging in.',
+                  style: theme.textTheme.bodySmall,
+                ),
+                const SizedBox(height: 6),
+                TextFormField(
+                  controller: _emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(
+                    hintText: 'Enter your email',
+                  ),
+                  validator: _validateEmail,
                 ),
                 const SizedBox(height: 16),
                 Text('Password', style: theme.textTheme.titleSmall),

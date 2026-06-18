@@ -8,7 +8,7 @@ class DashboardScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Fine Aid - Dashboard'),
+        title: const Text('Fine Aid'),
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),

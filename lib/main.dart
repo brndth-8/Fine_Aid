@@ -12,6 +12,9 @@ import 'features/auth/screens/permission_screen.dart';
 import 'features/auth/screens/health_checklist_screen.dart';
 import 'features/onboarding/screens/onboarding_screen.dart';
 import 'features/dashboard/screens/dashboard_screen.dart';
+import 'features/auth/screens/forgot_password_screen.dart';
+import 'services/firebase/auth_service.dart';
+import 'features/auth/screens/login_form_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -32,6 +35,8 @@ class MyApp extends StatelessWidget {
       home: const AuthGate(),
       routes: {
         '/login': (context) => const LoginScreen(),
+        '/login-form': (context) => const LoginFormScreen(),
+        '/forgot-password': (context) => const ForgotPasswordScreen(),
         '/registration': (context) => const RegistrationScreen(),
         '/otp': (context) => const OtpScreen(),
         '/confirmation': (context) => const ConfirmationScreen(),
@@ -58,10 +63,28 @@ class AuthGate extends StatelessWidget {
             body: Center(child: CircularProgressIndicator()),
           );
         }
-        if (snapshot.hasData) {
-          return const DashboardScreen();
+
+        final user = snapshot.data;
+        if (user == null) {
+          return const LoginScreen();
         }
-        return const LoginScreen();
+
+        return FutureBuilder<bool>(
+          future: AuthService().hasCompletedOnboarding(user.uid),
+          builder: (context, onboardingSnapshot) {
+            if (onboardingSnapshot.connectionState == ConnectionState.waiting) {
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
+            }
+
+            final completed = onboardingSnapshot.data ?? false;
+            if (completed) {
+              return const DashboardScreen();
+            }
+            return const OtpScreen();
+          },
+        );
       },
     );
   }
