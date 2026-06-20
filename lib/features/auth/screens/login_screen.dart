@@ -22,15 +22,15 @@ class LoginScreen extends StatelessWidget {
               alignment: Alignment.bottomCenter,
               child: Padding(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 40,
-                  vertical: 100,
+                  horizontal: 24,
+                  vertical: 140,
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     //Log In
                     SizedBox(
-                      width: double.infinity,
+                      width: 220,
                       child: ElevatedButton(
                         onPressed: () {
                           Navigator.pushNamed(context, '/login-form');
@@ -38,14 +38,15 @@ class LoginScreen extends StatelessWidget {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF8B0000),
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          minimumSize: const Size(double.infinity, 40),
+                          padding: const EdgeInsets.symmetric(vertical: 8),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8),
                           ),
                         ),
                         child: const Text(
                           'Log In',
-                          style: TextStyle(fontSize: 16),
+                          style: TextStyle(fontSize: 12),
                         ),
                       ),
                     ),
@@ -54,7 +55,7 @@ class LoginScreen extends StatelessWidget {
 
                     //Create Account
                     SizedBox(
-                      width: double.infinity,
+                      width: 220,
                       child: OutlinedButton(
                         onPressed: () {
                           Navigator.pushNamed(context, '/registration');
@@ -62,14 +63,15 @@ class LoginScreen extends StatelessWidget {
                         style: OutlinedButton.styleFrom(
                           foregroundColor: const Color(0xFF8B0000),
                           side: const BorderSide(color: Color(0xFF8B0000)),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          minimumSize: const Size(double.infinity, 40),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8),
                           ),
                         ),
                         child: const Text(
                           'Create Account',
-                          style: TextStyle(fontSize: 16),
+                          style: TextStyle(fontSize: 12),
                         ),
                       ),
                     ),
@@ -95,22 +97,23 @@ class LoginScreen extends StatelessWidget {
 
                     //Continue as Guest
                     SizedBox(
-                      width: double.infinity,
+                      width: 220,
                       child: OutlinedButton(
                         onPressed: () {
-                          Navigator.pushNamed(context, '/onboarding');
+                          Navigator.pushNamed(context, '/dashboard');
                         },
                         style: OutlinedButton.styleFrom(
                           foregroundColor: const Color(0xFF8B0000),
                           side: const BorderSide(color: Color(0xFF8B0000)),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          minimumSize: const Size(double.infinity, 40),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8),
                           ),
                         ),
                         child: const Text(
                           'Continue as Guest',
-                          style: TextStyle(fontSize: 16),
+                          style: TextStyle(fontSize: 12),
                         ),
                       ),
                     ),

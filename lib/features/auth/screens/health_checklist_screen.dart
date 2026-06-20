@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../../services/firebase/auth_service.dart';
 
 class HealthChecklistScreen extends StatefulWidget {
   const HealthChecklistScreen({super.key});
@@ -53,10 +54,16 @@ class _HealthChecklistScreenState extends State<HealthChecklistScreen> {
               'healthProfileSavedAt': FieldValue.serverTimestamp(),
             })
             .timeout(const Duration(seconds: 10));
+        await AuthService().markOnboardingComplete(user.uid);
       }
 
       if (!mounted) return;
-      Navigator.pushNamed(context, '/onboarding');
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        '/dashboard',
+        (route) => false,
+        arguments: true,
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

@@ -43,7 +43,6 @@ class MyApp extends StatelessWidget {
         '/terms': (context) => const TermsScreen(),
         '/permission': (context) => const PermissionScreen(),
         '/health-checklist': (context) => const HealthChecklistScreen(),
-        '/onboarding': (context) => const OnboardingScreen(),
         '/dashboard': (context) => const DashboardScreen(),
       },
     );
