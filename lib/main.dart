@@ -14,10 +14,12 @@ import 'features/dashboard/screens/dashboard_screen.dart';
 import 'features/auth/screens/forgot_password_screen.dart';
 import 'services/firebase/auth_service.dart';
 import 'features/auth/screens/login_form_screen.dart';
+import 'services/firebase/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await NotificationService().initialize();
   runApp(const MyApp());
 }
 

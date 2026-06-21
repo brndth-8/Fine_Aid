@@ -286,16 +286,6 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
               ),
 
               const SizedBox(height: 12),
-              TextButton(
-                onPressed: () {
-                  NotificationService().showTestMilestoneNotification(
-                    classification: classification,
-                  );
-                },
-                child: const Text('(Test) Send milestone notification'),
-              ),
-
-              const SizedBox(height: 12),
               OutlinedButton(
                 onPressed: () {
                   ScaffoldMessenger.of(context).showSnackBar(
