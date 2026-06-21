@@ -21,6 +21,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   bool _isLoading = false;
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
+  String _verificationMethod = 'email';
 
   @override
   void dispose() {
@@ -47,7 +48,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
   String? _validateEmail(String? value) {
     if (value == null || value.trim().isEmpty) {
-      return 'Email is required for account recovery';
+      return 'Email is required';
     }
     final emailRegex = RegExp(r'^[\w.+-]+@[\w-]+\.[\w.-]+$');
     if (!emailRegex.hasMatch(value.trim())) {
@@ -57,6 +58,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   }
 
   String? _validatePhone(String? value) {
+    if (_verificationMethod != 'phone')
+      return null; // not required if email chosen
     if (value == null || value.trim().isEmpty) {
       return 'Phone number is required';
     }
@@ -100,7 +103,10 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         username: _usernameController.text.trim(),
         password: _passwordController.text,
         email: _emailController.text.trim(),
-        phoneNumber: '+63${_phoneController.text.trim()}',
+        verificationMethod: _verificationMethod,
+        phoneNumber: _verificationMethod == 'phone'
+            ? '+63${_phoneController.text.trim()}'
+            : null,
       );
 
       if (!mounted) return;
@@ -170,7 +176,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                 Text('Email', style: theme.textTheme.titleSmall),
                 const SizedBox(height: 4),
                 Text(
-                  'Used only for account recovery, not for logging in.',
+                  'Used for account recovery and verification.',
                   style: theme.textTheme.bodySmall,
                 ),
                 const SizedBox(height: 6),
@@ -184,22 +190,54 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                 ),
 
                 const SizedBox(height: 16),
-                Text('Phone Number', style: theme.textTheme.titleSmall),
-                const SizedBox(height: 4),
                 Text(
-                  'Will be used for SMS verification once enabled.',
-                  style: theme.textTheme.bodySmall,
+                  'How should we verify your account?',
+                  style: theme.textTheme.titleSmall,
                 ),
-                const SizedBox(height: 6),
-                TextFormField(
-                  controller: _phoneController,
-                  keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(
-                    prefixText: '+63 ',
-                    hintText: '9123456789',
+                const SizedBox(height: 4),
+
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(
+                      value: 'email',
+                      label: Text('Email'),
+                      icon: Icon(Icons.email_outlined),
+                    ),
+                    ButtonSegment(
+                      value: 'phone',
+                      label: Text('OTP'),
+                      icon: Icon(Icons.sms_outlined),
+                    ),
+                  ],
+                  selected: {_verificationMethod},
+                  onSelectionChanged: (newSelection) {
+                    setState(() => _verificationMethod = newSelection.first);
+                  },
+                  style: SegmentedButton.styleFrom(
+                    selectedBackgroundColor: theme.colorScheme.primary,
+                    selectedForegroundColor: Colors.white,
                   ),
-                  validator: _validatePhone,
                 ),
+
+                if (_verificationMethod == 'phone') ...[
+                  const SizedBox(height: 16),
+                  Text('Phone Number', style: theme.textTheme.titleSmall),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Will be used for SMS verification once enabled.',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 6),
+                  TextFormField(
+                    controller: _phoneController,
+                    keyboardType: TextInputType.phone,
+                    decoration: const InputDecoration(
+                      prefixText: '+63 ',
+                      hintText: '9123456789',
+                    ),
+                    validator: _validatePhone,
+                  ),
+                ],
 
                 const SizedBox(height: 16),
                 Text('Password', style: theme.textTheme.titleSmall),

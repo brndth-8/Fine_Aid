@@ -22,10 +22,13 @@ class _OtpScreenState extends State<OtpScreen> {
   @override
   void initState() {
     super.initState();
-    _loadPhoneNumber();
+    _loadVerificationInfo();
   }
 
-  Future<void> _loadPhoneNumber() async {
+  String? _email;
+  String _method = 'phone';
+
+  Future<void> _loadVerificationInfo() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     final doc = await FirebaseFirestore.instance
@@ -33,7 +36,11 @@ class _OtpScreenState extends State<OtpScreen> {
         .doc(user.uid)
         .get();
     if (mounted) {
-      setState(() => _phoneNumber = doc.data()?['phoneNumber'] as String?);
+      setState(() {
+        _phoneNumber = doc.data()?['phoneNumber'] as String?;
+        _email = doc.data()?['email'] as String?;
+        _method = doc.data()?['verificationMethod'] as String? ?? 'phone';
+      });
     }
   }
 
@@ -102,9 +109,13 @@ class _OtpScreenState extends State<OtpScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      _phoneNumber != null
-                          ? 'Enter the OTP sent to $_phoneNumber'
-                          : 'Enter the OTP sent to your phone',
+                      _method == 'email'
+                          ? (_email != null
+                                ? 'Enter the code sent to $_email'
+                                : 'Enter the code sent to your email')
+                          : (_phoneNumber != null
+                                ? 'Enter the OTP sent to $_phoneNumber'
+                                : 'Enter the OTP sent to your phone'),
                       style: theme.textTheme.bodyMedium,
                     ),
                     const SizedBox(height: 24),
