@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+import '../../../services/firebase/notification_service.dart';
 
 // Standard healing durations by classification, in days. Used to determine
-// when to show the "Healing Milestone" check-in per the design spec.
 const Map<String, int> _healingDurations = {
   'Injury (Wounds/laceration/Abrasion)': 10,
   'Burns': 7,
@@ -52,7 +52,6 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
     if (monitored == null || standard == null) return;
     if (monitored < standard) return;
 
-    // Don't re-show if the user already responded to this milestone.
     final alreadyResponded = widget.data['milestoneResponded'] == true;
     if (alreadyResponded) return;
 
@@ -63,7 +62,6 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
   Future<void> _showMilestoneDialog(int standardDays) async {
     final classification =
         widget.data['classification'] as String? ?? 'this issue';
-    final theme = Theme.of(context);
 
     final feelingBetter = await showDialog<bool>(
       context: context,
@@ -111,8 +109,7 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
           .update({'milestoneResponded': true, 'feelingBetter': feelingBetter})
           .timeout(const Duration(seconds: 10));
     } catch (_) {
-      // Non-critical: if this fails, the dialog may reappear next visit,
-      // which is an acceptable degradation rather than blocking the UI.
+      // Non-critical; if this fails, the dialog may reappear next visit
     }
   }
 
@@ -272,6 +269,7 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
                   ),
                 ),
               ],
+
               const SizedBox(height: 32),
               ElevatedButton(
                 onPressed: () {
@@ -286,6 +284,17 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
                 ),
                 child: const Text('Need More Help'),
               ),
+
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: () {
+                  NotificationService().showTestMilestoneNotification(
+                    classification: classification,
+                  );
+                },
+                child: const Text('(Test) Send milestone notification'),
+              ),
+
               const SizedBox(height: 12),
               OutlinedButton(
                 onPressed: () {

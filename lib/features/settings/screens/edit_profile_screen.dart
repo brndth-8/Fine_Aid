@@ -67,8 +67,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   String? _validatePassword(String? value) {
     if (value == null || value.isEmpty) return null; // optional on edit
     if (value.length < 8) return 'Password must be at least 8 characters';
-    if (!RegExp(r'[A-Z]').hasMatch(value))
+    if (!RegExp(r'[A-Z]').hasMatch(value)) {
       return 'Include at least one uppercase letter';
+    }
     if (!RegExp(r'[0-9]').hasMatch(value)) return 'Include at least one number';
     return null;
   }

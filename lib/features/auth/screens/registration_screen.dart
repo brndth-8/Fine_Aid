@@ -58,8 +58,9 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   }
 
   String? _validatePhone(String? value) {
-    if (_verificationMethod != 'phone')
+    if (_verificationMethod != 'phone') {
       return null; // not required if email chosen
+    }
     if (value == null || value.trim().isEmpty) {
       return 'Phone number is required';
     }

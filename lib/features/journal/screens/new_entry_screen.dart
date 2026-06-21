@@ -190,7 +190,7 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
                   child: ListView.separated(
                     scrollDirection: Axis.horizontal,
                     itemCount: _pickedImages.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 8),
+                    separatorBuilder: (_, _) => const SizedBox(width: 8),
                     itemBuilder: (context, index) => ClipRRect(
                       borderRadius: BorderRadius.circular(8),
                       child: Image.file(
