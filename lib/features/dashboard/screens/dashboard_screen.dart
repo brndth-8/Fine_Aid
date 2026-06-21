@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../services/firebase/auth_service.dart';
 import '../../settings/screens/profile_screen.dart';
 import '../../settings/screens/settings_screen.dart';
+import '../../journal/screens/journal_list_screen.dart';
 
 class _TourStep {
   final GlobalKey targetKey;
@@ -428,6 +429,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
             theme,
             Icons.menu_book_outlined,
             'Health\nJournal',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const JournalListScreen(),
+                ),
+              );
+            },
           ),
         ),
         const SizedBox(width: 12),
@@ -450,7 +459,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _actionTile(ThemeData theme, IconData icon, String label) {
+  Widget _actionTile(
+    ThemeData theme,
+    IconData icon,
+    String label, {
+    VoidCallback? onTap,
+  }) {
     return AspectRatio(
       aspectRatio: 1,
       child: Material(
@@ -458,7 +472,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         borderRadius: BorderRadius.circular(16),
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
-          onTap: () {},
+          onTap: onTap ?? () {},
           child: Padding(
             padding: const EdgeInsets.all(8),
             child: Column(

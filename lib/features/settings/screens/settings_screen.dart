@@ -60,6 +60,7 @@ class SettingsScreen extends StatelessWidget {
                       label: 'About Application',
                       onTap: () => _showAboutDialog(context),
                     ),
+
                     const Divider(height: 1),
                     _settingsTile(
                       context,
@@ -70,6 +71,7 @@ class SettingsScreen extends StatelessWidget {
                   ],
                 ),
               ),
+
               const SizedBox(height: 24),
               _linkText(context, 'Rate this app', () {}),
               const SizedBox(height: 16),
