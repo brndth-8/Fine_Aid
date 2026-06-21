@@ -10,7 +10,6 @@ import 'features/auth/screens/confirmation_screen.dart';
 import 'features/auth/screens/terms_screen.dart';
 import 'features/auth/screens/permission_screen.dart';
 import 'features/auth/screens/health_checklist_screen.dart';
-import 'features/onboarding/screens/onboarding_screen.dart';
 import 'features/dashboard/screens/dashboard_screen.dart';
 import 'features/auth/screens/forgot_password_screen.dart';
 import 'services/firebase/auth_service.dart';
