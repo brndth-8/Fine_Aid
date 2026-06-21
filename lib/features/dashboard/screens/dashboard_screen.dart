@@ -148,7 +148,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     const tooltipWidth = 260.0;
     const horizontalMargin = 16.0;
 
-    // Clamp so the tooltip never overflows past the screen edges.
     double left = position.dx + size.width - tooltipWidth;
     if (left < horizontalMargin) left = horizontalMargin;
     if (left + tooltipWidth > screenWidth - horizontalMargin) {
@@ -208,7 +207,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildTopBar(ThemeData theme) {
     return Row(
       children: [
-        Text('FINE AID', style: theme.textTheme.headlineSmall),
+        Image.asset('assets/images/FINE_AID_Logo.png', width: 70, height: 40),
         const Spacer(),
         IconButton(
           icon: const Icon(Icons.notifications_outlined),

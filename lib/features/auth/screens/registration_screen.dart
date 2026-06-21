@@ -174,11 +174,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
                 const SizedBox(height: 16),
                 Text('Email', style: theme.textTheme.titleSmall),
-                const SizedBox(height: 4),
-                Text(
-                  'Used for account recovery and verification.',
-                  style: theme.textTheme.bodySmall,
-                ),
+
                 const SizedBox(height: 6),
                 TextFormField(
                   controller: _emailController,

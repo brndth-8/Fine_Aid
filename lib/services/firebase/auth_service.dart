@@ -15,8 +15,6 @@ class AuthService {
     return query.docs.isNotEmpty;
   }
 
-  /// Looks up the real email linked to a username, for sign-in and
-  /// password reset purposes (the user never sees or types this email).
   Future<String?> _emailForUsername(String username) async {
     final query = await _firestore
         .collection('users')
@@ -82,7 +80,6 @@ class AuthService {
     );
   }
 
-  /// Sends a real Firebase password reset email, looked up by username.
   Future<void> sendPasswordReset({required String username}) async {
     final email = await _emailForUsername(username);
     if (email == null) {

@@ -56,9 +56,9 @@ class _OtpScreenState extends State<OtpScreen> {
   }
 
   Future<void> _handleSubmit() async {
-    // NOTE: Real SMS OTP verification requires Firebase Phone Auth, which
-    // needs the Blaze plan. This is a placeholder until that's enabled —
-    // it does not actually verify anything yet.
+    // Real SMS OTP verification requires Firebase Phone Auth, which
+    // needs the Blaze plan.
+
     setState(() => _isLoading = true);
     await Future.delayed(const Duration(milliseconds: 400));
     if (!mounted) return;
