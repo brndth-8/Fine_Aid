@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../services/firebase/auth_service.dart';
+import '../../settings/screens/profile_screen.dart';
 
 class _TourStep {
   final GlobalKey targetKey;
@@ -209,15 +210,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
       children: [
         Image.asset('assets/images/FINE_AID_Logo.png', width: 70, height: 40),
         const Spacer(),
+
         IconButton(
           icon: const Icon(Icons.notifications_outlined),
           onPressed: () {},
         ),
+
         IconButton(
           key: _profileKey,
           icon: const Icon(Icons.account_circle_outlined),
-          onPressed: () {},
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const ProfileScreen()),
+            );
+          },
         ),
+
         IconButton(
           icon: const Icon(Icons.menu),
           onPressed: () => _showMenu(context),
