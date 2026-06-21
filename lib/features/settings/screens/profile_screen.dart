@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'edit_profile_screen.dart';
+import 'dart:io';
+import '../../../services/local_profile_photo.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -47,11 +49,26 @@ class ProfileScreen extends StatelessWidget {
                       color: Colors.white,
                     ),
                   ),
+
                   const SizedBox(height: 24),
-                  const CircleAvatar(
-                    radius: 60,
-                    backgroundColor: Colors.white,
-                    child: Icon(Icons.person, size: 64, color: Colors.grey),
+                  Builder(
+                    builder: (context) {
+                      final photoPath = LocalProfilePhoto().path;
+                      return CircleAvatar(
+                        radius: 60,
+                        backgroundColor: Colors.white,
+                        backgroundImage: photoPath != null
+                            ? FileImage(File(photoPath))
+                            : null,
+                        child: photoPath == null
+                            ? const Icon(
+                                Icons.person,
+                                size: 64,
+                                color: Colors.grey,
+                              )
+                            : null,
+                      );
+                    },
                   ),
                   const SizedBox(height: 24),
                 ],

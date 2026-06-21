@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import '../../../services/local_profile_photo.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -20,11 +23,28 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
   String _originalUsername = '';
+  final ImagePicker _picker = ImagePicker();
+  XFile? _pickedPhoto;
 
   @override
   void initState() {
     super.initState();
     _loadCurrentProfile();
+    final existingPath = LocalProfilePhoto().path;
+    if (existingPath != null) {
+      _pickedPhoto = XFile(existingPath);
+    }
+  }
+
+  Future<void> _handlePickPhoto() async {
+    final image = await _picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 80,
+    );
+    if (image != null) {
+      setState(() => _pickedPhoto = image);
+      LocalProfilePhoto().path = image.path;
+    }
   }
 
   Future<void> _loadCurrentProfile() async {
@@ -188,21 +208,33 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   const SizedBox(height: 24),
                   Stack(
                     children: [
-                      const CircleAvatar(
+                      CircleAvatar(
                         radius: 60,
                         backgroundColor: Colors.white,
-                        child: Icon(Icons.person, size: 64, color: Colors.grey),
+                        backgroundImage: _pickedPhoto != null
+                            ? FileImage(File(_pickedPhoto!.path))
+                            : null,
+                        child: _pickedPhoto == null
+                            ? const Icon(
+                                Icons.person,
+                                size: 64,
+                                color: Colors.grey,
+                              )
+                            : null,
                       ),
                       Positioned(
                         bottom: 0,
                         right: 0,
-                        child: CircleAvatar(
-                          radius: 18,
-                          backgroundColor: theme.colorScheme.primary,
-                          child: const Icon(
-                            Icons.camera_alt,
-                            size: 18,
-                            color: Colors.white,
+                        child: GestureDetector(
+                          onTap: _handlePickPhoto,
+                          child: CircleAvatar(
+                            radius: 18,
+                            backgroundColor: theme.colorScheme.primary,
+                            child: const Icon(
+                              Icons.camera_alt,
+                              size: 18,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
                       ),
@@ -286,7 +318,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                               ),
                               validator: _validateConfirmPassword,
                             ),
+
                             const SizedBox(height: 32),
+                            if (_pickedPhoto != null) ...[
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: Text(
+                                  'Note: profile photo is shown locally for preview only and will '
+                                  'not be saved yet (requires a Cloud Storage upgrade).',
+                                  style: theme.textTheme.bodySmall,
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            ],
                             ElevatedButton(
                               onPressed: _isSaving ? null : _handleSave,
                               style: ElevatedButton.styleFrom(
