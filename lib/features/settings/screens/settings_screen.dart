@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../services/firebase/auth_service.dart';
 import 'personalization_screen.dart';
 import 'help_screen.dart';
+import '../../auth/screens/terms_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -85,9 +86,18 @@ class SettingsScreen extends StatelessWidget {
               _linkText(context, 'Rate this app', () {}),
               const SizedBox(height: 16),
               _linkText(context, 'Feedback', () {}),
+
               const SizedBox(height: 16),
-              _linkText(context, 'Terms and conditions', () {}),
+              _linkText(context, 'Terms and conditions', () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const TermsScreen(readOnly: true),
+                  ),
+                );
+              }),
               const Spacer(),
+
               ElevatedButton.icon(
                 onPressed: () async {
                   await AuthService().signOut();

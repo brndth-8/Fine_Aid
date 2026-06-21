@@ -3,7 +3,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class TermsScreen extends StatefulWidget {
-  const TermsScreen({super.key});
+  final bool readOnly;
+
+  const TermsScreen({super.key, this.readOnly = false});
 
   @override
   State<TermsScreen> createState() => _TermsScreenState();
@@ -115,23 +117,33 @@ class _TermsScreenState extends State<TermsScreen> {
                   ),
                 ),
               ),
+
               const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: _isLoading ? null : _handleAgree,
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(50),
+              if (widget.readOnly)
+                OutlinedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(50),
+                  ),
+                  child: const Text('Back'),
+                )
+              else
+                ElevatedButton(
+                  onPressed: _isLoading ? null : _handleAgree,
+                  style: ElevatedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(50),
+                  ),
+                  child: _isLoading
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('I Agree & Continue'),
                 ),
-                child: _isLoading
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Text('I Agree & Continue'),
-              ),
             ],
           ),
         ),
