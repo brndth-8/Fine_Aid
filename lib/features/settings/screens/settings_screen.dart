@@ -3,6 +3,7 @@ import '../../../services/firebase/auth_service.dart';
 import 'personalization_screen.dart';
 import 'help_screen.dart';
 import '../../auth/screens/terms_screen.dart';
+import 'feedback_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -84,8 +85,16 @@ class SettingsScreen extends StatelessWidget {
 
               const SizedBox(height: 24),
               _linkText(context, 'Rate this app', () {}),
+
               const SizedBox(height: 16),
-              _linkText(context, 'Feedback', () {}),
+              _linkText(context, 'Feedback', () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const FeedbackScreen(),
+                  ),
+                );
+              }),
 
               const SizedBox(height: 16),
               _linkText(context, 'Terms and conditions', () {
