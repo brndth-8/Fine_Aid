@@ -13,6 +13,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
   final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   final _authService = AuthService();
@@ -25,6 +26,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   void dispose() {
     _usernameController.dispose();
     _emailController.dispose();
+    _phoneController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
@@ -50,6 +52,17 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     final emailRegex = RegExp(r'^[\w.+-]+@[\w-]+\.[\w.-]+$');
     if (!emailRegex.hasMatch(value.trim())) {
       return 'Enter a valid email address';
+    }
+    return null;
+  }
+
+  String? _validatePhone(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Phone number is required';
+    }
+    final phoneRegex = RegExp(r'^9\d{9}$');
+    if (!phoneRegex.hasMatch(value.trim())) {
+      return 'Enter a valid 10-digit number (e.g. 9123456789)';
     }
     return null;
   }
@@ -87,9 +100,9 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         username: _usernameController.text.trim(),
         password: _passwordController.text,
         email: _emailController.text.trim(),
+        phoneNumber: '+63${_phoneController.text.trim()}',
       );
-      // AuthGate in main.dart will detect the new session and switch
-      // to the Dashboard automatically.
+
       if (!mounted) return;
       Navigator.of(context).popUntil((route) => route.isFirst);
     } on FirebaseAuthException catch (e) {
@@ -142,6 +155,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                 const SizedBox(height: 32),
                 Text('Create Account', style: theme.textTheme.headlineSmall),
                 const SizedBox(height: 24),
+
                 Text('Username', style: theme.textTheme.titleSmall),
                 const SizedBox(height: 6),
                 TextFormField(
@@ -151,6 +165,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                   ),
                   validator: _validateUsername,
                 ),
+
                 const SizedBox(height: 16),
                 Text('Email', style: theme.textTheme.titleSmall),
                 const SizedBox(height: 4),
@@ -167,6 +182,25 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                   ),
                   validator: _validateEmail,
                 ),
+
+                const SizedBox(height: 16),
+                Text('Phone Number', style: theme.textTheme.titleSmall),
+                const SizedBox(height: 4),
+                Text(
+                  'Will be used for SMS verification once enabled.',
+                  style: theme.textTheme.bodySmall,
+                ),
+                const SizedBox(height: 6),
+                TextFormField(
+                  controller: _phoneController,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(
+                    prefixText: '+63 ',
+                    hintText: '9123456789',
+                  ),
+                  validator: _validatePhone,
+                ),
+
                 const SizedBox(height: 16),
                 Text('Password', style: theme.textTheme.titleSmall),
                 const SizedBox(height: 6),
@@ -187,6 +221,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                   ),
                   validator: _validatePassword,
                 ),
+
                 const SizedBox(height: 16),
                 Text('Confirm Password', style: theme.textTheme.titleSmall),
                 const SizedBox(height: 6),

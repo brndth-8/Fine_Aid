@@ -31,6 +31,7 @@ class AuthService {
     required String username,
     required String password,
     required String email,
+    required String phoneNumber,
   }) async {
     final taken = await isUsernameTaken(username);
     if (taken) {
@@ -51,6 +52,7 @@ class AuthService {
         .set({
           'username': username.trim(),
           'email': email.trim(),
+          'phoneNumber': phoneNumber.trim(),
           'createdAt': FieldValue.serverTimestamp(),
           'phoneVerified': false,
           'onboardingComplete': false,
