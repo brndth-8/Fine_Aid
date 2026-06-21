@@ -3,6 +3,7 @@ import '../../../services/firebase/auth_service.dart';
 import '../../settings/screens/profile_screen.dart';
 import '../../settings/screens/settings_screen.dart';
 import '../../journal/screens/journal_list_screen.dart';
+import '../../camera/screens/ai_camera_screen.dart';
 
 class _TourStep {
   final GlobalKey targetKey;
@@ -439,14 +440,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
             },
           ),
         ),
+
         const SizedBox(width: 12),
         Expanded(
           child: _actionTile(
             theme,
             Icons.center_focus_strong_outlined,
             'AI Vision\nCamera',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const AiCameraScreen()),
+              );
+            },
           ),
         ),
+
         const SizedBox(width: 12),
         Expanded(
           child: _actionTile(
