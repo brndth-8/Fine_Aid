@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../services/firebase/auth_service.dart';
 import 'personalization_screen.dart';
+import 'help_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -53,6 +54,7 @@ class SettingsScreen extends StatelessWidget {
                         );
                       },
                     ),
+
                     const Divider(height: 1),
                     _settingsTile(
                       context,
@@ -66,7 +68,14 @@ class SettingsScreen extends StatelessWidget {
                       context,
                       icon: Icons.help_outline,
                       label: 'Help/FAQ',
-                      onTap: () {},
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const HelpScreen(),
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),

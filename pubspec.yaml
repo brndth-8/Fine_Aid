@@ -70,6 +70,11 @@ flutter:
   assets:
     - assets/images/FINE_AID_Background.png
     - assets/images/FINE_AID_Logo.png
+    - assets/images/help_hero.png
+    - assets/images/help_getting_started.png
+    - assets/images/help_privacy.png
+    - assets/images/help_journal.png
+    - assets/images/help_references.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:

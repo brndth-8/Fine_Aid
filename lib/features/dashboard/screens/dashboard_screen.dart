@@ -4,6 +4,7 @@ import '../../settings/screens/profile_screen.dart';
 import '../../settings/screens/settings_screen.dart';
 import '../../journal/screens/journal_list_screen.dart';
 import '../../camera/screens/ai_camera_screen.dart';
+import '../../settings/screens/help_screen.dart';
 
 class _TourStep {
   final GlobalKey targetKey;
@@ -462,6 +463,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
             theme,
             Icons.support_agent_outlined,
             'Help &\nSupport',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const HelpScreen()),
+              );
+            },
           ),
         ),
       ],
