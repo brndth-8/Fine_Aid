@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
-import '../../../services/firebase/notification_service.dart';
+import '../../../services/export_service.dart';
+import '../../chatbot/screens/chatbot_screen.dart';
 
 // Standard healing durations by classification, in days. Used to determine
 const Map<String, int> _healingDurations = {
@@ -254,13 +255,17 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
                         textAlign: TextAlign.center,
                         style: theme.textTheme.bodyMedium,
                       ),
-                      const SizedBox(height: 16),
+
+                      const SizedBox(height: 12),
                       OutlinedButton(
                         onPressed: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Export feature coming soon'),
-                            ),
+                          ExportService().exportEntryAsPdf(
+                            title: title,
+                            description: description,
+                            classification: classification,
+                            createdAt: timestamp?.toDate() ?? DateTime.now(),
+                            monitoredDays: monitoredDays,
+                            referredForConsultation: _showingReferral,
                           );
                         },
                         child: const Text('Export Log'),
@@ -273,9 +278,11 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
               const SizedBox(height: 32),
               ElevatedButton(
                 onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('AI follow-up chat coming soon'),
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) =>
+                          ChatbotScreen(initialContext: classification),
                     ),
                   );
                 },
@@ -288,8 +295,13 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
               const SizedBox(height: 12),
               OutlinedButton(
                 onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Export feature coming soon')),
+                  ExportService().exportEntryAsPdf(
+                    title: title,
+                    description: description,
+                    classification: classification,
+                    createdAt: timestamp?.toDate() ?? DateTime.now(),
+                    monitoredDays: monitoredDays,
+                    referredForConsultation: _showingReferral,
                   );
                 },
                 child: const Text('Export Log'),

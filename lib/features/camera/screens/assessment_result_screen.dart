@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import '../../chatbot/screens/chatbot_screen.dart';
 
 class AssessmentResultScreen extends StatefulWidget {
   final String imagePath;
@@ -165,9 +166,10 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
                     IconButton(
                       icon: Icon(Icons.send, color: theme.colorScheme.primary),
                       onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('AI chatbot coming soon'),
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const ChatbotScreen(),
                           ),
                         );
                       },
