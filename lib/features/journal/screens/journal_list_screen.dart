@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'new_entry_screen.dart';
+import 'entry_detail_screen.dart';
 
 class JournalListScreen extends StatelessWidget {
   const JournalListScreen({super.key});
@@ -105,8 +106,13 @@ class JournalListScreen extends StatelessWidget {
                           padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
                           itemCount: docs.length,
                           itemBuilder: (context, index) {
-                            final data = docs[index].data();
-                            return _entryCard(context, theme, data);
+                            final doc = docs[index];
+                            return _entryCard(
+                              context,
+                              theme,
+                              doc.id,
+                              doc.data(),
+                            );
                           },
                         );
                       },
@@ -132,6 +138,7 @@ class JournalListScreen extends StatelessWidget {
   Widget _entryCard(
     BuildContext context,
     ThemeData theme,
+    String entryId,
     Map<String, dynamic> data,
   ) {
     final title = data['title'] as String? ?? 'Untitled';
@@ -142,60 +149,72 @@ class JournalListScreen extends StatelessWidget {
         : '';
     final imageUrls = (data['imageUrls'] as List?)?.cast<String>() ?? [];
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        border: Border.all(color: theme.colorScheme.primary, width: 1.2),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: imageUrls.isNotEmpty
-                ? Image.network(
-                    imageUrls.first,
-                    width: 90,
-                    height: 90,
-                    fit: BoxFit.cover,
-                  )
-                : Container(
-                    width: 90,
-                    height: 90,
-                    color: theme.colorScheme.surfaceContainerHighest,
-                    child: const Icon(
-                      Icons.image_not_supported_outlined,
-                      color: Colors.grey,
+    return GestureDetector(
+      onTap: () {
+        debugPrint('Card tapped! entryId=$entryId');
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) =>
+                EntryDetailScreen(entryId: entryId, data: data),
+          ),
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          border: Border.all(color: theme.colorScheme.primary, width: 1.2),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: imageUrls.isNotEmpty
+                  ? Image.network(
+                      imageUrls.first,
+                      width: 90,
+                      height: 90,
+                      fit: BoxFit.cover,
+                    )
+                  : Container(
+                      width: 90,
+                      height: 90,
+                      color: theme.colorScheme.surfaceContainerHighest,
+                      child: const Icon(
+                        Icons.image_not_supported_outlined,
+                        color: Colors.grey,
+                      ),
+                    ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    color: theme.colorScheme.primary,
-                    fontWeight: FontWeight.bold,
+                  const SizedBox(height: 2),
+                  Text(dateText, style: theme.textTheme.bodySmall),
+                  const SizedBox(height: 4),
+                  Text(
+                    description,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium,
                   ),
-                ),
-                const SizedBox(height: 2),
-                Text(dateText, style: theme.textTheme.bodySmall),
-                const SizedBox(height: 4),
-                Text(
-                  description,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium,
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
