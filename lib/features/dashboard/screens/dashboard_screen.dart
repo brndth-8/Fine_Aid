@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../services/firebase/auth_service.dart';
 import '../../settings/screens/profile_screen.dart';
+import '../../settings/screens/settings_screen.dart';
 
 class _TourStep {
   final GlobalKey targetKey;
@@ -250,11 +251,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 _replayTour();
               },
             ),
+
             ListTile(
               leading: const Icon(Icons.settings_outlined),
               title: const Text('Settings'),
-              onTap: () => Navigator.pop(context),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const SettingsScreen(),
+                  ),
+                );
+              },
             ),
+
             ListTile(
               leading: const Icon(Icons.logout),
               title: const Text('Log out'),
