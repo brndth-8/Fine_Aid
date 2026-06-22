@@ -169,15 +169,6 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                     icon: const Icon(Icons.arrow_back_ios, size: 18),
                     onPressed: () => Navigator.pop(context),
                   ),
-                  CircleAvatar(
-                    backgroundColor: theme.colorScheme.primary,
-                    child: const Icon(
-                      Icons.health_and_safety,
-                      color: Colors.white,
-                      size: 18,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
                   Text(
                     'Fine Aid Assistant',
                     style: theme.textTheme.titleMedium,

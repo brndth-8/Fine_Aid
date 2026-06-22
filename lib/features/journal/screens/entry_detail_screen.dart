@@ -6,7 +6,6 @@ import '../../../services/export_service.dart';
 import '../../../services/firebase/notification_service.dart';
 import '../../chatbot/screens/chatbot_screen.dart';
 
-// Standard healing durations by classification, in days. Used to determine
 const Map<String, int> _healingDurations = {
   'Injury (Wounds/laceration/Abrasion)': 10,
   'Burns': 7,
@@ -115,6 +114,86 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
     }
   }
 
+  Widget _buildHealingTimeline(ThemeData theme) {
+    final standard = _standardDuration();
+    final monitored = _monitoredDays() ?? 0;
+    if (standard == null) return const SizedBox.shrink();
+
+    final progress = (monitored / standard).clamp(0.0, 1.0);
+    final isComplete = monitored >= standard;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Healing Progress', style: theme.textTheme.titleSmall),
+              Text(
+                isComplete
+                    ? 'Milestone reached!'
+                    : 'Day $monitored of $standard',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: isComplete
+                      ? Colors.green[700]
+                      : theme.colorScheme.primary,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 12,
+              backgroundColor: theme.colorScheme.primary.withValues(
+                alpha: 0.15,
+              ),
+              valueColor: AlwaysStoppedAnimation<Color>(
+                isComplete ? Colors.green : theme.colorScheme.primary,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Day 0', style: theme.textTheme.bodySmall),
+              Text(
+                'Day $standard\n(Standard)',
+                style: theme.textTheme.bodySmall,
+                textAlign: TextAlign.right,
+              ),
+            ],
+          ),
+          if (isComplete) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green[700], size: 16),
+                const SizedBox(width: 6),
+                Text(
+                  'You\'ve reached the standard healing timeframe.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: Colors.green[700],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -204,6 +283,10 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
               Text(dateText, style: theme.textTheme.bodySmall),
               const SizedBox(height: 12),
               Text(description, style: theme.textTheme.bodyMedium),
+
+              const SizedBox(height: 16),
+              _buildHealingTimeline(theme),
+
               const SizedBox(height: 20),
               Row(
                 children: [
@@ -256,7 +339,6 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
                         textAlign: TextAlign.center,
                         style: theme.textTheme.bodyMedium,
                       ),
-
                       const SizedBox(height: 12),
                       OutlinedButton(
                         onPressed: () {
@@ -275,7 +357,6 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
                   ),
                 ),
               ],
-
               const SizedBox(height: 32),
               ElevatedButton(
                 onPressed: () {
@@ -292,7 +373,6 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
                 ),
                 child: const Text('Need More Help'),
               ),
-
               const SizedBox(height: 12),
               OutlinedButton(
                 onPressed: () {
@@ -307,7 +387,6 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
                 },
                 child: const Text('Export Log'),
               ),
-
               TextButton(
                 onPressed: () {
                   NotificationService().showTestMilestoneNotification(
@@ -315,7 +394,7 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
                     entryId: widget.entryId,
                   );
                 },
-                child: const Text('Send milestone notification'),
+                child: const Text('Send notification'),
               ),
             ],
           ),

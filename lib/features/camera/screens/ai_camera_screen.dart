@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'assessment_result_screen.dart';
+import 'multi_injury_screen.dart';
 
 class AiCameraScreen extends StatefulWidget {
   const AiCameraScreen({super.key});
@@ -14,6 +15,7 @@ class _AiCameraScreenState extends State<AiCameraScreen> {
   Future<void>? _initializeControllerFuture;
   bool _isCapturing = false;
   String? _errorMessage;
+  int _captureCount = 0;
 
   @override
   void initState() {
@@ -57,16 +59,29 @@ class _AiCameraScreenState extends State<AiCameraScreen> {
 
     try {
       final image = await _controller!.takePicture();
-
-      // Gemini wound assessment is not yet wired
+      _captureCount++;
 
       if (!mounted) return;
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => AssessmentResultScreen(imagePath: image.path),
-        ),
-      );
+
+      // Simulate multi-injury detection on every 2nd capture.
+      // Real version: check ML Kit's bounding box count here instead.
+      final multipleDetected = _captureCount % 2 == 0;
+
+      if (multipleDetected) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => MultiInjuryScreen(imagePath: image.path),
+          ),
+        );
+      } else {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => AssessmentResultScreen(imagePath: image.path),
+          ),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
