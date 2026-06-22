@@ -1,5 +1,7 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -65,6 +67,7 @@ class NotificationService {
 
   Future<void> showTestMilestoneNotification({
     required String classification,
+    String? entryId,
   }) async {
     const androidDetails = AndroidNotificationDetails(
       'fine_aid_reminders',
@@ -75,11 +78,42 @@ class NotificationService {
     );
     const details = NotificationDetails(android: androidDetails);
 
+    const title = 'Healing Milestone Reminder';
+    const body =
+        'You have reached your healing time frame. Are you feeling better?';
+
     await _localNotifications.show(
       id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
-      title: 'Healing Milestone Reminder',
-      body: 'You have reached your healing time frame. Are you feeling better?',
+      title: title,
+      body: body,
       notificationDetails: details,
     );
+
+    await _logNotification(title: title, body: body, entryId: entryId);
+  }
+
+  Future<void> _logNotification({
+    required String title,
+    required String body,
+    String? entryId,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('notifications')
+          .add({
+            'title': title,
+            'body': body,
+            'entryId': entryId,
+            'read': false,
+            'createdAt': FieldValue.serverTimestamp(),
+          })
+          .timeout(const Duration(seconds: 10));
+    } catch (_) {
+      // Non-critical notification still displayed even if logging fails.
+    }
   }
 }

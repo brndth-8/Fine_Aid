@@ -5,6 +5,7 @@ import '../../settings/screens/settings_screen.dart';
 import '../../journal/screens/journal_list_screen.dart';
 import '../../camera/screens/ai_camera_screen.dart';
 import '../../settings/screens/help_screen.dart';
+import 'notifications_screen.dart';
 
 class _TourStep {
   final GlobalKey targetKey;
@@ -217,7 +218,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
         IconButton(
           icon: const Icon(Icons.notifications_outlined),
-          onPressed: () {},
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const NotificationsScreen(),
+              ),
+            );
+          },
         ),
 
         IconButton(

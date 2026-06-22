@@ -164,7 +164,14 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.favorite, color: theme.colorScheme.primary, size: 56),
+          Center(
+            child: Image.asset(
+              'assets/images/FINE_AID_Logo.png',
+              width: 160,
+              height: 160,
+            ),
+          ),
+
           const SizedBox(height: 16),
           Text('Thank you!', style: theme.textTheme.headlineSmall),
           const SizedBox(height: 8),
