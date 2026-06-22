@@ -29,6 +29,14 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
     'Animal Bite/Scratch',
   ];
 
+  // ─── NEW: initState with guest warning ───────────────────────────────────
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkGuestWarning());
+  }
+  // ─────────────────────────────────────────────────────────────────────────
+
   @override
   void dispose() {
     _titleController.dispose();
@@ -36,7 +44,51 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
     super.dispose();
   }
 
+  // ─── NEW: Guest warning dialog ───────────────────────────────────────────
+  Future<bool> _checkGuestWarning() async {
+    final isGuest = FirebaseAuth.instance.currentUser == null;
+    if (!isGuest) return true; // not a guest, proceed normally
+
+    if (!mounted) return false;
+    final proceed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        content: const Text(
+          'You are currently in Guest Mode. Notes and images entered here '
+          'are temporary and will not be saved.\n\nPlease create a secure account.',
+          textAlign: TextAlign.center,
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Continue as Guest'),
+          ),
+          OutlinedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Sign up'),
+          ),
+        ],
+      ),
+    );
+
+    if (proceed == true && mounted) {
+      Navigator.pop(context);
+      Navigator.pushNamed(context, '/registration');
+      return false;
+    }
+
+    return true; // they chose "Continue as Guest"
+  }
+  // ─────────────────────────────────────────────────────────────────────────
+
   Future<void> _handleAddImage() async {
+    // ─── Guest check before image picker ─────────────────────────────────
+    final canProceed = await _checkGuestWarning();
+    if (!canProceed) return;
+    // ─────────────────────────────────────────────────────────────────────
+
     final consent = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -88,7 +140,7 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
 
-      //Image upload to furebase storage is delayed untl magupgrade ng blaze plan
+      //Image upload to firebase storage is delayed until magupgrade ng blaze plan
       await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)

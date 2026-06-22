@@ -6,6 +6,8 @@ import '../../journal/screens/journal_list_screen.dart';
 import '../../camera/screens/ai_camera_screen.dart';
 import '../../settings/screens/help_screen.dart';
 import 'notifications_screen.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../../settings/screens/guest_profile_gate_screen.dart';
 
 class _TourStep {
   final GlobalKey targetKey;
@@ -232,10 +234,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
           key: _profileKey,
           icon: const Icon(Icons.account_circle_outlined),
           onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const ProfileScreen()),
-            );
+            final isGuest = FirebaseAuth.instance.currentUser == null;
+            if (isGuest) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const GuestProfileGateScreen(),
+                ),
+              );
+            } else {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const ProfileScreen()),
+              );
+            }
           },
         ),
 
@@ -292,6 +304,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildWelcomeBanner(ThemeData theme) {
+    final isGuest = FirebaseAuth.instance.currentUser == null;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -303,15 +317,34 @@ class _DashboardScreenState extends State<DashboardScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Welcome!',
+            isGuest ? 'Welcome to Guest Mode' : 'Welcome!',
             style: theme.textTheme.titleLarge?.copyWith(color: Colors.white),
           ),
           const SizedBox(height: 8),
-          Text(
-            'Stay safe and ready with Fine Aid. Your guide for reliable '
-            'first aid and tracking your recovery.',
-            style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white),
-          ),
+          if (isGuest) ...[
+            Text(
+              'Register for full access to features with no limitation.',
+              style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white),
+            ),
+            const SizedBox(height: 8),
+            GestureDetector(
+              onTap: () => Navigator.pushNamed(context, '/registration'),
+              child: Text(
+                'Sign in and login your account. Register here',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: Colors.white,
+                  decoration: TextDecoration.underline,
+                  decorationColor: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ] else
+            Text(
+              'Stay safe and ready with Fine Aid. Your guide for reliable '
+              'first aid and tracking your recovery.',
+              style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white),
+            ),
         ],
       ),
     );
