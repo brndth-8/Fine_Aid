@@ -8,7 +8,7 @@ class _ChatMessage {
 }
 
 class ChatbotScreen extends StatefulWidget {
-  final String? initialContext; // e.g. "Burns" classification from journal
+  final String? initialContext;
 
   const ChatbotScreen({super.key, this.initialContext});
 
@@ -131,7 +131,6 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
           "infection are the best ways to support healing.";
     }
 
-    // Politely redirect anything that isn't first-aid related.
     final offTopicKeywords = [
       'weather',
       'movie',

@@ -63,8 +63,6 @@ class _AiCameraScreenState extends State<AiCameraScreen> {
 
       if (!mounted) return;
 
-      // Simulate multi-injury detection on every 2nd capture.
-      // Real version: check ML Kit's bounding box count here instead.
       final multipleDetected = _captureCount % 2 == 0;
 
       if (multipleDetected) {

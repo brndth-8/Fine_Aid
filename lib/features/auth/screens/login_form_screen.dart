@@ -76,7 +76,6 @@ class _LoginFormScreenState extends State<LoginFormScreen> {
               children: [
                 const SizedBox(height: 40),
 
-                //Logo
                 Center(
                   child: Image.asset(
                     'assets/images/FINE_AID_Logo.png',

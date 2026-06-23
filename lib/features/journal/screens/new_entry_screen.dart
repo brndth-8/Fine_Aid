@@ -29,13 +29,11 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
     'Animal Bite/Scratch',
   ];
 
-  // ─── NEW: initState with guest warning ───────────────────────────────────
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkGuestWarning());
   }
-  // ─────────────────────────────────────────────────────────────────────────
 
   @override
   void dispose() {
@@ -44,7 +42,6 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
     super.dispose();
   }
 
-  // ─── NEW: Guest warning dialog ───────────────────────────────────────────
   Future<bool> _checkGuestWarning() async {
     final isGuest = FirebaseAuth.instance.currentUser == null;
     if (!isGuest) return true; // not a guest, proceed normally
@@ -79,15 +76,13 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
       return false;
     }
 
-    return true; // they chose "Continue as Guest"
+    return true;
   }
-  // ─────────────────────────────────────────────────────────────────────────
 
   Future<void> _handleAddImage() async {
-    // ─── Guest check before image picker ─────────────────────────────────
     final canProceed = await _checkGuestWarning();
     if (!canProceed) return;
-    // ─────────────────────────────────────────────────────────────────────
+    if (!mounted) return;
 
     final consent = await showDialog<bool>(
       context: context,

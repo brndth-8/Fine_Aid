@@ -13,10 +13,8 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
 
   Future<void> initialize() async {
-    // Request permission (iOS requires this explicitly; Android 13+ too).
     await _messaging.requestPermission(alert: true, badge: true, sound: true);
 
-    // Set up local notification display for foreground messages.
     const androidSettings = AndroidInitializationSettings(
       '@mipmap/ic_launcher',
     );
@@ -36,7 +34,6 @@ class NotificationService {
         >();
     await androidImplementation?.createNotificationChannel(channel);
 
-    // Show a local notification whenever a message arrives
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       _showLocalNotification(message);
     });
@@ -112,8 +109,6 @@ class NotificationService {
             'createdAt': FieldValue.serverTimestamp(),
           })
           .timeout(const Duration(seconds: 10));
-    } catch (_) {
-      // Non-critical notification still displayed even if logging fails.
-    }
+    } catch (_) {}
   }
 }

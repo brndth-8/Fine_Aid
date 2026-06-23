@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import '../../../services/firebase/auth_service.dart';
+import '../../../services/connectivity_service.dart';
 import '../../settings/screens/profile_screen.dart';
 import '../../settings/screens/settings_screen.dart';
 import '../../journal/screens/journal_list_screen.dart';
 import '../../camera/screens/ai_camera_screen.dart';
 import '../../settings/screens/help_screen.dart';
 import 'notifications_screen.dart';
+import '../first_aid_kit_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../settings/screens/guest_profile_gate_screen.dart';
 
@@ -34,6 +36,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   late List<_TourStep> _tourSteps;
   int _tourStepIndex = -1; // -1 means tour is not active
+  bool _isOnline = true;
 
   final List<String> _bookTitles = const [
     'American Red Cross First Aid & Safety Handbook',
@@ -66,6 +69,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
             'Quick access to your Health Journal, AI Camera, and Help & Support.',
       ),
     ];
+
+    ConnectivityService().isOnline.then((online) {
+      if (mounted) setState(() => _isOnline = online);
+    });
+
+    ConnectivityService().onlineStream.listen((online) {
+      if (mounted) setState(() => _isOnline = online);
+    });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final args = ModalRoute.of(context)?.settings.arguments;
@@ -306,6 +317,39 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildWelcomeBanner(ThemeData theme) {
     final isGuest = FirebaseAuth.instance.currentUser == null;
 
+    if (!_isOnline) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.primary,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.wifi_off, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'You\'re currently offline',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Continue tracking and viewing guides without internet.',
+              style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -418,6 +462,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildCalendarPlaceholder(ThemeData theme) {
     final now = DateTime.now();
+    final daysInMonth = DateUtils.getDaysInMonth(now.year, now.month);
+    final firstWeekday = DateTime(now.year, now.month, 1).weekday % 7;
+
     return Container(
       key: _calendarKey,
       width: double.infinity,
@@ -436,9 +483,59 @@ class _DashboardScreenState extends State<DashboardScreen> {
             style: theme.textTheme.titleMedium,
           ),
           const SizedBox(height: 8),
-          Text(
-            'Healing tracker calendar coming soon',
-            style: theme.textTheme.bodySmall,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
+                .map(
+                  (d) => SizedBox(
+                    width: 32,
+                    child: Text(
+                      d,
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+          const SizedBox(height: 4),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 7,
+              childAspectRatio: 1,
+            ),
+            itemCount: firstWeekday + daysInMonth,
+            itemBuilder: (context, index) {
+              if (index < firstWeekday) return const SizedBox();
+              final day = index - firstWeekday + 1;
+              final isToday = day == now.day;
+              return Center(
+                child: Container(
+                  width: 28,
+                  height: 28,
+                  decoration: isToday
+                      ? BoxDecoration(
+                          color: theme.colorScheme.primary,
+                          shape: BoxShape.circle,
+                        )
+                      : null,
+                  child: Center(
+                    child: Text(
+                      '$day',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: isToday ? Colors.white : null,
+                        fontWeight: isToday ? FontWeight.bold : null,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
           ),
         ],
       ),
@@ -464,53 +561,131 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildActionTiles(ThemeData theme) {
-    return Row(
-      key: _actionTilesKey,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Expanded(
-          child: _actionTile(
-            theme,
-            Icons.menu_book_outlined,
-            'Health\nJournal',
+        if (!_isOnline) ...[
+          GestureDetector(
             onTap: () {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => const JournalListScreen(),
+                  builder: (context) => const FirstAidKitScreen(),
                 ),
               );
             },
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: theme.colorScheme.primary),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.medical_services_outlined,
+                    color: theme.colorScheme.primary,
+                    size: 32,
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'First Aid Health Kit',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            color: theme.colorScheme.primary,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          'First Aid Basic Guide — Free Access',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(Icons.chevron_right, color: theme.colorScheme.primary),
+                ],
+              ),
+            ),
           ),
-        ),
-
-        const SizedBox(width: 12),
-        Expanded(
-          child: _actionTile(
-            theme,
-            Icons.center_focus_strong_outlined,
-            'AI Vision\nCamera',
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const AiCameraScreen()),
-              );
-            },
-          ),
-        ),
-
-        const SizedBox(width: 12),
-        Expanded(
-          child: _actionTile(
-            theme,
-            Icons.support_agent_outlined,
-            'Help &\nSupport',
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const HelpScreen()),
-              );
-            },
-          ),
+        ],
+        Row(
+          key: _actionTilesKey,
+          children: [
+            Expanded(
+              child: _actionTile(
+                theme,
+                Icons.menu_book_outlined,
+                'Health\nJournal',
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const JournalListScreen(),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _actionTile(
+                theme,
+                Icons.center_focus_strong_outlined,
+                'AI Vision\nCamera',
+                onTap: () {
+                  if (!_isOnline) {
+                    showDialog(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        title: const Text('You\'re Currently Offline'),
+                        content: const Text(
+                          'AI Camera is disabled. Check your connection or use First Aid Health Kit.',
+                        ),
+                        actions: [
+                          ElevatedButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('Go Back'),
+                          ),
+                        ],
+                      ),
+                    );
+                  } else {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const AiCameraScreen(),
+                      ),
+                    );
+                  }
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _actionTile(
+                theme,
+                Icons.support_agent_outlined,
+                'Help &\nSupport',
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const HelpScreen()),
+                  );
+                },
+              ),
+            ),
+          ],
         ),
       ],
     );

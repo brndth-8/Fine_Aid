@@ -6,8 +6,6 @@ import 'package:share_plus/share_plus.dart';
 import 'package:intl/intl.dart';
 
 class ExportService {
-  // Generates a PDF summary of a single journal entry and opens the
-  // native share sheet so the user can save or send it
   Future<void> exportEntryAsPdf({
     required String title,
     required String description,

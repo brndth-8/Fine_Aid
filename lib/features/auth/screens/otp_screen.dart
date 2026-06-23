@@ -56,8 +56,7 @@ class _OtpScreenState extends State<OtpScreen> {
   }
 
   Future<void> _handleSubmit() async {
-    // Real SMS OTP verification requires Firebase Phone Auth, which
-    // needs the Blaze plan.
+    // Real SMS OTP verification requires Firebase Blaze plan
 
     setState(() => _isLoading = true);
     await Future.delayed(const Duration(milliseconds: 400));
@@ -85,6 +84,7 @@ class _OtpScreenState extends State<OtpScreen> {
           child: Column(
             children: [
               const SizedBox(height: 24),
+
               Center(
                 child: Image.asset(
                   'assets/images/FINE_AID_Logo.png',

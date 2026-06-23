@@ -92,9 +92,26 @@ class AuthService {
   }
 
   Future<bool> hasCompletedOnboarding(String uid) async {
-    final doc = await _firestore.collection('users').doc(uid).get();
-    if (!doc.exists) return false;
-    return doc.data()?['onboardingComplete'] == true;
+    try {
+      final doc = await _firestore
+          .collection('users')
+          .doc(uid)
+          .get(const GetOptions(source: Source.cache));
+      if (doc.exists) {
+        return doc.data()?['onboardingComplete'] == true;
+      }
+    } catch (_) {}
+
+    try {
+      final doc = await _firestore
+          .collection('users')
+          .doc(uid)
+          .get()
+          .timeout(const Duration(seconds: 5));
+      return doc.data()?['onboardingComplete'] == true;
+    } catch (_) {
+      return true;
+    }
   }
 
   Future<void> markOnboardingComplete(String uid) async {

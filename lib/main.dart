@@ -78,7 +78,9 @@ class AuthGate extends StatelessWidget {
               );
             }
 
-            final completed = onboardingSnapshot.data ?? false;
+            // Default to true if check failed (e.g. offline with no cache)
+            // so existing logged-in users always reach the Dashboard.
+            final completed = onboardingSnapshot.data ?? true;
             if (completed) {
               return const DashboardScreen();
             }

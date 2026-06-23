@@ -8,7 +8,6 @@ class LoginScreen extends StatelessWidget {
     return Scaffold(
       body: Stack(
         children: [
-          //Background
           Positioned.fill(
             child: Image.asset(
               'assets/images/FINE_AID_Background.png',
@@ -16,7 +15,6 @@ class LoginScreen extends StatelessWidget {
             ),
           ),
 
-          //Buttons
           SafeArea(
             child: Align(
               alignment: Alignment.bottomCenter,
@@ -28,7 +26,6 @@ class LoginScreen extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    //Log In
                     SizedBox(
                       width: 220,
                       child: ElevatedButton(
@@ -95,7 +92,6 @@ class LoginScreen extends StatelessWidget {
 
                     const SizedBox(height: 16),
 
-                    //Continue as Guest
                     SizedBox(
                       width: 220,
                       child: OutlinedButton(
