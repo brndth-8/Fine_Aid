@@ -1,9 +1,26 @@
+import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  Future<bool> isAdmin(String uid) async {
+    try {
+      debugPrint('Checking admin for uid: $uid');
+      final doc = await _firestore
+          .collection('admins')
+          .doc(uid)
+          .get()
+          .timeout(const Duration(seconds: 5));
+      debugPrint('Admin doc exists: ${doc.exists}');
+      return doc.exists;
+    } catch (e) {
+      debugPrint('isAdmin error: $e');
+      return false;
+    }
+  }
 
   Future<bool> isUsernameTaken(String username) async {
     final query = await _firestore

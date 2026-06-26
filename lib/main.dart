@@ -15,11 +15,15 @@ import 'features/auth/screens/forgot_password_screen.dart';
 import 'services/firebase/auth_service.dart';
 import 'features/auth/screens/login_form_screen.dart';
 import 'services/firebase/notification_service.dart';
+import 'features/admin/screens/admin_dashboard_screen.dart';
+import 'features/admin/screens/admin_login_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  await NotificationService().initialize();
+
+  NotificationService().initialize();
+
   runApp(const MyApp());
 }
 
@@ -29,6 +33,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      debugShowCheckedModeBanner: false,
       title: 'Fine Aid',
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
@@ -45,13 +50,30 @@ class MyApp extends StatelessWidget {
         '/permission': (context) => const PermissionScreen(),
         '/health-checklist': (context) => const HealthChecklistScreen(),
         '/dashboard': (context) => const DashboardScreen(),
+        '/admin-login': (context) => const AdminLoginScreen(),
       },
     );
   }
 }
 
-class AuthGate extends StatelessWidget {
+class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
+
+  @override
+  State<AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<AuthGate> {
+  Future<Map<String, bool>>? _statusFuture;
+  String? _lastUid;
+
+  Future<Map<String, bool>> _checkUserStatus(String uid) async {
+    final results = await Future.wait([
+      AuthService().isAdmin(uid),
+      AuthService().hasCompletedOnboarding(uid),
+    ]);
+    return {'isAdmin': results[0], 'onboardingComplete': results[1]};
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -59,35 +81,56 @@ class AuthGate extends StatelessWidget {
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
+          return const _SplashScreen();
         }
 
         final user = snapshot.data;
+
         if (user == null) {
           return const LoginScreen();
         }
 
-        return FutureBuilder<bool>(
-          future: AuthService().hasCompletedOnboarding(user.uid),
-          builder: (context, onboardingSnapshot) {
-            if (onboardingSnapshot.connectionState == ConnectionState.waiting) {
-              return const Scaffold(
-                body: Center(child: CircularProgressIndicator()),
-              );
+        if (_lastUid != user.uid) {
+          _lastUid = user.uid;
+          _statusFuture = _checkUserStatus(user.uid);
+        }
+
+        return FutureBuilder<Map<String, bool>>(
+          future: _statusFuture,
+          builder: (context, statusSnapshot) {
+            if (statusSnapshot.connectionState == ConnectionState.waiting) {
+              return const _SplashScreen();
+            }
+            if (statusSnapshot.hasError) {
+              debugPrint('AuthGate error: ${statusSnapshot.error}');
+              return const LoginScreen();
             }
 
-            // Default to true if check failed (e.g. offline with no cache)
-            // so existing logged-in users always reach the Dashboard.
-            final completed = onboardingSnapshot.data ?? true;
-            if (completed) {
-              return const DashboardScreen();
-            }
+            final status = statusSnapshot.data;
+            final isAdmin = status?['isAdmin'] ?? false;
+            final onboardingComplete = status?['onboardingComplete'] ?? true;
+
+            debugPrint(
+              'AuthGate — uid: ${user.uid}, '
+              'isAdmin: $isAdmin, '
+              'onboardingComplete: $onboardingComplete',
+            );
+
+            if (isAdmin) return const AdminDashboardScreen();
+            if (onboardingComplete) return const DashboardScreen();
             return const OtpScreen();
           },
         );
       },
     );
+  }
+}
+
+class _SplashScreen extends StatelessWidget {
+  const _SplashScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(body: Center(child: CircularProgressIndicator()));
   }
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../admin/screens/admin_login_screen.dart';
 
 class LoginScreen extends StatelessWidget {
   const LoginScreen({super.key});
@@ -21,7 +22,7 @@ class LoginScreen extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 24,
-                  vertical: 140,
+                  vertical: 190,
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -50,7 +51,6 @@ class LoginScreen extends StatelessWidget {
 
                     const SizedBox(height: 12),
 
-                    //Create Account
                     SizedBox(
                       width: 220,
                       child: OutlinedButton(
@@ -75,7 +75,6 @@ class LoginScreen extends StatelessWidget {
 
                     const SizedBox(height: 16),
 
-                    //divider
                     const Row(
                       children: [
                         Expanded(child: Divider(color: Colors.grey)),
@@ -110,6 +109,28 @@ class LoginScreen extends StatelessWidget {
                         child: const Text(
                           'Continue as Guest',
                           style: TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const AdminLoginScreen(),
+                          ),
+                        );
+                      },
+                      child: const Text(
+                        'Admin Portal',
+                        style: TextStyle(
+                          color: Colors.black,
+                          fontSize: 11,
+                          decoration: TextDecoration.underline,
+                          decorationColor: Colors.black,
                         ),
                       ),
                     ),
