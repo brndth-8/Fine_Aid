@@ -19,6 +19,8 @@ android {
     }
 
     defaultConfig {
+        minSdk = flutter.minSdkVersion
+        
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.example.fine_aid"
         // You can update the following values to match your application needs.

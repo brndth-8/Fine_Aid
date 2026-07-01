@@ -10,6 +10,19 @@ import 'notifications_screen.dart';
 import '../first_aid_kit_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../settings/screens/guest_profile_gate_screen.dart';
+import 'textbook_viewer_screen.dart';
+
+class _BookItem {
+  final String title;
+  final String imagePath;
+  final String pdfPath;
+
+  const _BookItem({
+    required this.title,
+    required this.imagePath,
+    required this.pdfPath,
+  });
+}
 
 class _TourStep {
   final GlobalKey targetKey;
@@ -26,7 +39,7 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  final PageController _bookController = PageController();
+  final PageController _bookController = PageController(viewportFraction: 0.55);
   int _currentBookPage = 0;
 
   final GlobalKey _profileKey = GlobalKey();
@@ -35,20 +48,43 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final GlobalKey _actionTilesKey = GlobalKey();
 
   late List<_TourStep> _tourSteps;
-  int _tourStepIndex = -1; // -1 means tour is not active
+  int _tourStepIndex = -1; // -1 = tour not active
   bool _isOnline = true;
 
-  final List<String> _bookTitles = const [
-    'American Red Cross First Aid & Safety Handbook',
-    'First Aid & CPR',
-    'American Red Cross Textbook on Home Hygiene and Care of the Sick',
-    'Wilderness First Aid',
-    'Pediatric First Aid Guide',
+  final List<_BookItem> _books = const [
+    _BookItem(
+      title: 'First Aid Hand book Manual',
+      imagePath: 'assets/images/books/first_aid_hand_book_manual_b1.jpg',
+      pdfPath: 'assets/pdfs/FA-CPR-AED-Part-Manual.pdf',
+    ),
+    _BookItem(
+      title: 'First Aid and CPR Manual',
+      imagePath: 'assets/images/books/first_aid_and_cpr_manual_b2.jpg',
+      pdfPath: 'assets/pdfs/First-Aid-and-CPR-2017_digital.pdf',
+    ),
+    _BookItem(
+      title: 'Philippine Red Cross First Aid Support',
+      imagePath:
+          'assets/images/books/philippine_red_cross_first_aid_support_b3.jpg',
+      pdfPath: 'assets/pdfs/706089640-Philippine-Red-Cross-BLS-CPR-1.pdf',
+    ),
+    _BookItem(
+      title: 'First Aid Pocket Guide',
+      imagePath: 'assets/images/books/first_aid_pocket_guide_b4.jpg',
+      pdfPath:
+          'assets/pdfs/207508700-Philippine-Red-Cross-Learn-First-Aid-pdf.pdf',
+    ),
+    _BookItem(
+      title: 'First Aid Guide',
+      imagePath: 'assets/images/books/book_5.jpg',
+      pdfPath: 'assets/pdfs/book_5.pdf',
+    ),
   ];
 
   @override
   void initState() {
     super.initState();
+
     _tourSteps = [
       _TourStep(
         targetKey: _profileKey,
@@ -102,13 +138,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
   }
 
-  void _skipTour() {
-    setState(() => _tourStepIndex = -1);
-  }
-
-  void _replayTour() {
-    setState(() => _tourStepIndex = 0);
-  }
+  void _skipTour() => setState(() => _tourStepIndex = -1);
+  void _replayTour() => setState(() => _tourStepIndex = 0);
 
   @override
   Widget build(BuildContext context) {
@@ -231,14 +262,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
         IconButton(
           icon: const Icon(Icons.notifications_outlined),
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const NotificationsScreen(),
-              ),
-            );
-          },
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const NotificationsScreen(),
+            ),
+          ),
         ),
 
         IconButton(
@@ -285,7 +314,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 _replayTour();
               },
             ),
-
             ListTile(
               leading: const Icon(Icons.settings_outlined),
               title: const Text('Settings'),
@@ -299,7 +327,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 );
               },
             ),
-
             ListTile(
               leading: const Icon(Icons.logout),
               title: const Text('Log out'),
@@ -405,31 +432,40 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: Column(
         children: [
           SizedBox(
-            height: 160,
+            height: 200,
             child: PageView.builder(
               controller: _bookController,
-              itemCount: _bookTitles.length,
+              itemCount: _books.length,
               onPageChanged: (i) => setState(() => _currentBookPage = i),
               itemBuilder: (context, index) {
+                final book = _books[index];
                 return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.1),
-                          blurRadius: 4,
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: GestureDetector(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => TextbookViewerScreen(
+                          title: book.title,
+                          assetPdfPath: book.pdfPath,
                         ),
-                      ],
+                      ),
                     ),
-                    padding: const EdgeInsets.all(12),
-                    child: Center(
-                      child: Text(
-                        _bookTitles[index],
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.bodySmall,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.asset(
+                        book.imagePath,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => Container(
+                          color: theme.colorScheme.primary.withValues(
+                            alpha: 0.08,
+                          ),
+                          child: Icon(
+                            Icons.menu_book_outlined,
+                            size: 48,
+                            color: theme.colorScheme.primary,
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -437,10 +473,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
               },
             ),
           ),
-          const SizedBox(height: 8),
+
+          const SizedBox(height: 10),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(_bookTitles.length, (index) {
+            children: List.generate(_books.length, (index) {
               final isActive = index == _currentBookPage;
               return Container(
                 margin: const EdgeInsets.symmetric(horizontal: 3),
@@ -564,16 +601,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // First Aid Kit tile — shown only when offline
         if (!_isOnline) ...[
           GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const FirstAidKitScreen(),
-                ),
-              );
-            },
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const FirstAidKitScreen(),
+              ),
+            ),
             child: Container(
               padding: const EdgeInsets.all(20),
               margin: const EdgeInsets.only(bottom: 12),
@@ -616,6 +652,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
         ],
+
         Row(
           key: _actionTilesKey,
           children: [
@@ -624,14 +661,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 theme,
                 Icons.menu_book_outlined,
                 'Health\nJournal',
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const JournalListScreen(),
-                    ),
-                  );
-                },
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const JournalListScreen(),
+                  ),
+                ),
               ),
             ),
             const SizedBox(width: 12),
@@ -650,7 +685,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
                         title: const Text('You\'re Currently Offline'),
                         content: const Text(
-                          'AI Camera is disabled. Check your connection or use First Aid Health Kit.',
+                          'AI Camera is disabled. Check your connection or '
+                          'use First Aid Health Kit.',
                         ),
                         actions: [
                           ElevatedButton(
@@ -677,12 +713,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 theme,
                 Icons.support_agent_outlined,
                 'Help &\nSupport',
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const HelpScreen()),
-                  );
-                },
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const HelpScreen()),
+                ),
               ),
             ),
           ],

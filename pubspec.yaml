@@ -50,6 +50,9 @@ dependencies:
   path_provider: ^2.1.6
   share_plus: ^13.1.0
   connectivity_plus: ^7.1.1
+  syncfusion_flutter_pdfviewer: 33.2.15
+  carousel_slider: ^5.0.0
+
 
 dev_dependencies:
   flutter_test:
@@ -80,7 +83,8 @@ flutter:
     - assets/images/help_privacy.png
     - assets/images/help_journal.png
     - assets/images/help_references.png
-
+    - assets/images/books/
+    - assets/pdfs/ 
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg
