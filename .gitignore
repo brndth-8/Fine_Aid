@@ -1,0 +1,9 @@
+﻿build/
+.dart_tool/
+.flutter-plugin-dependencies
+*.iml
+
+android/app/google-services.json
+android/app/release.keystore
+
+lib/core/constants/api_keys.dart
