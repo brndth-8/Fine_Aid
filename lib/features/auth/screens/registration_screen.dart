@@ -12,24 +12,21 @@ class RegistrationScreen extends StatefulWidget {
 class _RegistrationScreenState extends State<RegistrationScreen> {
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
-  final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
-  final _phoneController = TextEditingController();
   final _authService = AuthService();
 
   bool _isLoading = false;
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
-  String _verificationMethod = 'email';
 
   @override
   void dispose() {
     _usernameController.dispose();
-    _emailController.dispose();
+    _phoneController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
-    _phoneController.dispose();
     super.dispose();
   }
 
@@ -46,13 +43,13 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     return null;
   }
 
-  String? _validateEmail(String? value) {
+  String? _validatePhone(String? value) {
     if (value == null || value.trim().isEmpty) {
-      return 'Email is required for account recovery';
+      return 'Phone number is required';
     }
-    final emailRegex = RegExp(r'^[\w.+-]+@[\w-]+\.[\w.-]+$');
-    if (!emailRegex.hasMatch(value.trim())) {
-      return 'Enter a valid email address';
+    final phoneRegex = RegExp(r'^9\d{9}$');
+    if (!phoneRegex.hasMatch(value.trim())) {
+      return 'Enter a valid 10-digit number (e.g. 9123456789)';
     }
     return null;
   }
@@ -80,36 +77,20 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     return null;
   }
 
-  String? _validatePhone(String? value) {
-    if (_verificationMethod != 'phone') return null;
-    if (value == null || value.trim().isEmpty) {
-      return 'Phone number is required';
-    }
-    final phoneRegex = RegExp(r'^9\d{9}$');
-    if (!phoneRegex.hasMatch(value.trim())) {
-      return 'Enter a valid 10-digit number (e.g. 9123456789)';
-    }
-    return null;
-  }
-
   Future<void> _handleSignUp() async {
     if (!_formKey.currentState!.validate()) return;
-
     setState(() => _isLoading = true);
 
     try {
       await _authService.registerWithUsername(
         username: _usernameController.text.trim(),
         password: _passwordController.text,
-        email: _emailController.text.trim(),
-        verificationMethod: _verificationMethod,
-        phoneNumber: _verificationMethod == 'phone'
-            ? '+63${_phoneController.text.trim()}'
-            : null,
+        phoneNumber: '+63${_phoneController.text.trim()}',
       );
 
       if (!mounted) return;
 
+      // Show OTP notice
       await showDialog(
         context: context,
         barrierDismissible: false,
@@ -117,29 +98,16 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
           ),
-          title: Text(
-            _verificationMethod == 'phone'
-                ? 'Verify your phone number'
-                : 'Verify your email',
-          ),
+          title: const Text('Verify your phone number'),
           content: Text(
-            _verificationMethod == 'phone'
-                ? 'You will receive an SMS with a verification '
-                      'code on your next screen.\n\n'
-                      'Please have your phone ready.'
-                : 'A verification link has been sent to:\n'
-                      '${_emailController.text.trim()}\n\n'
-                      'Please check your inbox and click the link '
-                      'to verify your email before continuing.',
+            'A verification code will be sent to:\n'
+            '+63${_phoneController.text.trim()}\n\n'
+            'Please have your phone ready.',
           ),
           actions: [
             ElevatedButton(
               onPressed: () => Navigator.pop(context),
-              child: Text(
-                _verificationMethod == 'phone'
-                    ? 'OK, proceed'
-                    : 'OK, I\'ll check my email',
-              ),
+              child: const Text('OK, proceed'),
             ),
           ],
         ),
@@ -152,7 +120,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       if (e.code == 'username-already-in-use') {
         message = 'This username is already taken.';
       } else if (e.code == 'email-already-in-use') {
-        message = 'This email is already registered.';
+        message = 'This username is already registered.';
       } else if (e.code == 'weak-password') {
         message = 'Password is too weak.';
       }
@@ -195,6 +163,14 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                 ),
                 const SizedBox(height: 16),
                 Text('Create Account', style: theme.textTheme.headlineSmall),
+                const SizedBox(height: 8),
+                Text(
+                  'Join Fine Aid to track your recovery '
+                  'and get first aid guidance.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: Colors.grey,
+                  ),
+                ),
                 const SizedBox(height: 24),
 
                 // Username
@@ -204,68 +180,32 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                   controller: _usernameController,
                   decoration: const InputDecoration(
                     hintText: 'Enter a username',
+                    prefixIcon: Icon(Icons.person_outline),
                   ),
                   validator: _validateUsername,
                 ),
                 const SizedBox(height: 16),
-                // Email
-                Text('Email', style: theme.textTheme.titleSmall),
 
+                // Phone number
+                Text('Phone Number', style: theme.textTheme.titleSmall),
+                const SizedBox(height: 4),
+                Text(
+                  'Used for OTP verification',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: Colors.grey,
+                  ),
+                ),
                 const SizedBox(height: 6),
                 TextFormField(
-                  controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
+                  controller: _phoneController,
+                  keyboardType: TextInputType.phone,
                   decoration: const InputDecoration(
-                    hintText: 'Enter your email',
+                    prefixText: '+63 ',
+                    hintText: '9123456789',
+                    prefixIcon: Icon(Icons.phone_outlined),
                   ),
-                  validator: _validateEmail,
+                  validator: _validatePhone,
                 ),
-                const SizedBox(height: 16),
-
-                // Verification method
-                Text(
-                  'How should we verify your account?',
-                  style: theme.textTheme.titleSmall,
-                ),
-                const SizedBox(height: 8),
-                SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment(
-                      value: 'email',
-                      label: Text('Email'),
-                      icon: Icon(Icons.email_outlined),
-                    ),
-                    ButtonSegment(
-                      value: 'phone',
-                      label: Text('OTP'),
-                      icon: Icon(Icons.sms_outlined),
-                    ),
-                  ],
-                  selected: {_verificationMethod},
-                  onSelectionChanged: (newSelection) {
-                    setState(() => _verificationMethod = newSelection.first);
-                  },
-                  style: SegmentedButton.styleFrom(
-                    selectedBackgroundColor: theme.colorScheme.primary,
-                    selectedForegroundColor: Colors.white,
-                  ),
-                ),
-
-                if (_verificationMethod == 'phone') ...[
-                  const SizedBox(height: 16),
-                  Text('Phone Number', style: theme.textTheme.titleSmall),
-
-                  const SizedBox(height: 6),
-                  TextFormField(
-                    controller: _phoneController,
-                    keyboardType: TextInputType.phone,
-                    decoration: const InputDecoration(
-                      prefixText: '+63 ',
-                      hintText: '9123456789',
-                    ),
-                    validator: _validatePhone,
-                  ),
-                ],
                 const SizedBox(height: 16),
 
                 // Password
@@ -276,6 +216,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                   obscureText: _obscurePassword,
                   decoration: InputDecoration(
                     hintText: 'Create password',
+                    prefixIcon: const Icon(Icons.lock_outline),
                     suffixIcon: IconButton(
                       icon: Icon(
                         _obscurePassword
@@ -297,7 +238,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                   controller: _confirmPasswordController,
                   obscureText: _obscureConfirm,
                   decoration: InputDecoration(
-                    hintText: 'Repeat Password',
+                    hintText: 'Repeat password',
+                    prefixIcon: const Icon(Icons.lock_outline),
                     suffixIcon: IconButton(
                       icon: Icon(
                         _obscureConfirm
@@ -331,10 +273,31 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                 ),
                 const SizedBox(height: 12),
 
-                // Cancel button
+                // Cancel
                 OutlinedButton(
                   onPressed: _isLoading ? null : () => Navigator.pop(context),
                   child: const Text('Cancel'),
+                ),
+                const SizedBox(height: 16),
+
+                // Login link
+                Center(
+                  child: TextButton(
+                    onPressed: () =>
+                        Navigator.pushNamed(context, '/login-form'),
+                    child: RichText(
+                      text: TextSpan(
+                        style: theme.textTheme.bodyMedium,
+                        children: const [
+                          TextSpan(text: 'Already have an account? '),
+                          TextSpan(
+                            text: 'Login here',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ],
             ),

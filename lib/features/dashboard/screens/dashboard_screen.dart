@@ -46,14 +46,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   final List<_BookItem> _books = const [
     _BookItem(
-      title: 'First Aid Hand book Manual',
-      imagePath: 'assets/images/books/first_aid_handbook_manual.jpg',
-      pdfPath: 'assets/pdfs/First Aid Hand book Manual.pdf',
+      title: 'First Aid Reference Guide',
+      imagePath: 'assets/images/books/9db08e09-34bd-4553-b1ba-d1ae592627d4.jpg',
+      pdfPath: 'assets/pdfs/SJA-First-Aid-Reference-Guide-English.pdf',
     ),
     _BookItem(
-      title: 'First Aid and CPR Manual',
-      imagePath: 'assets/images/books/first_aid_and_CPR_manual.jpg',
-      pdfPath: 'assets/pdfs/First Aid and CPR Manual.pdf',
+      title:
+          'IFRC International First Aid, Resuscitation and Education Guidelines 2025',
+      imagePath:
+          'assets/images/books/6a929f4b-fb12-4ae3-be63-5af42a559d39 (1).jpg',
+      pdfPath: 'assets/pdfs/E-AG-5.5-First-Aid-Vision-2030.pdf',
     ),
     _BookItem(
       title: 'Philippine Red Cross First Aid Support',
@@ -67,9 +69,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       pdfPath: 'assets/pdfs/First Aid Pocket Guide.pdf',
     ),
     _BookItem(
-      title: 'First Aid Guide',
-      imagePath: 'assets/images/books/book_5.jpg',
-      pdfPath: 'assets/pdfs/book_5.pdf',
+      title: 'First Aid and CPR Manual',
+      imagePath: 'assets/images/books/first_aid_and_CPR_manual.jpg',
+      pdfPath: 'assets/pdfs/FA-CPR-AED-Part-Manual (1).pdf',
     ),
   ];
 
@@ -697,18 +699,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   icon: Icons.menu_book_outlined,
                   label: 'Health\nJournal',
                   onTap: () {
-                    final user = FirebaseAuth.instance.currentUser;
-                    if (user != null && !user.emailVerified) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Please verify your email '
-                            'to access Health Journal.',
-                          ),
-                        ),
-                      );
-                      return;
-                    }
                     Navigator.push(
                       context,
                       MaterialPageRoute(
@@ -746,18 +736,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       );
                       return;
                     }
-                    final user = FirebaseAuth.instance.currentUser;
-                    if (user != null && !user.emailVerified) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Please verify your email '
-                            'to use AI Camera.',
-                          ),
-                        ),
-                      );
-                      return;
-                    }
+
                     Navigator.push(
                       context,
                       MaterialPageRoute(

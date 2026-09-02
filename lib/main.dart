@@ -16,7 +16,6 @@ import 'services/firebase/auth_service.dart';
 import 'features/auth/screens/login_form_screen.dart';
 import 'services/firebase/notification_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'features/auth/screens/verify_email_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -68,24 +67,20 @@ class _AuthGateState extends State<AuthGate> {
     final onboardingComplete = await AuthService().hasCompletedOnboarding(uid);
 
     bool phoneVerified = true;
-    bool isPhoneMethod = false;
 
     try {
       final doc = await FirebaseFirestore.instance
           .collection('users')
           .doc(uid)
           .get();
-      final method = doc.data()?['verificationMethod'] as String? ?? 'email';
-      isPhoneMethod = method == 'phone';
-      if (isPhoneMethod) {
-        phoneVerified = doc.data()?['phoneVerified'] == true;
-      }
-    } catch (_) {}
+      phoneVerified = doc.data()?['phoneVerified'] == true;
+    } catch (_) {
+      phoneVerified = true; // assume verified if check fails
+    }
 
     return {
       'onboardingComplete': onboardingComplete,
       'phoneVerified': phoneVerified,
-      'isPhoneMethod': isPhoneMethod,
     };
   }
 
@@ -119,18 +114,8 @@ class _AuthGateState extends State<AuthGate> {
             final status = statusSnapshot.data;
             final onboardingComplete = status?['onboardingComplete'] ?? true;
             final phoneVerified = status?['phoneVerified'] ?? true;
-            final isPhoneMethod = status?['isPhoneMethod'] ?? false;
 
-            // Phone method: check phone verification
-            if (isPhoneMethod) {
-              if (!phoneVerified) return const OtpScreen();
-            } else {
-              // Email method: check email verification
-              if (!user.emailVerified) {
-                return const VerifyEmailScreen();
-              }
-            }
-
+            if (!phoneVerified) return const OtpScreen();
             // Normal flow
             if (onboardingComplete) {
               return const DashboardScreen();

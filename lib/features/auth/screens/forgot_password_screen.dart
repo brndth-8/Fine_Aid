@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../../../services/firebase/auth_service.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
@@ -12,10 +11,9 @@ class ForgotPasswordScreen extends StatefulWidget {
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
-  final _authService = AuthService();
 
   bool _isLoading = false;
-  bool _emailSent = false;
+  final bool _emailSent = false;
 
   @override
   void dispose() {
@@ -25,29 +23,27 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
   Future<void> _handleReset() async {
     if (!_formKey.currentState!.validate()) return;
-
     setState(() => _isLoading = true);
 
     try {
-      await _authService.sendPasswordReset(
-        username: _usernameController.text.trim(),
-      );
-      setState(() => _emailSent = true);
-    } on FirebaseAuthException catch (e) {
-      String message = 'Could not send reset email. Please try again.';
-      if (e.code == 'user-not-found') {
-        message = 'No account found with that username.';
-      }
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
-    } catch (e) {
+      // Generate the same email format used during registration
+      final username = _usernameController.text.trim();
+      final generatedEmail = '${username.toLowerCase()}@fineaid.app';
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: generatedEmail);
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Something went wrong. Please try again.'),
+          content: Text(
+            'Password reset email sent. '
+            'Check your registered email.',
+          ),
         ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Username not found. Please try again.')),
       );
     } finally {
       if (mounted) setState(() => _isLoading = false);

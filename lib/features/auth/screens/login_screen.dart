@@ -34,9 +34,11 @@ class LoginScreen extends StatelessWidget {
                         maxWidth: isWide ? 360 : double.infinity,
                       ),
                       child: Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: isWide ? 0 : 190,
+                        padding: EdgeInsets.only(
+                          left: 22,
+                          right: 22,
+                          top: isWide ? 0 : 280,
+                          bottom: isWide ? 0 : 45,
                         ),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
@@ -48,7 +50,7 @@ class LoginScreen extends StatelessWidget {
                               Card(
                                 elevation: 8,
                                 shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: Padding(
                                   padding: const EdgeInsets.all(32),

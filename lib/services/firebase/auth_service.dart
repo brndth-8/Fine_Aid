@@ -36,9 +36,7 @@ class AuthService {
   Future<UserCredential> registerWithUsername({
     required String username,
     required String password,
-    required String email,
-    required String verificationMethod,
-    String? phoneNumber,
+    required String phoneNumber,
   }) async {
     final taken = await isUsernameTaken(username);
     if (taken) {
@@ -48,36 +46,36 @@ class AuthService {
       );
     }
 
+    // Auto-generate email from username — never shown to user
+    final generatedEmail = '${username.trim().toLowerCase()}@fineaid.app';
+
     final credential = await _auth.createUserWithEmailAndPassword(
-      email: email.trim(),
+      email: generatedEmail,
       password: password,
     );
 
-    if (verificationMethod == 'email') {
-      await credential.user?.sendEmailVerification();
-    }
-
     final uid = credential.user!.uid;
 
+    // Write full profile to users collection
     await _firestore
         .collection('users')
         .doc(uid)
         .set({
           'username': username.trim(),
-          'email': email.trim(),
-          'phoneNumber': phoneNumber?.trim(),
-          'verificationMethod': verificationMethod,
+          'email': generatedEmail,
+          'phoneNumber': phoneNumber.trim(),
+          'verificationMethod': 'phone',
           'createdAt': FieldValue.serverTimestamp(),
           'phoneVerified': false,
-          'emailVerified': false,
           'onboardingComplete': false,
         })
         .timeout(const Duration(seconds: 10));
 
+    // Write to public usernames collection
     await _firestore
         .collection('usernames')
         .doc(username.trim().toLowerCase())
-        .set({'email': email.trim(), 'uid': uid})
+        .set({'email': generatedEmail, 'uid': uid})
         .timeout(const Duration(seconds: 10));
 
     return credential;

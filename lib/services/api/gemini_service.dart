@@ -17,22 +17,20 @@ class GeminiService {
       apiKey: ApiKeys.gemini,
       generationConfig: GenerationConfig(
         temperature: 0.4,
-        maxOutputTokens: 4096,
+        maxOutputTokens: 8192,
       ),
       systemInstruction: Content.system(
         'You are a medical first aid assistant for Fine Aid, a Filipino '
         'first aid app. '
-        'Analyze wound and skin condition images and provide clear, '
-        'accurate first aid guidance in both English and Filipino (Tagalog). '
         'Always include a medical disclaimer. Never diagnose — only provide '
         'first aid guidance. If the situation is severe, always recommend '
         'seeking professional medical help immediately. '
         'Format your response with these sections:\n'
-        '**Wound Assessment** — what you observe\n'
-        '**First Aid Steps** — numbered steps, each with English then '
+        'Wound Assessment — what you observe\n'
+        'First Aid Steps — numbered steps, each with English then '
         'Tagalog translation\n'
-        '**Warning Signs** — when to seek emergency care\n'
-        '**Disclaimer** — this is guidance only, not a diagnosis',
+        'Warning Signs — when to seek emergency care\n'
+        'Disclaimer — this is guidance only, not a diagnosis',
       ),
     );
   }
@@ -43,13 +41,11 @@ class GeminiService {
       apiKey: ApiKeys.gemini,
       generationConfig: GenerationConfig(
         temperature: 0.3,
-        maxOutputTokens: 1024,
+        maxOutputTokens: 2048,
       ),
       systemInstruction: Content.system(
         'You are a medical first aid assistant for Fine Aid, a Filipino '
         'first aid app. '
-        'Analyze wound and skin condition images and provide clear, '
-        'accurate first aid guidance in both English and Filipino (Tagalog). '
         'Always include a medical disclaimer. Never diagnose — only provide '
         'first aid guidance. If severe, always recommend seeking professional '
         'medical help immediately. '
@@ -57,7 +53,6 @@ class GeminiService {
         'any markdown formatting in your response. Plain text only.\n'
         'Format your response with these exact section headers '
         '(write them exactly as shown, in ALL CAPS followed by colon):\n'
-        'WOUND ASSESSMENT: describe what you observe\n'
         'FIRST AID STEPS: numbered steps, each followed by the Tagalog '
         'translation on the next line\n'
         'WARNING SIGNS: list when to seek emergency care\n'

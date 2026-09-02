@@ -270,8 +270,28 @@ class _LoginFormScreenState extends State<LoginFormScreen> {
                 // Forgot password
                 Center(
                   child: TextButton(
-                    onPressed: () =>
-                        Navigator.pushNamed(context, '/forgot-password'),
+                    onPressed: () {
+                      showDialog(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          title: const Text('Forgot Password?'),
+                          content: const Text(
+                            'To reset your password, please contact '
+                            'Fine Aid support with your username '
+                            'and registered phone number.',
+                          ),
+                          actions: [
+                            ElevatedButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('OK'),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
                     child: const Text('Forgot password?'),
                   ),
                 ),

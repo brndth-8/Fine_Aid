@@ -3,7 +3,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import '../../../services/export_service.dart';
-import '../../../services/firebase/notification_service.dart';
 import '../../chatbot/screens/chatbot_screen.dart';
 
 const Map<String, int> _healingDurations = {
@@ -386,15 +385,6 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
                   );
                 },
                 child: const Text('Export Log'),
-              ),
-              TextButton(
-                onPressed: () {
-                  NotificationService().showTestMilestoneNotification(
-                    classification: classification,
-                    entryId: widget.entryId,
-                  );
-                },
-                child: const Text('Send notification'),
               ),
             ],
           ),
