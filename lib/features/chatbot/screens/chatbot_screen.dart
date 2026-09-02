@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../services/api/gemini_service.dart';
+import '../../../services/firebase/first_aid_content_service.dart';
 
 class _ChatMessage {
   final String text;
@@ -68,7 +69,15 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
 
     String response;
     try {
-      response = await GeminiService().sendChatMessage(text);
+      // RAG: look up relevant chunks from the firstAidContent Firestore
+      // collection before asking Gemini, so the answer is grounded in the
+      // reference books instead of general model knowledge.
+      final referenceContext = await FirstAidContentService()
+          .buildReferenceContext(text);
+      response = await GeminiService().sendChatMessage(
+        text,
+        referenceContext: referenceContext,
+      );
     } catch (e) {
       // Fallback to mock response if the API call fails (e.g. during dev/testing)
       response = _generateMockResponse(text);

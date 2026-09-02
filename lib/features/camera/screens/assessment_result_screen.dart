@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../services/api/gemini_service.dart';
 import '../../chatbot/screens/chatbot_screen.dart';
 import '../../../services/firebase/storage_service.dart';
+import '../../../services/firebase/first_aid_content_service.dart';
 
 class AssessmentResultScreen extends StatefulWidget {
   final String imagePath;
@@ -38,7 +39,16 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
 
   Future<void> _analyzeImage() async {
     try {
-      final result = await GeminiService().analyzeWoundImage(widget.imagePath);
+      // RAG: analyzeWoundImage does a first pass visual analysis, then uses
+      // that draft's own wording to search the firstAidContent Firestore
+      // collection, then re-grounds the final assessment in whatever
+      // reference chunks were found (falls back to the plain draft if none
+      // were found or Firestore is unreachable, e.g. offline mode).
+      final result = await GeminiService().analyzeWoundImage(
+        widget.imagePath,
+        retrieveReferences: (query) =>
+            FirstAidContentService().buildReferenceContext(query),
+      );
       if (mounted) {
         setState(() {
           _analysisResult = result;
