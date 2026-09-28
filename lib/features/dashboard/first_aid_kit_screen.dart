@@ -11,6 +11,7 @@ import '../../data/healing_durations.dart';
 import '../../data/health_profile_cautions.dart';
 import '../../core/follow_up_fallback.dart';
 import '../../core/widgets/voice_message_bubble.dart';
+import '../../core/widgets/otc_suggestions_block.dart';
 import '../../i18n/health_kit_content_tl.dart';
 import '../../i18n/health_kit_locale.dart';
 import '../../i18n/health_kit_ui_strings.dart';
@@ -23,6 +24,7 @@ class _FollowUpMessage {
   // re-fetch. Null for user messages, since there's nothing to translate.
   final String? tagalog;
   final bool isUser;
+  final List<String> otcSuggestions;
   // Set only for a voice follow-up question — the recorded clip's local
   // file path, so it can be replayed as a chat bubble. `text` is always the
   // transcript either way, so the journal and the answer pipeline never
@@ -32,6 +34,7 @@ class _FollowUpMessage {
     required this.text,
     this.tagalog,
     required this.isUser,
+    this.otcSuggestions = const [],
     this.audioPath,
   });
 
@@ -699,6 +702,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
 
     String response;
     String? responseTagalog;
+    List<String> otcSuggestions = const [];
     try {
       final contextualQuery = [
         if (category != null) category.title,
@@ -719,6 +723,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
       response = english.isNotEmpty ? english : randomFollowUpFallbackMessage();
       final tagalog = parsed.tagalog?.trim();
       responseTagalog = (tagalog != null && tagalog.isNotEmpty) ? tagalog : null;
+      otcSuggestions = parsed.otcSuggestions;
     } catch (e, st) {
       logFollowUpError('FirstAidKit', e, st);
       response = randomFollowUpFallbackMessage();
@@ -731,6 +736,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
           text: response,
           tagalog: responseTagalog,
           isUser: false,
+          otcSuggestions: otcSuggestions,
         ),
       );
       _isSendingFollowUp = false;
@@ -1400,6 +1406,8 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
                       fontStyle: m.audioPath != null ? FontStyle.italic : null,
                     ),
                   ),
+                  if (!m.isUser && m.otcSuggestions.isNotEmpty)
+                    OtcSuggestionsBlock(suggestions: m.otcSuggestions),
                 ],
               ),
             ),

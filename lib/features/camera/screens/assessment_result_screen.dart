@@ -15,6 +15,7 @@ import '../../../data/healing_durations.dart';
 import '../../../data/health_profile_cautions.dart';
 import '../../../core/widgets/nearby_healthcare_sheet.dart';
 import '../../../core/widgets/voice_message_bubble.dart';
+import '../../../core/widgets/otc_suggestions_block.dart';
 import '../../../core/follow_up_fallback.dart';
 import '../../dashboard/first_aid_kit_screen.dart';
 
@@ -24,6 +25,7 @@ class _FollowUpMessage {
   final bool isUser;
   final bool suggestNearby;
   final bool isUrgent;
+  final List<String> otcSuggestions;
   // Set only for a voice follow-up question — the recorded clip's local
   // file path, so it can be replayed as a chat bubble. `text` is always the
   // transcript either way.
@@ -34,6 +36,7 @@ class _FollowUpMessage {
     required this.isUser,
     this.suggestNearby = false,
     this.isUrgent = false,
+    this.otcSuggestions = const [],
     this.audioPath,
   });
 
@@ -1191,6 +1194,7 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
     String? tagalog;
     bool suggestNearby = false;
     bool isUrgent = false;
+    List<String> otcSuggestions = const [];
     try {
       final category = _assessment?.category;
       // Include the wound's category in the retrieval query so follow-up
@@ -1216,6 +1220,7 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
       tagalog = parsed.tagalog;
       suggestNearby = parsed.suggestNearby;
       isUrgent = parsed.isUrgent;
+      otcSuggestions = parsed.otcSuggestions;
     } catch (e, st) {
       logFollowUpError('AssessmentResult', e, st);
       english = randomFollowUpFallbackMessage();
@@ -1230,6 +1235,7 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
           isUser: false,
           suggestNearby: suggestNearby,
           isUrgent: isUrgent,
+          otcSuggestions: otcSuggestions,
         ),
       );
       _isSendingFollowUp = false;
@@ -1410,6 +1416,8 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
                             ),
                           ],
                         ),
+                        if (!m.isUser && m.otcSuggestions.isNotEmpty)
+                          OtcSuggestionsBlock(suggestions: m.otcSuggestions),
                       ],
                     ),
                   ),

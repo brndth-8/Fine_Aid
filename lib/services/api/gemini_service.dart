@@ -133,18 +133,26 @@ class BilingualReply {
   /// — the app renders this distinctly (bold, highlighted) when true.
   final bool isUrgent;
 
+  /// Raw OTC product suggestions from the model's "OTC:" field, exactly as
+  /// it wrote them — NOT yet checked against the denylist/allowlist. Every
+  /// caller must run these through the OTC filter (otc_filter.dart) before
+  /// showing them, per the OTC PRODUCT SUGGESTIONS system-prompt rule.
+  final List<String> otcSuggestions;
+
   const BilingualReply({
     required this.english,
     this.tagalog,
     this.suggestNearby = false,
     this.isUrgent = false,
+    this.otcSuggestions = const [],
   });
 }
 
-/// Parses a chat response into its English/Tagalog parts and the nearby-
-/// healthcare/urgency flags. Falls back to showing the raw text as-is if
-/// the model didn't follow the "EN:" / "TL:" / "NEARBY:" / "SEVERITY:"
-/// format (eg, a short redirect message).
+/// Parses a chat response into its English/Tagalog parts, the nearby-
+/// healthcare/urgency flags, and any raw OTC suggestions. Falls back to
+/// showing the raw text as-is if the model didn't follow the "EN:" / "TL:"
+/// / "NEARBY:" / "SEVERITY:" / "OTC:" format (eg, a short redirect
+/// message).
 BilingualReply parseBilingualReply(String raw) {
   final enMatch = RegExp(
     r'EN:\s*(.*?)(?=\n *TL:|$)',
@@ -162,17 +170,20 @@ BilingualReply parseBilingualReply(String raw) {
     r'SEVERITY:\s*(normal|urgent)',
     caseSensitive: false,
   ).firstMatch(raw);
+  final otcMatch = RegExp(r'OTC:\s*(.*)').firstMatch(raw);
 
   final en = enMatch?.group(1)?.trim();
   final tl = tlMatch?.group(1)?.trim();
   final suggestNearby = nearbyMatch?.group(1)?.toLowerCase() == 'yes';
   final isUrgent = severityMatch?.group(1)?.toLowerCase() == 'urgent';
+  final otcSuggestions = _parseRawOtcField(otcMatch?.group(1));
 
   if (en == null || en.isEmpty) {
     return BilingualReply(
       english: raw.trim(),
       suggestNearby: suggestNearby,
       isUrgent: isUrgent,
+      otcSuggestions: otcSuggestions,
     );
   }
   return BilingualReply(
@@ -180,7 +191,23 @@ BilingualReply parseBilingualReply(String raw) {
     tagalog: (tl != null && tl.isNotEmpty) ? tl : null,
     suggestNearby: suggestNearby,
     isUrgent: isUrgent,
+    otcSuggestions: otcSuggestions,
   );
+}
+
+// Splits the model's "OTC: item | item | item" (or "OTC: none") field into
+// individual suggestion strings. Never throws on malformed input — worst
+// case is an empty list, which just hides the OTC block.
+List<String> _parseRawOtcField(String? raw) {
+  final trimmed = raw?.trim();
+  if (trimmed == null || trimmed.isEmpty || trimmed.toLowerCase() == 'none') {
+    return const [];
+  }
+  return trimmed
+      .split('|')
+      .map((s) => s.trim())
+      .where((s) => s.isNotEmpty && s.toLowerCase() != 'none')
+      .toList();
 }
 
 /// Triage urgency from the v2 wound-assessment schema.
@@ -577,6 +604,48 @@ class GeminiService {
         'emergency but concerning cases (not healing, recurring, mildly '
         'worsening), recommend consulting a doctor, nurse, or other '
         'qualified healthcare professional for an evaluation.\n\n'
+        'OTC PRODUCT SUGGESTIONS: When the user asks a follow-up question '
+        'about a wound or injury (including one they photographed), answer '
+        'the question first. Then, where relevant, suggest OTC options '
+        'that fit their situation, such as antiseptic wash or solution '
+        'for minor cuts, antibiotic ointment for minor scrapes, non-stick '
+        'sterile dressings or adhesive bandages, burn gel or hydrogel '
+        'dressings for minor burns, oral pain relievers for pain, '
+        'hydrocortisone cream or antihistamines for itching or minor '
+        'allergic reactions, and cold packs for swelling.\n'
+        'Rules:\n'
+        '- Recommend generic product types or active ingredients (e.g. '
+        '\'an antibiotic ointment with bacitracin\'). Brand names are '
+        'optional and only as examples.\n'
+        '- Only suggest products for minor injuries. For severe, deep, '
+        'infected-looking, or high-risk wounds, prioritize seeking '
+        'medical care and never present OTC products as a substitute.\n'
+        '- Say to follow the package label for dosage. Don\'t invent '
+        'specific doses. Mention relevant cautions (allergies, pregnancy, '
+        'children, existing medications) and suggest checking with a '
+        'pharmacist or doctor if unsure.\n'
+        '- Never recommend prescription drugs.\n'
+        '- Include red-flag warnings: spreading redness, pus, fever, '
+        'worsening pain, heavy bleeding, numbness, or no improvement in a '
+        'few days means seeing a healthcare professional.\n'
+        '- Keep it short: 1-3 suggestions, phrased as \'you may '
+        'consider...\', not as a diagnosis or prescription.\n'
+        '- Users are in the Philippines, so prefer products commonly '
+        'available in local pharmacies, and give the Tagalog product/'
+        'ingredient name if the user\'s language is Tagalog.\n'
+        '- RELEVANCE: Only suggest products designed and labeled for '
+        'treating wounds, skin injuries, or their symptoms (pain, '
+        'swelling, itching, infection prevention). Never suggest products '
+        'for unrelated body areas or purposes, even if the brand is '
+        'similar to a wound-care product.\n'
+        '- Explicitly exclude feminine washes and intimate hygiene '
+        'products (including Betadine Feminine Wash), mouthwashes, '
+        'throat gargles or sprays, shampoos, body or facial washes, '
+        'cosmetics, deodorants, and unrelated supplements or vitamins.\n'
+        '- If a brand has multiple variants, recommend only the '
+        'wound-appropriate form (e.g. \'povidone-iodine antiseptic '
+        'solution for minor cuts\').\n'
+        '- If no relevant OTC product fits, suggest none.\n\n'
         'NEARBY HEALTHCARE: if the user asks where to go, how to find a '
         'hospital/clinic/doctor, or similar, OR if you just recommended '
         'seeking professional/emergency care, you may offer to help find '
@@ -597,16 +666,21 @@ class GeminiService {
         'if you already knew this.\n'
         'FORMAT: Always reply in exactly this format, one field per line, '
         'so the app can offer an English/Tagalog toggle, the nearby-'
-        'healthcare option, and a bold visual warning when warranted — '
-        'write the full response in English on a line starting with '
-        '"EN:", then the full Tagalog translation of that same response '
-        'on a line starting with "TL:", then a line "NEARBY: yes" or '
-        '"NEARBY: no", then a line "SEVERITY: urgent" if this reply '
-        'itself recommends seeking care urgently or immediately (an '
-        'EMERGENCY or URGENT_CARE-level situation per the red-flag/'
-        'emergency guidance above), or "SEVERITY: normal" otherwise. Do '
-        'not add any other lines, headers, or commentary outside these '
-        'four.',
+        'healthcare option, a bold visual warning when warranted, and a '
+        'separate "Suggested OTC options" block — write the full response '
+        'in English on a line starting with "EN:", then the full Tagalog '
+        'translation of that same response on a line starting with "TL:", '
+        'then a line "NEARBY: yes" or "NEARBY: no", then a line '
+        '"SEVERITY: urgent" if this reply itself recommends seeking care '
+        'urgently or immediately (an EMERGENCY or URGENT_CARE-level '
+        'situation per the red-flag/emergency guidance above), or '
+        '"SEVERITY: normal" otherwise, then a line "OTC: " followed by '
+        'your OTC suggestions (per the OTC PRODUCT SUGGESTIONS rules '
+        'above) separated by " | ", or "OTC: none" if none apply. Do NOT '
+        'repeat the OTC suggestions inside EN: or TL: — they belong only '
+        'in the OTC: field, since the app renders them in their own '
+        'labeled block. Do not add any other lines, headers, or '
+        'commentary outside these five.',
       ),
     );
   }

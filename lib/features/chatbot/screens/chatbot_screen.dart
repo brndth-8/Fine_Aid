@@ -6,12 +6,14 @@ import '../../../services/api/gemini_service.dart';
 import '../../../services/firebase/first_aid_content_service.dart';
 import '../../../services/voice_input_service.dart';
 import '../../../core/widgets/voice_message_bubble.dart';
+import '../../../core/widgets/otc_suggestions_block.dart';
 
 class _ChatMessage {
   final String text;
   final String? tagalog;
   final bool isUser;
   final bool isUrgent;
+  final List<String> otcSuggestions;
   // Set only for a voice message — the recorded clip's local file path, so
   // it can be replayed as a chat bubble. `text` is always the transcript
   // either way.
@@ -22,6 +24,7 @@ class _ChatMessage {
     this.tagalog,
     required this.isUser,
     this.isUrgent = false,
+    this.otcSuggestions = const [],
     this.audioPath,
   });
 }
@@ -194,6 +197,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     String english;
     String? tagalog;
     bool isUrgent = false;
+    List<String> otcSuggestions = const [];
     try {
       // RAG: look up relevant chunks from the firstAidContent Firestore
       // collection before asking Gemini, so the answer is grounded in the
@@ -208,6 +212,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
       english = parsed.english;
       tagalog = parsed.tagalog;
       isUrgent = parsed.isUrgent;
+      otcSuggestions = parsed.otcSuggestions;
     } catch (e) {
       // Fallback to mock response if the API call fails (e.g. during dev/testing)
       english = _generateMockResponse(text);
@@ -221,6 +226,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
           tagalog: tagalog,
           isUser: false,
           isUrgent: isUrgent,
+          otcSuggestions: otcSuggestions,
         ),
       );
       _isTyping = false;
@@ -560,6 +566,8 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                 ),
               ],
             ),
+            if (!message.isUser && message.otcSuggestions.isNotEmpty)
+              OtcSuggestionsBlock(suggestions: message.otcSuggestions),
           ],
         ),
       ),
