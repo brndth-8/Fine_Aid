@@ -252,6 +252,10 @@ class WoundAssessment {
   final bool needsProfessionalEvaluation;
   final List<String> uncertainties;
   final String? error;
+  // Only ever set for an injury that came from the multi-injury schema
+  // (eg "left knee", "right forearm") — null for the single-wound path,
+  // where there's nothing to disambiguate.
+  final String? location;
 
   const WoundAssessment({
     required this.isWound,
@@ -268,6 +272,7 @@ class WoundAssessment {
     required this.needsProfessionalEvaluation,
     required this.uncertainties,
     this.error,
+    this.location,
   });
 
   factory WoundAssessment.errorFallback(String message) => WoundAssessment(
@@ -290,44 +295,117 @@ class WoundAssessment {
   String get category => mapWoundTypeToCategory(woundType);
 }
 
-/// Parses the v2 assessment model's JSON response. Defensively strips
-/// markdown code fences in case the model adds them despite instructions
-/// not to, and falls back to an uncertain/error result rather than
-/// crashing if the response isn't valid JSON — never silently invent a
-/// wound assessment from unparseable output.
+List<String> _stringList(dynamic value) =>
+    (value as List?)?.map((e) => e.toString()).toList() ?? const [];
+
+/// Shared by both the single-wound and multi-injury schemas — every field
+/// below is identical between "one JSON object" and "one entry in the
+/// injuries array", so both parsers build a [WoundAssessment] the same way.
+WoundAssessment _woundAssessmentFromMap(Map<String, dynamic> map) {
+  return WoundAssessment(
+    isWound: map['is_wound'] == true,
+    confidence: (map['confidence'] as num?)?.toDouble() ?? 0.0,
+    woundType: map['wound_type']?.toString() ?? 'none',
+    visibleBleeding: map['visible_bleeding']?.toString() ?? 'none',
+    apparentDepth: map['apparent_depth']?.toString() ?? 'unknown',
+    foreignObjectVisible: map['foreign_object_visible'] == true,
+    infectionSignsVisible: map['infection_signs_visible'] == true,
+    triage: _parseTriage(map['triage']?.toString()),
+    redFlags: _stringList(map['red_flags']),
+    firstAidSteps: _stringList(map['first_aid_steps']),
+    otcOptions: _stringList(map['otc_options']),
+    needsProfessionalEvaluation: map['needs_professional_evaluation'] == true,
+    uncertainties: _stringList(map['uncertainties']),
+    error: map['error']?.toString(),
+    location: map['location']?.toString(),
+  );
+}
+
+/// Strips markdown code fences in case the model adds them despite
+/// instructions not to — shared by both the single and multi-injury
+/// response parsers.
+String _stripCodeFences(String raw) {
+  var cleaned = raw.trim();
+  if (cleaned.startsWith('```')) {
+    cleaned = cleaned.replaceFirst(RegExp(r'^```[a-zA-Z]*'), '').trim();
+    if (cleaned.endsWith('```')) {
+      cleaned = cleaned.substring(0, cleaned.length - 3).trim();
+    }
+  }
+  return cleaned;
+}
+
+/// Parses the v2 assessment model's JSON response. Falls back to an
+/// uncertain/error result rather than crashing if the response isn't valid
+/// JSON — never silently invent a wound assessment from unparseable output.
 WoundAssessment parseWoundAssessment(String raw) {
   try {
-    var cleaned = raw.trim();
-    if (cleaned.startsWith('```')) {
-      cleaned = cleaned.replaceFirst(RegExp(r'^```[a-zA-Z]*'), '').trim();
-      if (cleaned.endsWith('```')) {
-        cleaned = cleaned.substring(0, cleaned.length - 3).trim();
-      }
-    }
-    final map = jsonDecode(cleaned) as Map<String, dynamic>;
-
-    List<String> stringList(dynamic value) =>
-        (value as List?)?.map((e) => e.toString()).toList() ?? const [];
-
-    return WoundAssessment(
-      isWound: map['is_wound'] == true,
-      confidence: (map['confidence'] as num?)?.toDouble() ?? 0.0,
-      woundType: map['wound_type']?.toString() ?? 'none',
-      visibleBleeding: map['visible_bleeding']?.toString() ?? 'none',
-      apparentDepth: map['apparent_depth']?.toString() ?? 'unknown',
-      foreignObjectVisible: map['foreign_object_visible'] == true,
-      infectionSignsVisible: map['infection_signs_visible'] == true,
-      triage: _parseTriage(map['triage']?.toString()),
-      redFlags: stringList(map['red_flags']),
-      firstAidSteps: stringList(map['first_aid_steps']),
-      otcOptions: stringList(map['otc_options']),
-      needsProfessionalEvaluation: map['needs_professional_evaluation'] == true,
-      uncertainties: stringList(map['uncertainties']),
-      error: map['error']?.toString(),
-    );
+    final map = jsonDecode(_stripCodeFences(raw)) as Map<String, dynamic>;
+    return _woundAssessmentFromMap(map);
   } catch (e) {
     debugPrint('parseWoundAssessment error: $e — raw: $raw');
     return WoundAssessment.errorFallback(e.toString());
+  }
+}
+
+/// Structured result of the multi-injury JSON schema: every injury the
+/// model found in the photo, each parsed the same way as the single-wound
+/// schema, plus a combined treat-first-to-last ordering.
+class MultiWoundAssessment {
+  final List<WoundAssessment> injuries;
+  // 0-based indices into [injuries], ordered treat-first to treat-last.
+  final List<int> priorityOrder;
+  final String? error;
+
+  const MultiWoundAssessment({
+    required this.injuries,
+    required this.priorityOrder,
+    this.error,
+  });
+
+  factory MultiWoundAssessment.errorFallback(String message) =>
+      MultiWoundAssessment(injuries: const [], priorityOrder: const [], error: message);
+
+  bool get hasError => error != null || injuries.isEmpty;
+}
+
+/// Parses the multi-injury model's JSON response (an `injuries` array plus
+/// a `priority_order` array of indices into it). Falls back to an empty,
+/// error-flagged result rather than crashing or guessing at injuries from
+/// unparseable output — the caller should fall back to the single-wound
+/// path when [MultiWoundAssessment.hasError] is true.
+MultiWoundAssessment parseMultiWoundAssessment(String raw) {
+  try {
+    final map = jsonDecode(_stripCodeFences(raw)) as Map<String, dynamic>;
+    final rawInjuries = (map['injuries'] as List?) ?? const [];
+    final injuries = rawInjuries
+        .map((e) => _woundAssessmentFromMap(e as Map<String, dynamic>))
+        .toList();
+    if (injuries.isEmpty) {
+      return MultiWoundAssessment.errorFallback(
+        'No injuries found in the response.',
+      );
+    }
+
+    final rawPriority = (map['priority_order'] as List?) ?? const [];
+    final priorityOrder = rawPriority
+        .map((e) => (e as num).toInt())
+        .where((i) => i >= 0 && i < injuries.length)
+        .toList();
+    // The model left it out, returned something malformed, or didn't cover
+    // every injury — fall back to array order rather than dropping
+    // injuries the priority list missed.
+    final completePriority = priorityOrder.length == injuries.length
+        ? priorityOrder
+        : List<int>.generate(injuries.length, (i) => i);
+
+    return MultiWoundAssessment(
+      injuries: injuries,
+      priorityOrder: completePriority,
+    );
+  } catch (e) {
+    debugPrint('parseMultiWoundAssessment error: $e — raw: $raw');
+    return MultiWoundAssessment.errorFallback(e.toString());
   }
 }
 
@@ -625,6 +703,119 @@ class GeminiService {
     } catch (e) {
       debugPrint('Gemini analyzeWoundV2 error: $e');
       return WoundAssessment.errorFallback(e.toString());
+    }
+  }
+
+  GenerativeModel _createMultiInjuryAssessmentModel() {
+    return GenerativeModel(
+      model: 'gemini-3.5-flash',
+      apiKey: ApiKeys.gemini,
+      generationConfig: GenerationConfig(
+        temperature: 0.2,
+        maxOutputTokens: 4096,
+        responseMimeType: 'application/json',
+      ),
+      systemInstruction: Content.system(
+        'You are a wound-assessment vision model. The submitted image '
+        'contains MORE THAN ONE separate, distinct wound or skin-condition '
+        'area — analyze EACH one individually and respond with ONLY a '
+        'single JSON object — no preamble, no explanation, no markdown '
+        'code fences, no trailing text. The response must be valid, '
+        'directly parseable JSON matching this schema exactly:\n\n'
+        '{\n'
+        '  "injuries": [\n'
+        '    {\n'
+        '      "location": string,        // brief body-part/location hint, e.g. "left knee", "right forearm" — use neutral phrasing like "affected area 1" only if the body part truly cannot be identified\n'
+        '      "is_wound": boolean,\n'
+        '      "confidence": number,        // 0.0-1.0\n'
+        '      "wound_type": string,        // e.g. "laceration", "abrasion", "puncture", "burn", "none"\n'
+        '      "visible_bleeding": string,  // "none" | "mild" | "moderate" | "severe"\n'
+        '      "apparent_depth": string,    // "superficial" | "partial_thickness" | "deep" | "unknown"\n'
+        '      "foreign_object_visible": boolean,\n'
+        '      "infection_signs_visible": boolean,\n'
+        '      "triage": string,            // "SELF_CARE" | "FIRST_AID" | "URGENT_CARE" | "EMERGENCY"\n'
+        '      "red_flags": string[],\n'
+        '      "first_aid_steps": string[],\n'
+        '      "otc_options": string[],\n'
+        '      "needs_professional_evaluation": boolean,\n'
+        '      "uncertainties": string[]\n'
+        '    }\n'
+        '  ],\n'
+        '  "priority_order": number[]   // 0-based indices into "injuries", ordered from treat-first to treat-last\n'
+        '}\n\n'
+        'Rules:\n'
+        '- List every separate, distinct wound or skin-condition area '
+        'visible as its own entry in "injuries" — do not merge unrelated '
+        'injuries into one entry, and do not split one injury into two.\n'
+        '- Each injury\'s fields follow the exact same rules as a '
+        'single-wound assessment would: reflect image-quality limits in '
+        '"confidence"/"uncertainties" rather than guessing; default '
+        '"triage" to "URGENT_CARE" or "EMERGENCY" and '
+        '"needs_professional_evaluation" to true for any sign of heavy/'
+        'uncontrolled bleeding, exposed bone/tendon, suspected fracture, '
+        'deep puncture, large burns, or infection signs — bias toward '
+        'caution when uncertain; do not conclude '
+        '"needs_professional_evaluation": false unless confidence is high '
+        'and no red flags are present; distinguish general hand-hygiene-'
+        'before-touching-a-wound (a brief, secondary note at most) from '
+        'care of that specific injury (the main content of '
+        'first_aid_steps).\n'
+        '- "priority_order" must rank injuries by clinical urgency first '
+        '(EMERGENCY before URGENT_CARE before FIRST_AID before SELF_CARE), '
+        'then by severity within the same triage level (eg, more severe '
+        'bleeding or a deeper wound treated first). It must include every '
+        'index in "injuries" exactly once.\n'
+        '- Output the JSON object and nothing else. If you cannot produce '
+        'valid JSON, still return the schema with an added "error" field '
+        'rather than free text.',
+      ),
+    );
+  }
+
+  /// Runs the multi-injury structured assessment on [imagePath] — same
+  /// per-injury fields and rules as [analyzeWoundV2], but for a photo
+  /// already known (via the wound-count pre-check) to contain more than
+  /// one separate wound. Returns every injury found plus a combined
+  /// treat-first-to-last order. On failure, returns a
+  /// [MultiWoundAssessment] with [MultiWoundAssessment.hasError] true —
+  /// callers should fall back to the single-wound flow in that case rather
+  /// than show a broken multi-injury screen.
+  Future<MultiWoundAssessment> analyzeMultipleWoundsV2(
+    String imagePath, {
+    String? referenceContext,
+  }) async {
+    try {
+      final imageBytes = await File(imagePath).readAsBytes();
+      final model = _createMultiInjuryAssessmentModel();
+
+      final referenceBlock =
+          referenceContext != null && referenceContext.trim().isNotEmpty
+          ? 'Trusted reference material — use it to ground first_aid_steps '
+                'and otc_options where relevant, and do not contradict it:\n'
+                '$referenceContext\n\n'
+          : '';
+
+      final response = await model
+          .generateContent([
+            Content.multi([
+              TextPart(
+                '${referenceBlock}This photo contains multiple separate '
+                'wounds or skin-condition areas. Analyze each one and '
+                'respond per the schema.',
+              ),
+              DataPart('image/jpeg', imageBytes),
+            ]),
+          ])
+          .timeout(
+            const Duration(seconds: 45),
+            onTimeout: () =>
+                throw Exception('Analysis timed out. Please try again.'),
+          );
+
+      return parseMultiWoundAssessment(response.text ?? '{}');
+    } catch (e) {
+      debugPrint('Gemini analyzeMultipleWoundsV2 error: $e');
+      return MultiWoundAssessment.errorFallback(e.toString());
     }
   }
 

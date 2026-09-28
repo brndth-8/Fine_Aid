@@ -4,7 +4,7 @@ import '../../../services/api/gemini_service.dart';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'assessment_result_screen.dart';
-import 'multi_injury_screen.dart';
+import 'multi_injury_result_screen.dart';
 import '../../../services/connectivity_service.dart';
 import '../../dashboard/first_aid_kit_screen.dart';
 
@@ -169,10 +169,9 @@ class _AiCameraScreenState extends State<AiCameraScreen> {
       await Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => MultiInjuryScreen(
+          builder: (context) => MultiInjuryResultScreen(
             imagePath: imagePath,
             woundDescriptions: detection.woundDescriptions,
-            woundBoxes: detection.woundBoxes,
           ),
         ),
       );

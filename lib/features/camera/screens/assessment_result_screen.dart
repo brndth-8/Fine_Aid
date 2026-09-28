@@ -59,11 +59,22 @@ const List<(String, double)> _analysisStages = [
 class AssessmentResultScreen extends StatefulWidget {
   final String imagePath;
   final List<String> woundHints;
+  // Set only when opened from the multi-injury results screen for one
+  // specific injury the batch call already analyzed — skips this screen's
+  // own analyzeWoundV2() call and shows this result directly, since
+  // re-running a single-wound analysis on a multi-injury photo would just
+  // pick one wound at random rather than the one the user actually tapped.
+  final WoundAssessment? precomputedAssessment;
+  // Shown alongside the title when set (eg "Injury 2 of 3 — left knee"),
+  // so it's clear this is one part of a multi-injury session.
+  final String? injuryContextLabel;
 
   const AssessmentResultScreen({
     super.key,
     required this.imagePath,
     this.woundHints = const [],
+    this.precomputedAssessment,
+    this.injuryContextLabel,
   });
 
   @override
@@ -145,11 +156,23 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
   }
 
   Future<void> _analyzeImage() async {
-    _startAnalyzingTimer();
     // Start this wound's follow-up conversation clean — the chat model
     // keeps a persistent multi-turn session, and we don't want an
     // unrelated earlier wound's conversation bleeding into this one.
     GeminiService().resetChat();
+
+    final precomputed = widget.precomputedAssessment;
+    if (precomputed != null) {
+      setState(() {
+        _assessment = precomputed;
+        _tagalogSteps = null;
+        _isAnalyzing = false;
+      });
+      _loadOtcSuggestions();
+      return;
+    }
+
+    _startAnalyzingTimer();
 
     final online = await ConnectivityService().isOnline;
     if (!online) {
@@ -1571,9 +1594,22 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
                     onPressed: () => Navigator.pop(context),
                   ),
                   Expanded(
-                    child: Text(
-                      'AI Vision Camera',
-                      style: theme.textTheme.titleMedium,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'AI Vision Camera',
+                          style: theme.textTheme.titleMedium,
+                        ),
+                        if (widget.injuryContextLabel != null)
+                          Text(
+                            widget.injuryContextLabel!,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                   const SizedBox(width: 48),
