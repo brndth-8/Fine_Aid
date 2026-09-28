@@ -1,0 +1,41 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "fine-aid-admin",
+      "runtimeExecutable": "flutter",
+      "runtimeArgs": [
+        "run",
+        "-t",
+        "lib/main_admin.dart",
+        "-d",
+        "chrome",
+        "--web-port=5959"
+      ],
+      "port": 5959
+    },
+    {
+      "name": "fine-aid-website",
+      "runtimeExecutable": "flutter",
+      "runtimeArgs": [
+        "run",
+        "-t",
+        "lib/main_web.dart",
+        "-d",
+        "web-server",
+        "--web-port=5960",
+        "--dart-define-from-file=config/web.json"
+      ],
+      "port": 5960
+    },
+    {
+      "name": "fine-aid-website-release",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "tool/serve_web.py",
+        "5961"
+      ],
+      "port": 5961
+    }
+  ]
+}

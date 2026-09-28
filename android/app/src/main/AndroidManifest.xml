@@ -2,6 +2,19 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Lets the healing check-in reminder survive a phone reboot: without
+         this, Android clears all scheduled alarms (including our
+         zonedSchedule notifications) whenever the device restarts. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Voice follow-up questions in the First Aid Kit: recording the clip
+         and on-device transcription both need mic access. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Lets the healing check-in reminder fire at the exact scheduled
+         moment when the OS already permits it (declaring this is required
+         for that check to ever succeed) instead of only the looser,
+         Doze-friendly timing — never force-prompted, just used when
+         already available. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
     <application
         android:label="Fine Aid"
@@ -48,12 +61,43 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- flutter_local_notifications (v17+) requires these receivers to
+             be declared explicitly by the app rather than merging them in
+             automatically. ScheduledNotificationReceiver is what actually
+             fires a zonedSchedule notification (healing check-ins) at the
+             scheduled time; without it, scheduled notifications silently
+             never appear. The boot receiver reschedules any pending ones
+             after the device restarts. -->
+        <receiver
+            android:exported="false"
+            android:name="com.dexterous.flutterlocalnotifications.ActionBroadcastReceiver" />
+        <receiver
+            android:exported="false"
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />
+        <receiver
+            android:exported="false"
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
+            </intent-filter>
+        </receiver>
     </application>
 
     <queries>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.DIAL"/>
+            <data android:scheme="tel"/>
+        </intent>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
         </intent>
     </queries>
 </manifest>

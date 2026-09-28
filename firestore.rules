@@ -1,0 +1,83 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+		match /usernames/{username} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // USERS
+    match /users/{uid} {
+      allow read: if true;
+      allow create: if isOwner(uid);
+      allow update: if isOwner(uid);
+      allow delete: if false;
+
+      match /journalEntries/{entryId} {
+        allow read, write: if isOwner(uid);
+      }
+
+      match /notifications/{notifId} {
+        allow read, write: if isOwner(uid);
+      }
+    }
+
+    // ADMINS
+    // Any signed-in user can read their own admin doc
+    // (needed so isAdmin check works in the app)
+    match /admins/{uid} {
+      allow read: if isOwner(uid);
+      allow write: if false;
+    }
+
+    // LOGIN ATTEMPTS
+    // Unauthenticated access needed (lockout check before login)
+    match /loginAttempts/{username} {
+      allow read, write: if true;
+    }
+
+		match /otpVerifications/{uid} {
+      allow read, write: if isSignedIn() && isOwner(uid);
+    }
+
+    // FEEDBACK
+    match /feedback/{feedbackId} {
+      allow create: if isSignedIn();
+      allow read, update, delete: if isSignedIn();
+    }
+
+    // FIRST AID CONTENT
+    // Public read (offline/guest mode needs this)
+    match /firstAidContent/{docId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // SYSTEM NOTIFICATIONS
+    match /systemNotifications/{notifId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // AUDIT LOGS
+    match /auditLogs/{logId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // COLLECTION GROUP: journalEntries
+    // Needed for admin Journal Log Review (collectionGroup query)
+    match /{path=**}/journalEntries/{entryId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() &&
+        request.auth.uid == resource.data.get('userId', '');
+    }
+  }
+}
