@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../services/api/gemini_service.dart';
 import '../../../services/firebase/first_aid_content_service.dart';
 import '../../../services/voice_input_service.dart';
+import '../../../services/otc_filter_service.dart';
 import '../../../core/widgets/voice_message_bubble.dart';
 import '../../../core/widgets/otc_suggestions_block.dart';
 
@@ -212,7 +213,9 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
       english = parsed.english;
       tagalog = parsed.tagalog;
       isUrgent = parsed.isUrgent;
-      otcSuggestions = parsed.otcSuggestions;
+      otcSuggestions = await OtcFilterService.instance.filter(
+        parsed.otcSuggestions,
+      );
     } catch (e) {
       // Fallback to mock response if the API call fails (e.g. during dev/testing)
       english = _generateMockResponse(text);

@@ -1,0 +1,118 @@
+{
+  "_comment": "OTC suggestion filter config for Gemini follow-up answers. Edit this file to tune the filter — no Dart code change needed. denylistTerms: any suggestion containing one of these (case-insensitive substring match) is rejected outright, even if it also matches an allowlist category. allowlistCategories: a suggestion is kept only if it matches at least one category's keywords.",
+  "denylistTerms": [
+    "feminine",
+    "intimate wash",
+    "intimate hygiene",
+    "vaginal",
+    "betadine feminine wash",
+    "mouthwash",
+    "mouth wash",
+    "gargle",
+    "throat spray",
+    "throat lozenge",
+    "throat drop",
+    "shampoo",
+    "conditioner",
+    "body wash",
+    "facial wash",
+    "face wash",
+    "facial cleanser",
+    "deodorant",
+    "antiperspirant",
+    "cosmetic",
+    "makeup",
+    "perfume",
+    "cologne",
+    "supplement",
+    "multivitamin",
+    "vitamin c",
+    "whitening"
+  ],
+  "allowlistCategories": [
+    {
+      "key": "antiseptic_wound_cleanser",
+      "keywords": [
+        "antiseptic",
+        "wound cleanser",
+        "wound wash",
+        "wound solution",
+        "povidone-iodine",
+        "povidone iodine",
+        "chlorhexidine",
+        "hydrogen peroxide",
+        "isopropyl alcohol",
+        "saline wash",
+        "saline solution"
+      ]
+    },
+    {
+      "key": "antibiotic_ointment",
+      "keywords": [
+        "antibiotic ointment",
+        "antibacterial ointment",
+        "bacitracin",
+        "neomycin",
+        "mupirocin",
+        "fusidic acid",
+        "polymyxin"
+      ]
+    },
+    {
+      "key": "sterile_dressing_bandage",
+      "keywords": [
+        "sterile dressing",
+        "non-stick dressing",
+        "nonstick dressing",
+        "gauze",
+        "bandage",
+        "adhesive bandage",
+        "dressing pad",
+        "wound dressing"
+      ]
+    },
+    {
+      "key": "burn_gel_hydrogel",
+      "keywords": [
+        "burn gel",
+        "hydrogel",
+        "burn dressing",
+        "burn cream",
+        "burn ointment",
+        "silver sulfadiazine"
+      ]
+    },
+    {
+      "key": "oral_pain_reliever",
+      "keywords": [
+        "paracetamol",
+        "acetaminophen",
+        "ibuprofen",
+        "mefenamic acid",
+        "pain reliever",
+        "analgesic"
+      ]
+    },
+    {
+      "key": "anti_itch_antihistamine",
+      "keywords": [
+        "hydrocortisone",
+        "antihistamine",
+        "anti-itch",
+        "anti itch",
+        "calamine",
+        "cetirizine",
+        "loratadine",
+        "diphenhydramine"
+      ]
+    },
+    {
+      "key": "cold_pack",
+      "keywords": [
+        "cold pack",
+        "ice pack",
+        "cold compress"
+      ]
+    }
+  ]
+}

@@ -11,6 +11,7 @@ import '../../../services/firebase/notification_service.dart';
 import '../../../services/connectivity_service.dart';
 import '../../../services/voice_input_service.dart';
 import '../../../services/health_profile_service.dart';
+import '../../../services/otc_filter_service.dart';
 import '../../../data/healing_durations.dart';
 import '../../../data/health_profile_cautions.dart';
 import '../../../core/widgets/nearby_healthcare_sheet.dart';
@@ -1220,7 +1221,9 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
       tagalog = parsed.tagalog;
       suggestNearby = parsed.suggestNearby;
       isUrgent = parsed.isUrgent;
-      otcSuggestions = parsed.otcSuggestions;
+      otcSuggestions = await OtcFilterService.instance.filter(
+        parsed.otcSuggestions,
+      );
     } catch (e, st) {
       logFollowUpError('AssessmentResult', e, st);
       english = randomFollowUpFallbackMessage();

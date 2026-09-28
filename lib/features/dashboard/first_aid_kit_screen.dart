@@ -7,6 +7,7 @@ import '../../services/firebase/first_aid_content_service.dart';
 import '../../services/firebase/notification_service.dart';
 import '../../services/voice_input_service.dart';
 import '../../services/health_profile_service.dart';
+import '../../services/otc_filter_service.dart';
 import '../../data/healing_durations.dart';
 import '../../data/health_profile_cautions.dart';
 import '../../core/follow_up_fallback.dart';
@@ -723,7 +724,9 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
       response = english.isNotEmpty ? english : randomFollowUpFallbackMessage();
       final tagalog = parsed.tagalog?.trim();
       responseTagalog = (tagalog != null && tagalog.isNotEmpty) ? tagalog : null;
-      otcSuggestions = parsed.otcSuggestions;
+      otcSuggestions = await OtcFilterService.instance.filter(
+        parsed.otcSuggestions,
+      );
     } catch (e, st) {
       logFollowUpError('FirstAidKit', e, st);
       response = randomFollowUpFallbackMessage();

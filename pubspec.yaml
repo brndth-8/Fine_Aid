@@ -100,7 +100,8 @@ flutter:
     - assets/images/help_journal.png
     - assets/images/help_references.png
     - assets/images/books/
-    - assets/pdfs/ 
+    - assets/pdfs/
+    - assets/config/otc_filter_config.json
     # Website (lib/main_web.dart) photos — see assets/web/README.md
     - assets/web/
   # To add assets to your application, add an assets section, like this:
