@@ -2,8 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../widgets/admin_shared_widgets.dart';
 
-class AdminFeedback extends StatelessWidget {
+class AdminFeedback extends StatefulWidget {
   const AdminFeedback({super.key});
+
+  @override
+  State<AdminFeedback> createState() => _AdminFeedbackState();
+}
+
+class _AdminFeedbackState extends State<AdminFeedback> {
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _feedbackStream =
+      FirebaseFirestore.instance
+          .collection('feedback')
+          .orderBy('submittedAt', descending: true)
+          .snapshots();
 
   @override
   Widget build(BuildContext context) {
@@ -18,14 +29,11 @@ class AdminFeedback extends StatelessWidget {
         ),
         Expanded(
           child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: FirebaseFirestore.instance
-                .collection('feedback')
-                .orderBy('submittedAt', descending: true)
-                .snapshots(),
+            stream: _feedbackStream,
             builder: (context, snapshot) {
-              if (!snapshot.hasData) {
-                return const Center(child: CircularProgressIndicator());
-              }
+              final fallback = adminSnapshotFallback(snapshot);
+              if (fallback != null) return fallback;
+
               final docs = snapshot.data!.docs;
 
               final open = docs
@@ -91,11 +99,11 @@ class AdminFeedback extends StatelessWidget {
                             color: Colors.grey.shade50,
                             child: Row(
                               children: [
-                                _th('User', flex: 2),
-                                _th('Message', flex: 3),
-                                _th('Rating'),
-                                _th('Status'),
-                                _th('Action'),
+                                _th(context, 'User', flex: 2),
+                                _th(context, 'Message', flex: 3),
+                                _th(context, 'Rating'),
+                                _th(context, 'Status'),
+                                _th(context, 'Action'),
                               ],
                             ),
                           ),
@@ -125,11 +133,7 @@ class AdminFeedback extends StatelessWidget {
                                       Expanded(
                                         flex: 2,
                                         child: Text(
-                                          data['userId']?.toString().substring(
-                                                0,
-                                                8,
-                                              ) ??
-                                              'Unknown',
+                                          shortId(data['userId']),
                                           style: theme.textTheme.bodySmall,
                                         ),
                                       ),
@@ -172,12 +176,13 @@ class AdminFeedback extends StatelessWidget {
                                           ),
                                           child: Text(
                                             isResolved ? 'Resolved' : 'Open',
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              color: isResolved
-                                                  ? Colors.green
-                                                  : Colors.blue,
-                                            ),
+                                            style: theme.textTheme.labelSmall
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.normal,
+                                                  color: isResolved
+                                                      ? Colors.green
+                                                      : Colors.blue,
+                                                ),
                                           ),
                                         ),
                                       ),
@@ -192,12 +197,15 @@ class AdminFeedback extends StatelessWidget {
                                                       ? 'open'
                                                       : 'resolved',
                                                 });
+                                            logAdminAction(
+                                              isResolved
+                                                  ? 'Reopened feedback ${doc.id}'
+                                                  : 'Resolved feedback ${doc.id}',
+                                            );
                                           },
                                           child: Text(
                                             isResolved ? 'Reopen' : 'Resolve',
-                                            style: const TextStyle(
-                                              fontSize: 12,
-                                            ),
+                                            style: theme.textTheme.bodySmall,
                                           ),
                                         ),
                                       ),
@@ -256,16 +264,14 @@ class AdminFeedback extends StatelessWidget {
     );
   }
 
-  Widget _th(String label, {int flex = 1}) {
+  Widget _th(BuildContext context, String label, {int flex = 1}) {
     return Expanded(
       flex: flex,
       child: Text(
         label,
-        style: const TextStyle(
-          fontWeight: FontWeight.bold,
-          fontSize: 12,
-          color: Colors.grey,
-        ),
+        style: Theme.of(
+          context,
+        ).textTheme.labelMedium?.copyWith(color: Colors.grey),
       ),
     );
   }

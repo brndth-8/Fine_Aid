@@ -61,9 +61,8 @@ class _AdminSystemSecurityState extends State<AdminSystemSecurity> {
                       const SizedBox(width: 8),
                       Text(
                         'Security Status: Good. All critical protocols are active.',
-                        style: TextStyle(
+                        style: theme.textTheme.bodyMedium?.copyWith(
                           color: Colors.green.shade700,
-                          fontSize: 13,
                         ),
                       ),
                     ],
@@ -154,12 +153,9 @@ class _AdminSystemSecurityState extends State<AdminSystemSecurity> {
                                   style: theme.textTheme.titleMedium,
                                 ),
                                 const SizedBox(height: 12),
-                                const Text(
+                                Text(
                                   'Session timeout (minutes)',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 13,
-                                  ),
+                                  style: theme.textTheme.labelMedium,
                                 ),
                                 const SizedBox(height: 6),
                                 TextField(
@@ -167,12 +163,9 @@ class _AdminSystemSecurityState extends State<AdminSystemSecurity> {
                                   keyboardType: TextInputType.number,
                                 ),
                                 const SizedBox(height: 12),
-                                const Text(
+                                Text(
                                   'Max concurrent sessions',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 13,
-                                  ),
+                                  style: theme.textTheme.labelMedium,
                                 ),
                                 const SizedBox(height: 6),
                                 TextField(
@@ -283,11 +276,13 @@ class _AdminSystemSecurityState extends State<AdminSystemSecurity> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(fontSize: 13, color: Colors.grey)),
           Text(
-            value,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+            label,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: Colors.grey),
           ),
+          Text(value, style: Theme.of(context).textTheme.labelMedium),
         ],
       ),
     );

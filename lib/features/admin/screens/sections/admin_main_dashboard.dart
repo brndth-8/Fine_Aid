@@ -1,14 +1,46 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../widgets/admin_shared_widgets.dart';
 
-class AdminMainDashboard extends StatelessWidget {
+class AdminMainDashboard extends StatefulWidget {
   final ThemeData theme;
-  const AdminMainDashboard({super.key, required this.theme});
+  final VoidCallback? onViewAllActivity;
+  const AdminMainDashboard({
+    super.key,
+    required this.theme,
+    this.onViewAllActivity,
+  });
+
+  @override
+  State<AdminMainDashboard> createState() => _AdminMainDashboardState();
+}
+
+class _AdminMainDashboardState extends State<AdminMainDashboard> {
+  late final Stream<QuerySnapshot> _usersStream = FirebaseFirestore.instance
+      .collection('users')
+      .snapshots();
+
+  late final Stream<QuerySnapshot> _journalEntriesStream = FirebaseFirestore
+      .instance
+      .collectionGroup('journalEntries')
+      .snapshots();
+
+  late final Stream<QuerySnapshot> _pendingEscalationsStream = FirebaseFirestore
+      .instance
+      .collectionGroup('journalEntries')
+      .where('feelingBetter', isEqualTo: false)
+      .snapshots();
+
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _activityStream =
+      FirebaseFirestore.instance
+          .collection('auditLogs')
+          .orderBy('timestamp', descending: true)
+          .limit(6)
+          .snapshots();
 
   @override
   Widget build(BuildContext context) {
+    final theme = widget.theme;
     final now = DateTime.now();
     final hour = now.hour;
     final greeting = hour < 12
@@ -30,27 +62,21 @@ class AdminMainDashboard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '$greeting, Admin',
-                  style: GoogleFonts.inter(
-                    textStyle: theme.textTheme.titleLarge,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black,
-                  ),
-                ),
+                Text('$greeting, Admin', style: theme.textTheme.titleLarge),
                 const SizedBox(height: 20),
                 // Stats row
                 Row(
                   children: [
                     Expanded(
                       child: StreamBuilder<QuerySnapshot>(
-                        stream: FirebaseFirestore.instance
-                            .collection('users')
-                            .snapshots(),
+                        stream: _usersStream,
                         builder: (context, snap) => AdminStatCard(
                           label: 'Registered users',
-                          value: '${snap.data?.docs.length ?? 0}',
-                          change: 'Growing',
+                          value: snap.hasError
+                              ? '—'
+                              : '${snap.data?.docs.length ?? 0}',
+                          change: snap.hasError ? 'Failed to load' : 'Growing',
+                          changeColor: snap.hasError ? Colors.red : null,
                           icon: Icons.people_outline,
                         ),
                       ),
@@ -68,12 +94,14 @@ class AdminMainDashboard extends StatelessWidget {
                     const SizedBox(width: 16),
                     Expanded(
                       child: StreamBuilder<QuerySnapshot>(
-                        stream: FirebaseFirestore.instance
-                            .collectionGroup('journalEntries')
-                            .snapshots(),
+                        stream: _journalEntriesStream,
                         builder: (context, snap) => AdminStatCard(
                           label: 'Journal entries',
-                          value: '${snap.data?.docs.length ?? 0}',
+                          value: snap.hasError
+                              ? '—'
+                              : '${snap.data?.docs.length ?? 0}',
+                          change: snap.hasError ? 'Failed to load' : null,
+                          changeColor: snap.hasError ? Colors.red : null,
                           icon: Icons.book_outlined,
                         ),
                       ),
@@ -81,11 +109,17 @@ class AdminMainDashboard extends StatelessWidget {
                     const SizedBox(width: 16),
                     Expanded(
                       child: StreamBuilder<QuerySnapshot>(
-                        stream: FirebaseFirestore.instance
-                            .collectionGroup('journalEntries')
-                            .where('feelingBetter', isEqualTo: false)
-                            .snapshots(),
+                        stream: _pendingEscalationsStream,
                         builder: (context, snap) {
+                          if (snap.hasError) {
+                            return const AdminStatCard(
+                              label: 'Pending escalations',
+                              value: '—',
+                              change: 'Failed to load',
+                              changeColor: Colors.red,
+                              icon: Icons.warning_amber_outlined,
+                            );
+                          }
                           final count = snap.data?.docs.length ?? 0;
                           return AdminStatCard(
                             label: 'Pending escalations',
@@ -130,36 +164,25 @@ class AdminMainDashboard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Recent activity feed',
-                style: GoogleFonts.inter(
-                  textStyle: theme.textTheme.titleMedium,
-                  color: Colors.black,
-                ),
-              ),
+              Text('Recent activity feed', style: theme.textTheme.titleMedium),
               TextButton(
-                onPressed: () {},
-                child: Text('View all', style: GoogleFonts.inter()),
+                onPressed: widget.onViewAllActivity,
+                child: const Text('View all'),
               ),
             ],
           ),
           const SizedBox(height: 12),
           StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: FirebaseFirestore.instance
-                .collection('auditLogs')
-                .orderBy('timestamp', descending: true)
-                .limit(6)
-                .snapshots(),
+            stream: _activityStream,
             builder: (context, snapshot) {
-              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+              if (snapshot.hasError ||
+                  !snapshot.hasData ||
+                  snapshot.data!.docs.isEmpty) {
                 return Padding(
                   padding: const EdgeInsets.all(16),
                   child: Text(
                     'No recent activity. Admin actions will appear here.',
-                    style: GoogleFonts.inter(
-                      textStyle: theme.textTheme.bodySmall,
-                      color: Colors.grey,
-                    ),
+                    style: theme.textTheme.bodySmall,
                   ),
                 );
               }
@@ -181,18 +204,10 @@ class AdminMainDashboard extends StatelessWidget {
                         Expanded(
                           child: Text(
                             data['action'] ?? '',
-                            style: GoogleFonts.inter(
-                              textStyle: theme.textTheme.bodySmall,
-                            ),
+                            style: theme.textTheme.bodySmall,
                           ),
                         ),
-                        Text(
-                          timeText,
-                          style: GoogleFonts.inter(
-                            textStyle: theme.textTheme.bodySmall,
-                            color: Colors.grey,
-                          ),
-                        ),
+                        Text(timeText, style: theme.textTheme.bodySmall),
                       ],
                     ),
                   );
@@ -224,13 +239,7 @@ class AdminMainDashboard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'System status',
-            style: GoogleFonts.inter(
-              textStyle: theme.textTheme.titleMedium,
-              color: Colors.black,
-            ),
-          ),
+          Text('System status', style: theme.textTheme.titleMedium),
           const SizedBox(height: 12),
           ...services.map(
             (s) => Padding(
@@ -238,12 +247,7 @@ class AdminMainDashboard extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    s.$1,
-                    style: GoogleFonts.inter(
-                      textStyle: theme.textTheme.bodySmall,
-                    ),
-                  ),
+                  Text(s.$1, style: theme.textTheme.bodySmall),
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 8,
@@ -257,10 +261,8 @@ class AdminMainDashboard extends StatelessWidget {
                     ),
                     child: Text(
                       s.$2 ? 'Online' : 'Degraded',
-                      style: GoogleFonts.inter(
-                        fontSize: 11,
+                      style: theme.textTheme.labelSmall?.copyWith(
                         color: s.$2 ? Colors.green : Colors.orange,
-                        fontWeight: FontWeight.bold,
                       ),
                     ),
                   ),

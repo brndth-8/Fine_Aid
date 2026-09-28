@@ -2,8 +2,140 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../widgets/admin_shared_widgets.dart';
 
-class AdminReportsAnalytics extends StatelessWidget {
+class AdminReportsAnalytics extends StatefulWidget {
   const AdminReportsAnalytics({super.key});
+
+  @override
+  State<AdminReportsAnalytics> createState() => _AdminReportsAnalyticsState();
+}
+
+class _AdminReportsAnalyticsState extends State<AdminReportsAnalytics> {
+  late final Stream<QuerySnapshot> _usersStream = FirebaseFirestore.instance
+      .collection('users')
+      .snapshots();
+
+  late final Stream<QuerySnapshot> _autoReferralsStream = FirebaseFirestore
+      .instance
+      .collectionGroup('journalEntries')
+      .where('feelingBetter', isEqualTo: false)
+      .snapshots();
+
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _journalEntriesStream =
+      FirebaseFirestore.instance.collectionGroup('journalEntries').snapshots();
+
+  String _reportType = 'App usage summary';
+  String _outputFormat = 'CSV';
+  bool _generating = false;
+
+  Future<void> _generateReport() async {
+    setState(() => _generating = true);
+    try {
+      if (_outputFormat != 'CSV' && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'PDF/Excel export isn\'t available yet — exporting as CSV instead.',
+            ),
+          ),
+        );
+      }
+
+      switch (_reportType) {
+        case 'User activity':
+          final snapshot = await FirebaseFirestore.instance
+              .collection('users')
+              .orderBy('createdAt', descending: true)
+              .get();
+          await exportAdminCsv(
+            filename: 'fine_aid_user_activity.csv',
+            headers: const ['Username', 'Email', 'Joined', 'Status'],
+            rows: snapshot.docs.map((doc) {
+              final data = doc.data();
+              final ts = data['createdAt'] as Timestamp?;
+              return [
+                data['username'] ?? '',
+                data['email'] ?? '',
+                ts?.toDate().toIso8601String() ?? '',
+                data['deactivated'] == true ? 'Inactive' : 'Active',
+              ];
+            }).toList(),
+          );
+        case 'Journal log':
+          final snapshot = await FirebaseFirestore.instance
+              .collectionGroup('journalEntries')
+              .get();
+          await exportAdminCsv(
+            filename: 'fine_aid_journal_log.csv',
+            headers: const [
+              'Title',
+              'Classification',
+              'Created',
+              'Feeling better',
+            ],
+            rows: snapshot.docs.map((doc) {
+              final data = doc.data();
+              final ts = data['createdAt'] as Timestamp?;
+              return [
+                data['title'] ?? '',
+                data['classification'] ?? '',
+                ts?.toDate().toIso8601String() ?? '',
+                data['feelingBetter']?.toString() ?? '',
+              ];
+            }).toList(),
+          );
+        case 'Auto-referral report':
+          final snapshot = await FirebaseFirestore.instance
+              .collectionGroup('journalEntries')
+              .where('feelingBetter', isEqualTo: false)
+              .get();
+          await exportAdminCsv(
+            filename: 'fine_aid_auto_referrals.csv',
+            headers: const ['Title', 'Classification', 'Created'],
+            rows: snapshot.docs.map((doc) {
+              final data = doc.data();
+              final ts = data['createdAt'] as Timestamp?;
+              return [
+                data['title'] ?? '',
+                data['classification'] ?? '',
+                ts?.toDate().toIso8601String() ?? '',
+              ];
+            }).toList(),
+          );
+        default: // 'App usage summary'
+          final results = await Future.wait([
+            FirebaseFirestore.instance.collection('users').count().get(),
+            FirebaseFirestore.instance
+                .collectionGroup('journalEntries')
+                .count()
+                .get(),
+            FirebaseFirestore.instance
+                .collectionGroup('journalEntries')
+                .where('feelingBetter', isEqualTo: false)
+                .count()
+                .get(),
+          ]);
+          await exportAdminCsv(
+            filename: 'fine_aid_app_usage_summary.csv',
+            headers: const ['Metric', 'Value'],
+            rows: [
+              ['Total users', results[0].count ?? 0],
+              ['Total journal entries', results[1].count ?? 0],
+              ['Pending escalations', results[2].count ?? 0],
+              ['Generated', DateTime.now().toIso8601String()],
+            ],
+          );
+      }
+      logAdminAction('Generated report "$_reportType"');
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Report generation failed: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _generating = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -26,14 +158,18 @@ class AdminReportsAnalytics extends StatelessWidget {
                   children: [
                     Expanded(
                       child: StreamBuilder<QuerySnapshot>(
-                        stream: FirebaseFirestore.instance
-                            .collection('users')
-                            .snapshots(),
+                        stream: _usersStream,
                         builder: (context, snap) => AdminAnalyticsCard(
                           label: 'Total users',
-                          value: '${snap.data?.docs.length ?? 0}',
-                          change: '↑ Growing',
-                          changeColor: Colors.green,
+                          value: snap.hasError
+                              ? '—'
+                              : '${snap.data?.docs.length ?? 0}',
+                          change: snap.hasError
+                              ? 'Failed to load'
+                              : '↑ Growing',
+                          changeColor: snap.hasError
+                              ? Colors.red
+                              : Colors.green,
                         ),
                       ),
                     ),
@@ -49,13 +185,14 @@ class AdminReportsAnalytics extends StatelessWidget {
                     const SizedBox(width: 16),
                     Expanded(
                       child: StreamBuilder<QuerySnapshot>(
-                        stream: FirebaseFirestore.instance
-                            .collectionGroup('journalEntries')
-                            .where('feelingBetter', isEqualTo: false)
-                            .snapshots(),
+                        stream: _autoReferralsStream,
                         builder: (context, snap) => AdminAnalyticsCard(
                           label: 'Auto-referrals',
-                          value: '${snap.data?.docs.length ?? 0}',
+                          value: snap.hasError
+                              ? '—'
+                              : '${snap.data?.docs.length ?? 0}',
+                          change: snap.hasError ? 'Failed to load' : null,
+                          changeColor: snap.hasError ? Colors.red : null,
                         ),
                       ),
                     ),
@@ -114,11 +251,11 @@ class AdminReportsAnalytics extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: FirebaseFirestore.instance
-                .collectionGroup('journalEntries')
-                .snapshots(),
+            stream: _journalEntriesStream,
             builder: (context, snapshot) {
-              if (!snapshot.hasData) return const CircularProgressIndicator();
+              final fallback = adminSnapshotFallback(snapshot);
+              if (fallback != null) return fallback;
+
               final docs = snapshot.data!.docs;
               final Map<String, int> counts = {
                 for (var c in classifications) c: 0,
@@ -190,63 +327,68 @@ class AdminReportsAnalytics extends StatelessWidget {
             style: theme.textTheme.titleMedium?.copyWith(color: Colors.black),
           ),
           const SizedBox(height: 16),
-          const Text(
+          Text(
             'Report type',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 13,
-              color: Colors.black,
-            ),
+            style: theme.textTheme.labelMedium?.copyWith(color: Colors.black),
           ),
           const SizedBox(height: 6),
           DropdownButtonFormField<String>(
-            initialValue: 'App usage summary',
+            initialValue: _reportType,
             items: [
               'App usage summary',
               'User activity',
               'Journal log',
               'Auto-referral report',
             ].map((r) => DropdownMenuItem(value: r, child: Text(r))).toList(),
-            onChanged: (_) {},
+            onChanged: (v) => setState(() => _reportType = v!),
           ),
           const SizedBox(height: 12),
-          const Text(
+          Text(
             'Output format',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 13,
-              color: Colors.black,
-            ),
+            style: theme.textTheme.labelMedium?.copyWith(color: Colors.black),
           ),
           const SizedBox(height: 6),
           DropdownButtonFormField<String>(
-            initialValue: 'PDF report',
+            initialValue: _outputFormat,
             items: [
-              'PDF report',
               'CSV',
+              'PDF report',
               'Excel',
             ].map((f) => DropdownMenuItem(value: f, child: Text(f))).toList(),
-            onChanged: (_) {},
+            onChanged: (v) => setState(() => _outputFormat = v!),
           ),
           const SizedBox(height: 16),
           Row(
             children: [
               Expanded(
                 child: ElevatedButton(
-                  onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Report generation coming soon.'),
-                      ),
-                    );
-                  },
-                  child: const Text('Generate'),
+                  onPressed: _generating ? null : _generateReport,
+                  child: _generating
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('Generate'),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: OutlinedButton(
-                  onPressed: () {},
+                  onPressed: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          "Scheduled report runs aren't set up yet — this "
+                          'needs a backend job runner. Use Generate for an '
+                          'on-demand export instead.',
+                        ),
+                      ),
+                    );
+                  },
                   child: const Text('Schedule'),
                 ),
               ),

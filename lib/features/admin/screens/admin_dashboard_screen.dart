@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../services/firebase/auth_service.dart';
+import '../theme/admin_theme.dart';
 import 'admin_login_screen.dart';
 import 'sections/admin_main_dashboard.dart';
 import 'sections/admin_user_management.dart';
@@ -68,15 +69,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Widget _buildSidebar(ThemeData theme) {
     return Container(
       width: 220,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(right: BorderSide(color: Colors.grey.shade200)),
-      ),
+      color: AdminTheme.maroon,
       child: Column(
         children: [
-          // Logo area
+          // Logo area — slightly darker shade to separate it from the nav.
           Container(
+            width: double.infinity,
             padding: const EdgeInsets.all(20),
+            color: AdminTheme.maroonDark,
             child: Row(
               children: [
                 Image.asset(
@@ -91,7 +91,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     Text(
                       'Admin Portal',
                       style: theme.textTheme.titleSmall?.copyWith(
-                        color: const Color.fromARGB(255, 82, 82, 82),
+                        color: const Color(0xFFF5F5F5),
                       ),
                     ),
                   ],
@@ -99,7 +99,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               ],
             ),
           ),
-          const Divider(color: Color(0xFFEEEEEE)),
+          Divider(color: Colors.white.withValues(alpha: 0.12), height: 1),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.symmetric(vertical: 8),
@@ -156,38 +156,32 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               ],
             ),
           ),
-          const Divider(color: Color(0xFFEEEEEE)),
+          Divider(color: Colors.white.withValues(alpha: 0.12), height: 1),
           // Admin info at bottom
           ListTile(
             leading: CircleAvatar(
               radius: 16,
-              backgroundColor: theme.colorScheme.secondary.withValues(
-                alpha: 0.15,
-              ),
-              child: Icon(
-                Icons.person,
-                color: theme.colorScheme.secondary,
-                size: 18,
-              ),
+              backgroundColor: Colors.white.withValues(alpha: 0.15),
+              child: const Icon(Icons.person, color: Colors.white, size: 18),
             ),
-            title: const Text(
+            title: Text(
               'Admin',
-              style: TextStyle(
-                color: Colors.black87,
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: const Color(0xFFF5F5F5),
               ),
             ),
-            subtitle: const Text(
+            subtitle: Text(
               'Administrator',
-              style: TextStyle(
-                color: Colors.grey,
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: Colors.white.withValues(alpha: 0.7),
               ),
             ),
             trailing: IconButton(
-              icon: const Icon(Icons.logout, color: Colors.grey, size: 18),
+              icon: Icon(
+                Icons.logout,
+                color: Colors.white.withValues(alpha: 0.85),
+                size: 18,
+              ),
               onPressed: () => _logout(context),
             ),
           ),
@@ -202,11 +196,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
       child: Text(
         label,
-        style: const TextStyle(
-          color: Colors.grey,
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 1.2,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: Colors.white.withValues(alpha: 0.55),
         ),
       ),
     );
@@ -214,42 +205,43 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   Widget _sidebarItem(AdminSection section, IconData icon, String label) {
     final isSelected = _currentSection == section;
+    final unselectedText = const Color(0xFFF5F5F5).withValues(alpha: 0.85);
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
-        color: isSelected
-            ? Theme.of(context).colorScheme.secondary.withValues(alpha: 0.1)
-            : Colors.transparent,
+        color: isSelected ? Colors.white : Colors.transparent,
         borderRadius: BorderRadius.circular(8),
         border: isSelected
-            ? Border(
-                left: BorderSide(
-                  color: Theme.of(context).colorScheme.secondary,
-                  width: 3,
-                ),
+            ? const Border(
+                left: BorderSide(color: AdminTheme.accentBright, width: 4),
               )
             : null,
       ),
-      child: ListTile(
-        dense: true,
-        leading: Icon(
-          icon,
-          color: isSelected
-              ? Theme.of(context).colorScheme.secondary
-              : Colors.grey.shade600,
-          size: 18,
-        ),
-        title: Text(
-          label,
-          style: TextStyle(
-            color: isSelected
-                ? Theme.of(context).colorScheme.secondary
-                : Colors.grey.shade700,
-            fontSize: 13,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+      // Nav items were rendering directly inside a plain DecoratedBox
+      // Container with no Material ancestor, so their hover/ripple never
+      // painted — Material(transparency) fixes that without affecting the
+      // decoration above.
+      child: Material(
+        type: MaterialType.transparency,
+        child: ListTile(
+          dense: true,
+          hoverColor: Colors.white.withValues(alpha: 0.12),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          leading: Icon(
+            icon,
+            color: isSelected ? AdminTheme.maroon : unselectedText,
+            size: 18,
           ),
+          title: Text(
+            label,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: isSelected ? AdminTheme.maroon : unselectedText,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+          onTap: () => setState(() => _currentSection = section),
         ),
-        onTap: () => setState(() => _currentSection = section),
       ),
     );
   }
@@ -257,7 +249,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Widget _buildMainContent(ThemeData theme) {
     switch (_currentSection) {
       case AdminSection.dashboard:
-        return AdminMainDashboard(theme: theme);
+        return AdminMainDashboard(
+          theme: theme,
+          onViewAllActivity: () =>
+              setState(() => _currentSection = AdminSection.auditLogs),
+        );
       case AdminSection.userManagement:
         return const AdminUserManagement();
       case AdminSection.contentManagement:

@@ -24,6 +24,12 @@ class _AdminContentManagementState extends State<AdminContentManagement> {
     'Burns',
   ];
 
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _contentStream =
+      FirebaseFirestore.instance
+          .collection('firstAidContent')
+          .orderBy('updatedAt', descending: true)
+          .snapshots();
+
   @override
   void dispose() {
     _titleController.dispose();
@@ -33,8 +39,9 @@ class _AdminContentManagementState extends State<AdminContentManagement> {
 
   Future<void> _save() async {
     if (_titleController.text.trim().isEmpty) return;
+    final title = _titleController.text.trim();
     final data = {
-      'title': _titleController.text.trim(),
+      'title': title,
       'content': _contentController.text.trim(),
       'category': _category,
       'offlineAvailable': _offlineAvailable,
@@ -45,14 +52,59 @@ class _AdminContentManagementState extends State<AdminContentManagement> {
           .collection('firstAidContent')
           .doc(_editingId)
           .update(data);
+      logAdminAction('Updated article "$title"');
     } else {
       data['createdAt'] = FieldValue.serverTimestamp();
       data['status'] = 'Live';
       await FirebaseFirestore.instance.collection('firstAidContent').add(data);
+      logAdminAction('Created article "$title"', type: 'CREATE');
     }
     _titleController.clear();
     _contentController.clear();
     setState(() => _editingId = null);
+  }
+
+  void _preview() {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(
+          _titleController.text.trim().isEmpty
+              ? '(Untitled)'
+              : _titleController.text.trim(),
+        ),
+        content: SizedBox(
+          width: 420,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    Chip(label: Text(_category)),
+                    if (_offlineAvailable)
+                      const Chip(label: Text('Offline available')),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  _contentController.text.trim().isEmpty
+                      ? '(No content yet)'
+                      : _contentController.text.trim(),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -65,15 +117,6 @@ class _AdminContentManagementState extends State<AdminContentManagement> {
           title: 'Content management',
           subtitle:
               'Update first aid instructions, add new emergency procedures, and modify health information to ensure accuracy.',
-          action: ElevatedButton.icon(
-            onPressed: () {
-              _titleController.clear();
-              _contentController.clear();
-              setState(() => _editingId = null);
-            },
-            icon: const Icon(Icons.add, size: 16),
-            label: const Text('New article'),
-          ),
         ),
         Expanded(
           child: Row(
@@ -83,14 +126,11 @@ class _AdminContentManagementState extends State<AdminContentManagement> {
               Expanded(
                 flex: 3,
                 child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                  stream: FirebaseFirestore.instance
-                      .collection('firstAidContent')
-                      .orderBy('updatedAt', descending: true)
-                      .snapshots(),
+                  stream: _contentStream,
                   builder: (context, snapshot) {
-                    if (!snapshot.hasData) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
+                    final fallback = adminSnapshotFallback(snapshot);
+                    if (fallback != null) return fallback;
+
                     final docs = snapshot.data!.docs;
 
                     return SingleChildScrollView(
@@ -182,12 +222,14 @@ class _AdminContentManagementState extends State<AdminContentManagement> {
                                               borderRadius:
                                                   BorderRadius.circular(20),
                                             ),
-                                            child: const Text(
+                                            child: Text(
                                               'Live',
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                color: Colors.green,
-                                              ),
+                                              style: theme.textTheme.labelSmall
+                                                  ?.copyWith(
+                                                    fontWeight:
+                                                        FontWeight.normal,
+                                                    color: Colors.green,
+                                                  ),
                                             ),
                                           ),
                                         ),
@@ -205,9 +247,9 @@ class _AdminContentManagementState extends State<AdminContentManagement> {
                                                     'Emergency';
                                               });
                                             },
-                                            child: const Text(
+                                            child: Text(
                                               'Edit',
-                                              style: TextStyle(fontSize: 12),
+                                              style: theme.textTheme.bodySmall,
                                             ),
                                           ),
                                         ),
@@ -247,11 +289,9 @@ class _AdminContentManagementState extends State<AdminContentManagement> {
                           ),
                         ),
                         const SizedBox(height: 16),
-                        const Text(
+                        Text(
                           'Title',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
+                          style: theme.textTheme.labelMedium?.copyWith(
                             color: Colors.black,
                           ),
                         ),
@@ -269,13 +309,10 @@ class _AdminContentManagementState extends State<AdminContentManagement> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Text(
+                                  Text(
                                     'Category',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 13,
-                                      color: Colors.black,
-                                    ),
+                                    style: theme.textTheme.labelMedium
+                                        ?.copyWith(color: Colors.black),
                                   ),
                                   const SizedBox(height: 6),
                                   DropdownButtonFormField<String>(
@@ -287,7 +324,7 @@ class _AdminContentManagementState extends State<AdminContentManagement> {
                                             child: Text(
                                               c,
                                               style: const TextStyle(
-                                                color: Colors.white,
+                                                color: Colors.black87,
                                               ),
                                             ),
                                           ),
@@ -303,11 +340,9 @@ class _AdminContentManagementState extends State<AdminContentManagement> {
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text(
+                                Text(
                                   'Offline available',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 13,
+                                  style: theme.textTheme.labelMedium?.copyWith(
                                     color: Colors.black,
                                   ),
                                 ),
@@ -321,11 +356,9 @@ class _AdminContentManagementState extends State<AdminContentManagement> {
                           ],
                         ),
                         const SizedBox(height: 12),
-                        const Text(
+                        Text(
                           'Content',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
+                          style: theme.textTheme.labelMedium?.copyWith(
                             color: Colors.black,
                           ),
                         ),
@@ -349,7 +382,7 @@ class _AdminContentManagementState extends State<AdminContentManagement> {
                             const SizedBox(width: 8),
                             Expanded(
                               child: OutlinedButton(
-                                onPressed: () {},
+                                onPressed: _preview,
                                 child: const Text(
                                   'Preview',
                                   style: TextStyle(color: Colors.black),
@@ -375,11 +408,9 @@ class _AdminContentManagementState extends State<AdminContentManagement> {
       flex: flex,
       child: Text(
         label,
-        style: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.bold,
-          color: Colors.black,
-        ),
+        style: Theme.of(
+          context,
+        ).textTheme.labelMedium?.copyWith(color: Colors.black),
       ),
     );
   }

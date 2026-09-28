@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 import '../widgets/admin_shared_widgets.dart';
 
 class AdminNotifications extends StatefulWidget {
@@ -15,6 +16,19 @@ class _AdminNotificationsState extends State<AdminNotifications> {
   String _audience = 'All users';
   String _priority = 'Normal';
   bool _isSending = false;
+
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _recentSentStream =
+      FirebaseFirestore.instance
+          .collection('systemNotifications')
+          .orderBy('sentAt', descending: true)
+          .limit(5)
+          .snapshots();
+
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _scheduledStream =
+      FirebaseFirestore.instance
+          .collection('systemNotifications')
+          .where('status', isEqualTo: 'scheduled')
+          .snapshots();
 
   @override
   void dispose() {
@@ -32,14 +46,88 @@ class _AdminNotificationsState extends State<AdminNotifications> {
         'body': _messageController.text.trim(),
         'audience': _audience,
         'priority': _priority,
+        'status': 'sent',
         'sentAt': FieldValue.serverTimestamp(),
       });
+      logAdminAction(
+        'Sent notification "${_titleController.text.trim()}"',
+        type: 'CREATE',
+      );
       _titleController.clear();
       _messageController.clear();
       if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('Notification sent.')));
+      }
+    } finally {
+      if (mounted) setState(() => _isSending = false);
+    }
+  }
+
+  // Writes with a future `scheduledFor` and no `sentAt` yet, so it's
+  // invisible to the "sentAt"-ordered queries the user app and the Recent
+  // Sends list both use. The sendScheduledSystemNotifications Cloud
+  // Function (functions/index.js) picks these up once due, stamps
+  // `sentAt`, and sends the push — that function isn't deployed yet (same
+  // build-but-don't-deploy status as the OTP functions), so a scheduled
+  // send won't actually go out until it is.
+  Future<void> _schedule() async {
+    if (_titleController.text.trim().isEmpty) return;
+
+    final now = DateTime.now();
+    final date = await showDatePicker(
+      context: context,
+      initialDate: now,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365)),
+    );
+    if (date == null || !mounted) return;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(now),
+    );
+    if (time == null || !mounted) return;
+
+    final scheduledFor = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      time.hour,
+      time.minute,
+    );
+    if (scheduledFor.isBefore(DateTime.now())) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pick a time in the future.')),
+      );
+      return;
+    }
+
+    setState(() => _isSending = true);
+    try {
+      await FirebaseFirestore.instance.collection('systemNotifications').add({
+        'title': _titleController.text.trim(),
+        'body': _messageController.text.trim(),
+        'audience': _audience,
+        'priority': _priority,
+        'status': 'scheduled',
+        'scheduledFor': Timestamp.fromDate(scheduledFor),
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      logAdminAction(
+        'Scheduled notification "${_titleController.text.trim()}"',
+        type: 'CREATE',
+      );
+      _titleController.clear();
+      _messageController.clear();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Scheduled for ${DateFormat('MMM d, h:mm a').format(scheduledFor)}.',
+            ),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _isSending = false);
@@ -82,11 +170,9 @@ class _AdminNotificationsState extends State<AdminNotifications> {
                           ),
                         ),
                         const SizedBox(height: 16),
-                        const Text(
+                        Text(
                           'Title',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
+                          style: theme.textTheme.labelMedium?.copyWith(
                             color: Colors.black,
                           ),
                         ),
@@ -98,11 +184,9 @@ class _AdminNotificationsState extends State<AdminNotifications> {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        const Text(
+                        Text(
                           'Message',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
+                          style: theme.textTheme.labelMedium?.copyWith(
                             color: Colors.black,
                           ),
                         ),
@@ -121,13 +205,10 @@ class _AdminNotificationsState extends State<AdminNotifications> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Text(
+                                  Text(
                                     'Target audience',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 13,
-                                      color: Colors.black,
-                                    ),
+                                    style: theme.textTheme.labelMedium
+                                        ?.copyWith(color: Colors.black),
                                   ),
                                   const SizedBox(height: 6),
                                   DropdownButtonFormField<String>(
@@ -156,13 +237,10 @@ class _AdminNotificationsState extends State<AdminNotifications> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Text(
+                                  Text(
                                     'Priority',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 13,
-                                      color: Colors.black,
-                                    ),
+                                    style: theme.textTheme.labelMedium
+                                        ?.copyWith(color: Colors.black),
                                   ),
                                   const SizedBox(height: 6),
                                   DropdownButtonFormField<String>(
@@ -192,7 +270,7 @@ class _AdminNotificationsState extends State<AdminNotifications> {
                             ),
                             const SizedBox(width: 8),
                             OutlinedButton(
-                              onPressed: () {},
+                              onPressed: _isSending ? null : _schedule,
                               child: const Text('Schedule'),
                             ),
                           ],
@@ -260,11 +338,7 @@ class _AdminNotificationsState extends State<AdminNotifications> {
                             ),
                             const SizedBox(height: 16),
                             StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                              stream: FirebaseFirestore.instance
-                                  .collection('systemNotifications')
-                                  .orderBy('sentAt', descending: true)
-                                  .limit(5)
-                                  .snapshots(),
+                              stream: _recentSentStream,
                               builder: (context, snap) {
                                 if (!snap.hasData || snap.data!.docs.isEmpty) {
                                   return Text(
@@ -291,6 +365,81 @@ class _AdminNotificationsState extends State<AdminNotifications> {
                                           ),
                                           Text(
                                             data['priority'] ?? '',
+                                            style: theme.textTheme.bodySmall
+                                                ?.copyWith(color: Colors.grey),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }).toList(),
+                                );
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey.shade200),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Scheduled (pending)',
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                color: Colors.black,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                              stream: _scheduledStream,
+                              builder: (context, snap) {
+                                if (!snap.hasData || snap.data!.docs.isEmpty) {
+                                  return Text(
+                                    'Nothing scheduled.',
+                                    style: theme.textTheme.bodySmall,
+                                  );
+                                }
+                                final docs = snap.data!.docs.toList()
+                                  ..sort((a, b) {
+                                    final aTs =
+                                        a.data()['scheduledFor'] as Timestamp?;
+                                    final bTs =
+                                        b.data()['scheduledFor'] as Timestamp?;
+                                    if (aTs == null || bTs == null) return 0;
+                                    return aTs.compareTo(bTs);
+                                  });
+                                return Column(
+                                  children: docs.map((doc) {
+                                    final data = doc.data();
+                                    final scheduledFor =
+                                        data['scheduledFor'] as Timestamp?;
+                                    final timeText = scheduledFor != null
+                                        ? DateFormat(
+                                            'MMM d, h:mm a',
+                                          ).format(scheduledFor.toDate())
+                                        : '';
+                                    return Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 6,
+                                      ),
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              data['title'] ?? '',
+                                              style: theme.textTheme.bodySmall,
+                                            ),
+                                          ),
+                                          Text(
+                                            timeText,
                                             style: theme.textTheme.bodySmall
                                                 ?.copyWith(color: Colors.grey),
                                           ),

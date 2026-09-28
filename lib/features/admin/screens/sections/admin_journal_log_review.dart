@@ -2,8 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../widgets/admin_shared_widgets.dart';
 
-class AdminJournalLogReview extends StatelessWidget {
+class AdminJournalLogReview extends StatefulWidget {
   const AdminJournalLogReview({super.key});
+
+  @override
+  State<AdminJournalLogReview> createState() => _AdminJournalLogReviewState();
+}
+
+class _AdminJournalLogReviewState extends State<AdminJournalLogReview> {
+  // Created once per mount instead of inline in build(): a fresh Stream
+  // object on every rebuild makes StreamBuilder drop its cached data and
+  // resubscribe from scratch, which is what made the list appear to
+  // "disappear" or reload on every unrelated rebuild (e.g. a window resize).
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _entriesStream =
+      FirebaseFirestore.instance
+          .collectionGroup('journalEntries')
+          .orderBy('createdAt', descending: true)
+          .snapshots();
 
   @override
   Widget build(BuildContext context) {
@@ -18,14 +33,11 @@ class AdminJournalLogReview extends StatelessWidget {
         ),
         Expanded(
           child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: FirebaseFirestore.instance
-                .collectionGroup('journalEntries')
-                .orderBy('createdAt', descending: true)
-                .snapshots(),
+            stream: _entriesStream,
             builder: (context, snapshot) {
-              if (!snapshot.hasData) {
-                return const Center(child: CircularProgressIndicator());
-              }
+              final fallback = adminSnapshotFallback(snapshot);
+              if (fallback != null) return fallback;
+
               final docs = snapshot.data!.docs;
               if (docs.isEmpty) {
                 return Center(
@@ -53,10 +65,10 @@ class AdminJournalLogReview extends StatelessWidget {
                         color: Colors.grey.shade50,
                         child: Row(
                           children: [
-                            _th('Title', flex: 2),
-                            _th('Classification', flex: 2),
-                            _th('Monitored'),
-                            _th('Referred'),
+                            _th(context, 'Title', flex: 2),
+                            _th(context, 'Classification', flex: 2),
+                            _th(context, 'Monitored'),
+                            _th(context, 'Referred'),
                           ],
                         ),
                       ),
@@ -118,12 +130,13 @@ class AdminJournalLogReview extends StatelessWidget {
                                       ),
                                       child: Text(
                                         referred ? 'Referred' : 'Recovering',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: referred
-                                              ? Colors.red
-                                              : Colors.green,
-                                        ),
+                                        style: theme.textTheme.labelSmall
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.normal,
+                                              color: referred
+                                                  ? Colors.red
+                                                  : Colors.green,
+                                            ),
                                       ),
                                     ),
                                   ),
@@ -145,16 +158,14 @@ class AdminJournalLogReview extends StatelessWidget {
     );
   }
 
-  Widget _th(String label, {int flex = 1}) {
+  Widget _th(BuildContext context, String label, {int flex = 1}) {
     return Expanded(
       flex: flex,
       child: Text(
         label,
-        style: const TextStyle(
-          fontWeight: FontWeight.bold,
-          fontSize: 12,
-          color: Colors.grey,
-        ),
+        style: Theme.of(
+          context,
+        ).textTheme.labelMedium?.copyWith(color: Colors.grey),
       ),
     );
   }
