@@ -9,6 +9,7 @@ class FirstAidChunk {
   final String source;
   final int? page;
   final List<String> keywords;
+  final List<String> imageUrls;
 
   final int matchScore;
 
@@ -20,6 +21,7 @@ class FirstAidChunk {
     required this.source,
     required this.keywords,
     this.page,
+    this.imageUrls = const [],
     this.matchScore = 0,
   });
 
@@ -37,6 +39,9 @@ class FirstAidChunk {
       page: data['page'] is int ? data['page'] as int : null,
       keywords:
           (data['keywords'] as List?)?.map((e) => e.toString()).toList() ??
+          const [],
+      imageUrls:
+          (data['imageUrls'] as List?)?.map((e) => e.toString()).toList() ??
           const [],
       matchScore: matchScore,
     );
@@ -57,21 +62,98 @@ class FirstAidContentService {
   final CollectionReference<Map<String, dynamic>> _collection =
       FirebaseFirestore.instance.collection('firstAidContent');
 
-  // Firestore allows at most 10 values in an `array-contains-any` clause.
   static const int _maxQueryKeywords = 10;
 
   static const Set<String> _stopWords = {
-    'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
-    'to', 'of', 'in', 'on', 'for', 'and', 'or', 'but', 'if', 'so', 'as',
-    'at', 'by', 'with', 'about', 'against', 'between', 'into', 'through',
-    'during', 'before', 'after', 'above', 'below', 'from', 'up', 'down',
-    'out', 'off', 'over', 'under', 'again', 'further', 'then', 'once',
-    'i', 'me', 'my', 'you', 'your', 'it', 'its', 'this', 'that', 'these',
-    'those', 'do', 'does', 'did', 'doing', 'have', 'has', 'had', 'having',
-    'can', 'could', 'should', 'would', 'will', 'shall', 'may', 'might',
-    'what', 'when', 'where', 'why', 'how', 'not', 'no', 'yes', 'im',
-    // Common conversational filler in a first-aid chatbot context
-    'help', 'please', 'hi', 'hello', 'thanks', 'ok', 'okay',
+    'the',
+    'a',
+    'an',
+    'is',
+    'are',
+    'was',
+    'were',
+    'be',
+    'been',
+    'being',
+    'to',
+    'of',
+    'in',
+    'on',
+    'for',
+    'and',
+    'or',
+    'but',
+    'if',
+    'so',
+    'as',
+    'at',
+    'by',
+    'with',
+    'about',
+    'against',
+    'between',
+    'into',
+    'through',
+    'during',
+    'before',
+    'after',
+    'above',
+    'below',
+    'from',
+    'up',
+    'down',
+    'out',
+    'off',
+    'over',
+    'under',
+    'again',
+    'further',
+    'then',
+    'once',
+    'i',
+    'me',
+    'my',
+    'you',
+    'your',
+    'it',
+    'its',
+    'this',
+    'that',
+    'these',
+    'those',
+    'do',
+    'does',
+    'did',
+    'doing',
+    'have',
+    'has',
+    'had',
+    'having',
+    'can',
+    'could',
+    'should',
+    'would',
+    'will',
+    'shall',
+    'may',
+    'might',
+    'what',
+    'when',
+    'where',
+    'why',
+    'how',
+    'not',
+    'no',
+    'yes',
+    'im',
+
+    'help',
+    'please',
+    'hi',
+    'hello',
+    'thanks',
+    'ok',
+    'okay',
   };
 
   List<String> tokenize(String text) {
@@ -128,5 +210,71 @@ class FirstAidContentService {
     final chunks = await search(query, limit: limit);
     if (chunks.isEmpty) return null;
     return chunks.map((c) => c.toContextEntry()).join('\n\n---\n\n');
+  }
+
+  List<FirstAidChunk>? _otcCache;
+  DateTime? _otcCacheAt;
+
+  Future<List<FirstAidChunk>> searchOtcMedications(
+    String query, {
+    int limit = 8,
+    int minScore = 2,
+  }) async {
+    final tokens = tokenize(query).toSet();
+    if (tokens.isEmpty) return [];
+
+    try {
+      var otcChunks = _otcCache;
+      final cacheAge = _otcCacheAt == null
+          ? null
+          : DateTime.now().difference(_otcCacheAt!);
+      if (otcChunks == null || cacheAge == null || cacheAge.inMinutes >= 10) {
+        final snapshot = await _collection
+            .where('topic', isEqualTo: 'otc_medication')
+            .limit(600)
+            .get()
+            .timeout(const Duration(seconds: 15));
+        otcChunks = snapshot.docs
+            .map((doc) => FirstAidChunk.fromDoc(doc))
+            .toList();
+        _otcCache = otcChunks;
+        _otcCacheAt = DateTime.now();
+      }
+
+      List<FirstAidChunk> scoreAndFilter(int threshold) {
+        final scored = otcChunks!
+            .map((c) {
+              final score = c.keywords.toSet().intersection(tokens).length;
+              return FirstAidChunk(
+                id: c.id,
+                title: c.title,
+                content: c.content,
+                topic: c.topic,
+                source: c.source,
+                page: c.page,
+                keywords: c.keywords,
+                imageUrls: c.imageUrls,
+                matchScore: score,
+              );
+            })
+            .where((c) => c.matchScore >= threshold)
+            .toList();
+        scored.sort((a, b) => b.matchScore.compareTo(a.matchScore));
+        return scored;
+      }
+
+      // Require at least [minScore] overlapping keywords by default — a
+      // single shared generic word (eg, "relief", "pain") was previously
+      // enough to surface completely unrelated products (an antacid or
+      // cough lozenge showing up for a skin abrasion). Only fall back to a
+      // looser single-keyword match if that stricter pass finds nothing,
+      // so a category still gets *some* suggestions rather than none.
+      final strict = scoreAndFilter(minScore);
+      final results = strict.isNotEmpty ? strict : scoreAndFilter(1);
+      return results.take(limit).toList();
+    } catch (e) {
+      debugPrint('FirstAidContentService.searchOtcMedications error: $e');
+      return [];
+    }
   }
 }

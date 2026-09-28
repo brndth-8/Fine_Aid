@@ -7,3 +7,6 @@ android/app/google-services.json
 android/app/release.keystore
 
 lib/core/constants/api_keys.dart
+
+# Local Claude Code session state — machine/session-specific, not project config.
+.claude/scheduled_tasks.lock
