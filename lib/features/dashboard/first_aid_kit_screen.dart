@@ -11,9 +11,17 @@ import '../../data/healing_durations.dart';
 import '../../data/health_profile_cautions.dart';
 import '../../core/follow_up_fallback.dart';
 import '../../core/widgets/voice_message_bubble.dart';
+import '../../i18n/health_kit_content_tl.dart';
+import '../../i18n/health_kit_locale.dart';
+import '../../i18n/health_kit_ui_strings.dart';
 
 class _FollowUpMessage {
   final String text;
+  // The chat model always returns both languages (see BilingualReply) —
+  // kept alongside the English text so the bubble can switch language
+  // instantly when the Health Kit locale toggle changes, without a
+  // re-fetch. Null for user messages, since there's nothing to translate.
+  final String? tagalog;
   final bool isUser;
   // Set only for a voice follow-up question — the recorded clip's local
   // file path, so it can be replayed as a chat bubble. `text` is always the
@@ -22,6 +30,7 @@ class _FollowUpMessage {
   final String? audioPath;
   const _FollowUpMessage({
     required this.text,
+    this.tagalog,
     required this.isUser,
     this.audioPath,
   });
@@ -49,6 +58,9 @@ class _Question {
 }
 
 class _Category {
+  // Matches a key in healthKitContentTl (health_kit_content_tl.dart) so
+  // the Tagalog translation for this category can be looked up.
+  final String id;
   final String title;
   final IconData icon;
   final List<_Question> questions;
@@ -57,6 +69,7 @@ class _Category {
   final String seekCareIf;
 
   const _Category({
+    required this.id,
     required this.title,
     required this.icon,
     required this.questions,
@@ -108,6 +121,7 @@ const List<String> _defaultWatchFor = [
 class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
   static final List<_Category> _categories = [
     _Category(
+      id: 'laceration',
       title: 'Laceration',
       icon: Icons.cut_outlined,
       questions: [
@@ -140,6 +154,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
           'notice signs of infection.',
     ),
     _Category(
+      id: 'minor_cut',
       title: 'Minor Cut',
       icon: Icons.content_cut,
       questions: [
@@ -168,6 +183,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
           'develop.',
     ),
     _Category(
+      id: 'scratch',
       title: 'Scratch',
       icon: Icons.back_hand_outlined,
       questions: [
@@ -193,6 +209,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
       seekCareIf: 'An animal was involved, or signs of infection develop.',
     ),
     _Category(
+      id: 'abrasion',
       title: 'Abrasion',
       icon: Icons.healing_outlined,
       questions: [
@@ -221,6 +238,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
           'infection develop.',
     ),
     _Category(
+      id: 'puncture_wound',
       title: 'Puncture Wound',
       icon: Icons.change_history,
       questions: [
@@ -253,6 +271,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
           'you\'re unsure about your tetanus vaccination status.',
     ),
     _Category(
+      id: 'burn',
       title: 'Burn',
       icon: Icons.local_fire_department_outlined,
       questions: [
@@ -281,6 +300,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
           'signs of infection.',
     ),
     _Category(
+      id: 'bruise',
       title: 'Bruise',
       icon: Icons.circle_outlined,
       questions: [
@@ -321,6 +341,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
           'swollen, misshapen, or hard to move.',
     ),
     _Category(
+      id: 'swelling',
       title: 'Swelling',
       icon: Icons.bubble_chart_outlined,
       questions: [
@@ -354,6 +375,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
           'face/throat, or comes with difficulty breathing.',
     ),
     _Category(
+      id: 'rash',
       title: 'Rash',
       icon: Icons.grain_outlined,
       questions: [
@@ -396,6 +418,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
           'quickly, or comes with breathing difficulty.',
     ),
     _Category(
+      id: 'other_skin_issue',
       title: 'Other Skin Issue',
       icon: Icons.medical_information_outlined,
       questions: [
@@ -451,9 +474,12 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
 
   List<String> _healthCautions = [];
 
+  HealthKitLocale _locale = HealthKitLocale.en;
+
   @override
   void initState() {
     super.initState();
+    _loadLocale();
     _loadHealthCautions();
   }
 
@@ -462,6 +488,64 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
     if (!mounted) return;
     final cautions = healthProfileCautions(profile);
     if (cautions.isNotEmpty) setState(() => _healthCautions = cautions);
+  }
+
+  Future<void> _loadLocale() async {
+    final locale = await loadHealthKitLocale();
+    if (!mounted) return;
+    setState(() => _locale = locale);
+  }
+
+  void _setLocale(HealthKitLocale locale) {
+    if (locale == _locale) return;
+    setState(() => _locale = locale);
+    saveHealthKitLocale(locale);
+  }
+
+  String _ui(String key) => HealthKitStrings.of(key, _locale);
+
+  CategoryTranslationTl? _translation(_Category category) =>
+      _locale == HealthKitLocale.tl ? healthKitContentTl[category.id] : null;
+
+  String _categoryTitle(_Category category) =>
+      _translation(category)?.title ?? category.title;
+
+  String _questionText(_Category category, int index) {
+    final questions = _translation(category)?.questions;
+    if (questions != null && index < questions.length) {
+      return questions[index].text;
+    }
+    return category.questions[index].text;
+  }
+
+  String _redFlagMessageFor(_Category category, int index, String fallback) {
+    final questions = _translation(category)?.questions;
+    if (questions != null && index < questions.length) {
+      return questions[index].redFlagMessage ?? fallback;
+    }
+    return fallback;
+  }
+
+  List<String> _steps(_Category category) =>
+      _translation(category)?.steps ?? category.steps;
+
+  List<String> _watchFor(_Category category) =>
+      _translation(category)?.watchFor ?? category.watchFor;
+
+  String _seekCareIf(_Category category) =>
+      _translation(category)?.seekCareIf ?? category.seekCareIf;
+
+  // The chat model always returns both languages — the bot's bubble
+  // switches immediately with the toggle. A user's own message is shown
+  // exactly as they typed or spoke it, since there's no translation of it.
+  String _displayFollowUpText(_FollowUpMessage message) {
+    if (message.isUser) return message.text;
+    if (_locale == HealthKitLocale.tl &&
+        message.tagalog != null &&
+        message.tagalog!.trim().isNotEmpty) {
+      return message.tagalog!;
+    }
+    return message.text;
   }
 
   @override
@@ -474,23 +558,23 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
     super.dispose();
   }
 
-  Future<bool> _askQuestion(_Question question, int number, int total) async {
+  Future<bool> _askQuestion(String text, int number, int total) async {
     final answer = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Question $number of $total'),
-        content: Text(question.text),
+        title: Text(HealthKitStrings.questionDialogTitle(number, total, _locale)),
+        content: Text(text),
         actionsAlignment: MainAxisAlignment.spaceEvenly,
         actions: [
           OutlinedButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('No'),
+            child: Text(_ui('no')),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Yes'),
+            child: Text(_ui('yes')),
           ),
         ],
       ),
@@ -503,18 +587,18 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.warning_amber_rounded, color: Colors.red),
-            SizedBox(width: 8),
-            Expanded(child: Text('Professional Consultation Recommended')),
+            const Icon(Icons.warning_amber_rounded, color: Colors.red),
+            const SizedBox(width: 8),
+            Expanded(child: Text(_ui('redFlagInterstitialTitle'))),
           ],
         ),
         content: Text(message),
         actions: [
           ElevatedButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Continue'),
+            child: Text(_ui('continueLabel')),
           ),
         ],
       ),
@@ -542,7 +626,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
       if (!mounted) return;
       final question = category.questions[i];
       final answeredYes = await _askQuestion(
-        question,
+        _questionText(category, i),
         i + 1,
         category.questions.length,
       );
@@ -553,9 +637,10 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
 
       if (answeredYes && question.isRedFlag) {
         hasRedFlag = true;
-        final message =
+        final fallback =
             question.redFlagMessage ??
             'Based on your answer, this may need professional evaluation.';
+        final message = _redFlagMessageFor(category, i, fallback);
         _redFlagMessages.add(message);
         if (!mounted) return;
         await _showRedFlagInterstitial(message);
@@ -613,6 +698,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
               'Warning signs: ${category.watchFor.join(', ')}';
 
     String response;
+    String? responseTagalog;
     try {
       final contextualQuery = [
         if (category != null) category.title,
@@ -628,8 +714,11 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
             woundContext: woundContext,
           )
           .timeout(const Duration(seconds: 20));
-      final english = parseBilingualReply(raw).english.trim();
+      final parsed = parseBilingualReply(raw);
+      final english = parsed.english.trim();
       response = english.isNotEmpty ? english : randomFollowUpFallbackMessage();
+      final tagalog = parsed.tagalog?.trim();
+      responseTagalog = (tagalog != null && tagalog.isNotEmpty) ? tagalog : null;
     } catch (e, st) {
       logFollowUpError('FirstAidKit', e, st);
       response = randomFollowUpFallbackMessage();
@@ -637,7 +726,13 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
 
     if (!mounted) return;
     setState(() {
-      _followUpMessages.add(_FollowUpMessage(text: response, isUser: false));
+      _followUpMessages.add(
+        _FollowUpMessage(
+          text: response,
+          tagalog: responseTagalog,
+          isUser: false,
+        ),
+      );
       _isSendingFollowUp = false;
       if (_savedJournalEntryId != null) _hasUnsavedFollowUps = true;
     });
@@ -862,6 +957,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
                       ),
                     ),
                   ),
+                  _buildLanguageToggle(theme),
                 ],
               ),
             ),
@@ -879,9 +975,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
                         borderRadius: BorderRadius.circular(16),
                       ),
                       child: Text(
-                        'A pre-loaded library for basic first aid guidance. '
-                        'Works completely offline - no Wi-Fi or data '
-                        'needed.',
+                        _ui('bannerBody'),
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: Colors.white,
                         ),
@@ -889,7 +983,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
                     ),
                     const SizedBox(height: 20),
                     Text(
-                      'What type of injury do you need help with?',
+                      _ui('categoryPrompt'),
                       style: theme.textTheme.titleMedium,
                     ),
                     const SizedBox(height: 8),
@@ -907,7 +1001,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
                           vertical: 4,
                         ),
                       ),
-                      hint: const Text('Select an injury type'),
+                      hint: Text(_ui('categoryHint')),
                       items: List.generate(
                         _categories.length,
                         (i) => DropdownMenuItem(
@@ -921,7 +1015,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
                                 color: theme.colorScheme.primary,
                               ),
                               const SizedBox(width: 8),
-                              Text(_categories[i].title),
+                              Text(_categoryTitle(_categories[i])),
                             ],
                           ),
                         ),
@@ -941,7 +1035,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
                         _resultCategoryIndex == null) ...[
                       const SizedBox(height: 16),
                       Text(
-                        'Describe your concern (optional)',
+                        _ui('concernLabel'),
                         style: theme.textTheme.titleSmall,
                       ),
                       const SizedBox(height: 6),
@@ -949,9 +1043,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
                         controller: _concernController,
                         maxLines: 2,
                         decoration: InputDecoration(
-                          hintText:
-                              'eg, "The scratch is still painful '
-                              'after three days."',
+                          hintText: _ui('concernHint'),
                           filled: true,
                           fillColor: theme.colorScheme.surfaceContainerHigh,
                           border: OutlineInputBorder(
@@ -966,7 +1058,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
                         style: ElevatedButton.styleFrom(
                           minimumSize: const Size.fromHeight(46),
                         ),
-                        child: const Text('Start Questions'),
+                        child: Text(_ui('startQuestions')),
                       ),
                     ],
                     const SizedBox(height: 20),
@@ -983,6 +1075,25 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildLanguageToggle(ThemeData theme) {
+    return Semantics(
+      label: _ui('languageToggleLabel'),
+      child: SegmentedButton<HealthKitLocale>(
+        segments: const [
+          ButtonSegment(value: HealthKitLocale.en, label: Text('EN')),
+          ButtonSegment(value: HealthKitLocale.tl, label: Text('TL')),
+        ],
+        selected: {_locale},
+        showSelectedIcon: false,
+        style: const ButtonStyle(
+          visualDensity: VisualDensity.compact,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        onSelectionChanged: (selection) => _setLocale(selection.first),
       ),
     );
   }
@@ -1054,7 +1165,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  category.title,
+                  _categoryTitle(category),
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
@@ -1065,7 +1176,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
           if (_userConcern != null) ...[
             const SizedBox(height: 12),
             Text(
-              'Your Concern',
+              _ui('yourConcern'),
               style: theme.textTheme.titleSmall?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
@@ -1090,9 +1201,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Based on your answers, this may need professional '
-                      'evaluation. The steps below are basic first aid '
-                      'only — please also seek medical care.',
+                      _ui('redFlagSummary'),
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: Colors.red.shade700,
                         fontWeight: FontWeight.bold,
@@ -1106,13 +1215,13 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
           ],
           _buildHealthCautionBox(theme),
           Text(
-            'Basic First Aid Steps',
+            _ui('basicFirstAidSteps'),
             style: theme.textTheme.titleSmall?.copyWith(
               fontWeight: FontWeight.bold,
             ),
           ),
           const SizedBox(height: 8),
-          ...category.steps.asMap().entries.map(
+          ..._steps(category).asMap().entries.map(
             (e) => Padding(
               padding: const EdgeInsets.only(bottom: 6),
               child: Row(
@@ -1133,13 +1242,13 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
           ),
           const SizedBox(height: 12),
           Text(
-            'Watch For',
+            _ui('watchFor'),
             style: theme.textTheme.titleSmall?.copyWith(
               fontWeight: FontWeight.bold,
             ),
           ),
           const SizedBox(height: 6),
-          ...category.watchFor.map(
+          ..._watchFor(category).map(
             (w) => Padding(
               padding: const EdgeInsets.only(bottom: 4),
               child: Row(
@@ -1160,7 +1269,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
-              'Seek professional care if: ${category.seekCareIf}',
+              '${_ui('seekCareIfPrefix')}${_seekCareIf(category)}',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.primary,
               ),
@@ -1168,8 +1277,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'This is general first aid guidance based on your answers, not '
-            'a medical diagnosis or a substitute for professional care.',
+            _ui('resultDisclaimer'),
             style: theme.textTheme.bodySmall?.copyWith(
               color: Colors.grey.shade600,
               fontStyle: FontStyle.italic,
@@ -1195,7 +1303,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    'Saved to Health Journal',
+                    _ui('savedToJournal'),
                     style: TextStyle(
                       color: Colors.green.shade700,
                       fontWeight: FontWeight.bold,
@@ -1222,10 +1330,10 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
                     ),
               label: Text(
                 _isSaving
-                    ? 'Saving...'
+                    ? _ui('saving')
                     : _hasUnsavedFollowUps
-                    ? 'Update Journal Entry'
-                    : 'Save to Health Journal',
+                    ? _ui('updateJournalEntry')
+                    : _ui('saveToJournal'),
               ),
               style: ElevatedButton.styleFrom(
                 minimumSize: const Size.fromHeight(46),
@@ -1236,7 +1344,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
           const SizedBox(height: 16),
           OutlinedButton(
             onPressed: _reset,
-            child: const Text('Choose a Different Injury'),
+            child: Text(_ui('chooseDifferentInjury')),
           ),
         ],
       ),
@@ -1248,16 +1356,14 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Ask a follow-up question',
+          _ui('askFollowUp'),
           style: theme.textTheme.titleSmall?.copyWith(
             fontWeight: FontWeight.bold,
           ),
         ),
         const SizedBox(height: 2),
         Text(
-          'Optional - type or record your question. Recording and '
-          "transcribing work offline; getting an answer still needs an "
-          'internet connection.',
+          _ui('followUpSubtitle'),
           style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey),
         ),
         const SizedBox(height: 10),
@@ -1288,7 +1394,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
                     const SizedBox(height: 6),
                   ],
                   Text(
-                    m.text,
+                    _displayFollowUpText(m),
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: m.isUser ? Colors.white : null,
                       fontStyle: m.audioPath != null ? FontStyle.italic : null,
@@ -1389,8 +1495,8 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: TextField(
                 controller: _chatController,
-                decoration: const InputDecoration(
-                  hintText: 'Ask a follow-up question...',
+                decoration: InputDecoration(
+                  hintText: _ui('followUpHint'),
                   border: InputBorder.none,
                 ),
                 onChanged: (_) => setState(() {}),
