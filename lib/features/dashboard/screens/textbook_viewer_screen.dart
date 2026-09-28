@@ -47,6 +47,11 @@ class _TextbookViewerScreenState extends State<TextbookViewerScreen> {
   }
 
   Future<void> _loadPdfFromAssets() async {
+    setState(() {
+      _errorMessage = null;
+      _isLoading = true;
+      _localPdfPath = null;
+    });
     try {
       final byteData = await rootBundle.load(widget.assetPdfPath);
       final tempDir = await getTemporaryDirectory();
@@ -209,6 +214,12 @@ class _TextbookViewerScreenState extends State<TextbookViewerScreen> {
               const Icon(Icons.error_outline, size: 48, color: Colors.red),
               const SizedBox(height: 12),
               Text(_errorMessage!, textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: _loadPdfFromAssets,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Retry'),
+              ),
             ],
           ),
         ),

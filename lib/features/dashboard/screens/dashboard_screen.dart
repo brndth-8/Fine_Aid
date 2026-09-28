@@ -93,7 +93,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _BookItem(
       title: 'First Aid and CPR Manual',
       imagePath: 'assets/images/books/first_aid_and_CPR_manual.jpg',
-      pdfPath: 'assets/pdfs/FA-CPR-AED-Part-Manual (1).pdf',
+      pdfPath: 'assets/pdfs/First Aid and CPR Manual.pdf',
     ),
   ];
 
