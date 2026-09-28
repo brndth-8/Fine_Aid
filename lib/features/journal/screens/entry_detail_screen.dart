@@ -3,14 +3,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import '../../../services/export_service.dart';
+import '../../../data/healing_durations.dart';
+import '../../../core/widgets/nearby_healthcare_sheet.dart';
 import '../../chatbot/screens/chatbot_screen.dart';
-
-const Map<String, int> _healingDurations = {
-  'Injury (Wounds/laceration/Abrasion)': 10,
-  'Burns': 7,
-  'Skin Issues': 14,
-  'Animal Bite/Scratch': 10,
-};
+import 'journal_list_screen.dart';
 
 class EntryDetailScreen extends StatefulWidget {
   final String entryId;
@@ -27,7 +23,14 @@ class EntryDetailScreen extends StatefulWidget {
 }
 
 class _EntryDetailScreenState extends State<EntryDetailScreen> {
-  bool _showingReferral = false;
+  // Reflects the persisted response as soon as the entry is opened — not
+  // just when the in-app dialog runs this same session — so a "Wound
+  // Worsened" reply given via the scheduled healing check-in notification
+  // (answered from outside the app, or on a previous visit) still shows the
+  // caution banner the next time this entry is opened.
+  late bool _showingReferral =
+      widget.data['milestoneResponded'] == true &&
+      widget.data['feelingBetter'] == false;
 
   @override
   void initState() {
@@ -43,7 +46,7 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
 
   int? _standardDuration() {
     final classification = widget.data['classification'] as String?;
-    return _healingDurations[classification];
+    return healingDurationDays[classification];
   }
 
   Future<void> _maybeShowMilestone() async {
@@ -78,11 +81,11 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
         actions: [
           OutlinedButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text("No, I am still not"),
+            child: const Text('Wound Worsened'),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text("Yes, I'm feeling better"),
+            child: const Text('Feeling Better'),
           ),
         ],
       ),
@@ -113,10 +116,160 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
     }
   }
 
+  Widget _buildConversationSection(ThemeData theme) {
+    final userConcern = widget.data['userConcern'] as String?;
+    final conversation =
+        (widget.data['followUpConversation'] as List?)
+            ?.cast<Map<String, dynamic>>() ??
+        const [];
+    final questionsAndAnswers =
+        (widget.data['questionsAndAnswers'] as List?)
+            ?.cast<Map<String, dynamic>>() ??
+        const [];
+    final redFlags =
+        (widget.data['redFlags'] as List?)?.cast<String>() ?? const [];
+
+    if ((userConcern == null || userConcern.trim().isEmpty) &&
+        conversation.isEmpty &&
+        questionsAndAnswers.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (userConcern != null && userConcern.trim().isNotEmpty) ...[
+            Text(
+              'Your Concern',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(userConcern, style: theme.textTheme.bodyMedium),
+            const SizedBox(height: 16),
+          ],
+          if (questionsAndAnswers.isNotEmpty) ...[
+            Text(
+              'Questions & Answers',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 6),
+            ...questionsAndAnswers.asMap().entries.map((entry) {
+              final qa = entry.value;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Text(
+                  'Q${entry.key + 1}: ${qa['question']}\nA: ${qa['answer']}',
+                  style: theme.textTheme.bodyMedium,
+                ),
+              );
+            }),
+            const SizedBox(height: 8),
+          ],
+          if (redFlags.isNotEmpty) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.red.shade300),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Professional Consultation Recommended',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: Colors.red.shade700,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  ...redFlags.map(
+                    (f) => Text(
+                      '• $f',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: Colors.red.shade700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+          if (conversation.isNotEmpty) ...[
+            Text(
+              'Follow-Up Conversation',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            ...conversation.map((turn) {
+              final isUser = turn['role'] == 'user';
+              final text = turn['text']?.toString() ?? '';
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isUser ? 'You' : 'Assistant',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(text, style: theme.textTheme.bodyMedium),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildHealingTimeline(ThemeData theme) {
     final standard = _standardDuration();
     final monitored = _monitoredDays() ?? 0;
-    if (standard == null) return const SizedBox.shrink();
+
+    if (standard == null) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.info_outline,
+              size: 18,
+              color: theme.colorScheme.primary,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Healing-time estimate unavailable — this entry wasn\'t '
+                'confidently matched to a specific wound type. Monitor how '
+                'you feel and consult a professional if you\'re unsure.',
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     final progress = (monitored / standard).clamp(0.0, 1.0);
     final isComplete = monitored >= standard;
@@ -133,7 +286,10 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Healing Progress', style: theme.textTheme.titleSmall),
+              Text(
+                'Healing Progress (Estimate)',
+                style: theme.textTheme.titleSmall,
+              ),
               Text(
                 isComplete
                     ? 'Milestone reached!'
@@ -179,15 +335,27 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
               children: [
                 Icon(Icons.check_circle, color: Colors.green[700], size: 16),
                 const SizedBox(width: 6),
-                Text(
-                  'You\'ve reached the standard healing timeframe.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: Colors.green[700],
+                Expanded(
+                  child: Text(
+                    'You\'ve reached the standard healing timeframe.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: Colors.green[700],
+                    ),
                   ),
                 ),
               ],
             ),
           ],
+          const SizedBox(height: 8),
+          Text(
+            'This is a general estimate based on typical recovery '
+            'timelines, not a guaranteed recovery date. Actual healing '
+            'varies by person — consult a doctor if it isn\'t improving.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: Colors.grey.shade600,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
         ],
       ),
     );
@@ -225,10 +393,23 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
                   Expanded(
                     child: Text(
                       'Health Journal',
-                      style: theme.textTheme.headlineSmall,
+                      style: theme.textTheme.titleSmall,
                     ),
                   ),
-                  const SizedBox(width: 48),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, color: Colors.red),
+                    tooltip: 'Delete entry',
+                    onPressed: () async {
+                      final deleted =
+                          await JournalListScreen.confirmAndDeleteEntry(
+                            context,
+                            widget.entryId,
+                          );
+                      if (deleted && context.mounted) {
+                        Navigator.pop(context);
+                      }
+                    },
+                  ),
                 ],
               ),
               const SizedBox(height: 16),
@@ -304,6 +485,7 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
                 'Monitored: $monitoredDays Day${monitoredDays == 1 ? '' : 's'}',
                 style: theme.textTheme.bodyMedium,
               ),
+              _buildConversationSection(theme),
               if (_showingReferral) ...[
                 const SizedBox(height: 20),
                 Container(
@@ -339,6 +521,12 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
                         style: theme.textTheme.bodyMedium,
                       ),
                       const SizedBox(height: 12),
+                      ElevatedButton.icon(
+                        onPressed: () => showNearbyHealthcareSheet(context),
+                        icon: const Icon(Icons.local_hospital_outlined),
+                        label: const Text('Find Nearby Healthcare'),
+                      ),
+                      const SizedBox(height: 8),
                       OutlinedButton(
                         onPressed: () {
                           ExportService().exportEntryAsPdf(
@@ -362,8 +550,10 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) =>
-                          ChatbotScreen(initialContext: classification),
+                      builder: (context) => ChatbotScreen(
+                        initialContext: classification,
+                        journalEntryId: widget.entryId,
+                      ),
                     ),
                   );
                 },

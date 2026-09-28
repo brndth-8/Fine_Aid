@@ -190,7 +190,13 @@ class _LoginFormScreenState extends State<LoginFormScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const SizedBox(height: 40),
+                Align(
+                  alignment: Alignment.topLeft,
+                  child: IconButton(
+                    icon: const Icon(Icons.arrow_back_ios, size: 18),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ),
                 Center(
                   child: Image.asset(
                     'assets/images/FINE_AID_Logo.png',
@@ -270,28 +276,8 @@ class _LoginFormScreenState extends State<LoginFormScreen> {
                 // Forgot password
                 Center(
                   child: TextButton(
-                    onPressed: () {
-                      showDialog(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          title: const Text('Forgot Password?'),
-                          content: const Text(
-                            'To reset your password, please contact '
-                            'Fine Aid support with your username '
-                            'and registered phone number.',
-                          ),
-                          actions: [
-                            ElevatedButton(
-                              onPressed: () => Navigator.pop(context),
-                              child: const Text('OK'),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
+                    onPressed: () =>
+                        Navigator.pushNamed(context, '/forgot-password'),
                     child: const Text('Forgot password?'),
                   ),
                 ),
@@ -313,14 +299,6 @@ class _LoginFormScreenState extends State<LoginFormScreen> {
                         ],
                       ),
                     ),
-                  ),
-                ),
-
-                // Back to landing
-                Center(
-                  child: TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('← Back'),
                   ),
                 ),
               ],

@@ -27,7 +27,7 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
     'Injury (Wounds/laceration/Abrasion)',
     'Burns',
     'Skin Issues',
-    'Animal Bite/Scratch',
+    'Scratch',
   ];
 
   @override
@@ -200,7 +200,7 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
                   Expanded(
                     child: Text(
                       'Health Journal',
-                      style: theme.textTheme.headlineSmall,
+                      style: theme.textTheme.titleSmall,
                     ),
                   ),
                   const SizedBox(width: 48),

@@ -21,7 +21,10 @@ class _PermissionScreenState extends State<PermissionScreen> {
       await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
-          .update({'cameraPermissionGranted': granted})
+          .update({
+            'cameraPermissionGranted': granted,
+            'permissionStepComplete': true,
+          })
           .timeout(const Duration(seconds: 10));
     }
   }

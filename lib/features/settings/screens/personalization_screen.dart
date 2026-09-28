@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/text_scale_controller.dart';
 
 class PersonalizationScreen extends StatefulWidget {
   const PersonalizationScreen({super.key});
@@ -8,8 +9,6 @@ class PersonalizationScreen extends StatefulWidget {
 }
 
 class _PersonalizationScreenState extends State<PersonalizationScreen> {
-  double _textScale = 1.0; // 1.0 = default; range 0.8 - 1.6
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -44,61 +43,65 @@ class _PersonalizationScreenState extends State<PersonalizationScreen> {
                 style: theme.textTheme.titleMedium,
               ),
               const SizedBox(height: 16),
-              Row(
-                children: [
-                  Text('A', style: theme.textTheme.bodySmall),
-                  Expanded(
-                    child: Slider(
-                      value: _textScale,
-                      min: 0.8,
-                      max: 1.6,
-                      divisions: 8,
-                      onChanged: (value) => setState(() => _textScale = value),
-                    ),
-                  ),
-                  Text('A', style: theme.textTheme.headlineSmall),
-                ],
-              ),
-              const SizedBox(height: 24),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: theme.colorScheme.primary,
-                    width: 1.5,
-                  ),
-                ),
-                child: Column(
-                  children: [
-                    Text(
-                      'Sample Text',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontSize:
-                            (theme.textTheme.titleMedium?.fontSize ?? 16) *
-                            _textScale,
+              ListenableBuilder(
+                listenable: TextScaleController.instance,
+                builder: (context, _) {
+                  final scale = TextScaleController.instance.scale;
+                  return Column(
+                    children: [
+                      Row(
+                        children: [
+                          Text('A', style: theme.textTheme.bodySmall),
+                          Expanded(
+                            child: Slider(
+                              value: scale,
+                              min: TextScaleController.min,
+                              max: TextScaleController.max,
+                              divisions: 8,
+                              label: '${(scale * 100).round()}%',
+                              onChanged: (value) =>
+                                  TextScaleController.instance.setScale(value),
+                            ),
+                          ),
+                          Text('A', style: theme.textTheme.headlineSmall),
+                        ],
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'The quick brown fox jumps over the lazy dog. '
-                      'Adjust to see the changes.\nABC',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontSize:
-                            (theme.textTheme.bodyMedium?.fontSize ?? 14) *
-                            _textScale,
+                      const SizedBox(height: 24),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: theme.colorScheme.primary,
+                            width: 1.5,
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            Text(
+                              'Sample Text',
+                              style: theme.textTheme.titleMedium,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'The quick brown fox jumps over the lazy dog. '
+                              'Adjust to see the changes.\nABC',
+                              textAlign: TextAlign.center,
+                              style: theme.textTheme.bodyMedium,
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  );
+                },
               ),
               const Spacer(),
               Text(
-                'Note: this preview is local for now. App-wide text scaling '
-                'will be wired up in a later update.',
+                'This applies across the whole app immediately and is '
+                'remembered next time you open Fine Aid.',
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodySmall,
               ),

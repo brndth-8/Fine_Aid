@@ -21,10 +21,16 @@ class OnboardingScreen extends StatefulWidget {
   State<OnboardingScreen> createState() => _OnboardingScreenState();
 }
 
-class _OnboardingScreenState extends State<OnboardingScreen> {
+class _OnboardingScreenState extends State<OnboardingScreen>
+    with SingleTickerProviderStateMixin {
   final PageController _pageController = PageController();
   int _currentPage = 0;
+  double _pageOffset = 0;
   bool _isLoading = false;
+
+  late final AnimationController _entranceController;
+  late final Animation<double> _logoFade;
+  late final Animation<Offset> _logoSlide;
 
   final List<_OnboardingPageData> _pages = const [
     _OnboardingPageData(
@@ -57,6 +63,34 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     ),
   ];
 
+  @override
+  void initState() {
+    super.initState();
+
+    _entranceController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    );
+    _logoFade = CurvedAnimation(
+      parent: _entranceController,
+      curve: Curves.easeOut,
+    );
+    _logoSlide = Tween<Offset>(begin: const Offset(0, -0.3), end: Offset.zero)
+        .animate(
+          CurvedAnimation(
+            parent: _entranceController,
+            curve: Curves.easeOutCubic,
+          ),
+        );
+    _entranceController.forward();
+
+    _pageController.addListener(() {
+      setState(() {
+        _pageOffset = _pageController.page ?? _currentPage.toDouble();
+      });
+    });
+  }
+
   Future<void> _finishOnboarding() async {
     setState(() => _isLoading = true);
 
@@ -86,8 +120,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   void _nextPage() {
     if (_currentPage < _pages.length - 1) {
       _pageController.nextPage(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeInOutCubic,
       );
     } else {
       _finishOnboarding();
@@ -96,6 +130,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   @override
   void dispose() {
+    _entranceController.dispose();
     _pageController.dispose();
     super.dispose();
   }
@@ -109,11 +144,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            Center(
-              child: Image.asset(
-                'assets/images/FINE_AID_Logo.png',
-                width: 160,
-                height: 160,
+            FadeTransition(
+              opacity: _logoFade,
+              child: SlideTransition(
+                position: _logoSlide,
+                child: Center(
+                  child: Image.asset(
+                    'assets/images/FINE_AID_Logo.png',
+                    width: 160,
+                    height: 160,
+                  ),
+                ),
               ),
             ),
             Align(
@@ -133,29 +174,54 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 onPageChanged: (index) => setState(() => _currentPage = index),
                 itemBuilder: (context, index) {
                   final page = _pages[index];
+                  final delta = (_pageOffset - index).clamp(-1.0, 1.0);
+                  final scale = 1 - (delta.abs() * 0.15);
+                  final opacity = 1 - delta.abs();
+                  final verticalOffset = delta * 40;
+
                   return Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 32),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          page.icon,
-                          size: 96,
-                          color: theme.colorScheme.primary,
+                    child: Opacity(
+                      opacity: opacity.clamp(0.0, 1.0),
+                      child: Transform.translate(
+                        offset: Offset(0, verticalOffset),
+                        child: Transform.scale(
+                          scale: scale,
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              TweenAnimationBuilder<double>(
+                                tween: Tween(begin: 0.7, end: 1.0),
+                                duration: const Duration(milliseconds: 500),
+                                curve: Curves.elasticOut,
+                                builder: (context, value, child) {
+                                  return Transform.scale(
+                                    scale: value,
+                                    child: child,
+                                  );
+                                },
+                                child: Icon(
+                                  page.icon,
+                                  size: 96,
+                                  color: theme.colorScheme.primary,
+                                ),
+                              ),
+                              const SizedBox(height: 32),
+                              Text(
+                                page.title,
+                                style: theme.textTheme.headlineSmall,
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                page.description,
+                                style: theme.textTheme.bodyMedium,
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
                         ),
-                        const SizedBox(height: 32),
-                        Text(
-                          page.title,
-                          style: theme.textTheme.headlineSmall,
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          page.description,
-                          style: theme.textTheme.bodyMedium,
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
+                      ),
                     ),
                   );
                 },
@@ -165,7 +231,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: List.generate(_pages.length, (index) {
                 final isActive = index == _currentPage;
-                return Container(
+                return AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInOut,
                   margin: const EdgeInsets.symmetric(horizontal: 4),
                   width: isActive ? 24 : 8,
                   height: 8,
@@ -180,21 +248,33 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             ),
             Padding(
               padding: const EdgeInsets.all(24),
-              child: ElevatedButton(
-                onPressed: _isLoading ? null : _nextPage,
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(50),
-                ),
-                child: _isLoading
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
+              child: AnimatedSize(
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeInOut,
+                child: ElevatedButton(
+                  onPressed: _isLoading ? null : _nextPage,
+                  style: ElevatedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(50),
+                  ),
+                  child: _isLoading
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 250),
+                          transitionBuilder: (child, animation) =>
+                              FadeTransition(opacity: animation, child: child),
+                          child: Text(
+                            isLastPage ? 'Get Started' : 'Next',
+                            key: ValueKey(isLastPage),
+                          ),
                         ),
-                      )
-                    : Text(isLastPage ? 'Get Started' : 'Next'),
+                ),
               ),
             ),
           ],

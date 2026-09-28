@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../journal/screens/journal_list_screen.dart';
+import '../../journal/screens/day_entries_screen.dart';
 import '../../camera/screens/ai_camera_screen.dart';
 import '../../settings/screens/help_screen.dart';
 import '../../settings/screens/settings_screen.dart';
@@ -10,6 +11,10 @@ import '../../settings/screens/profile_screen.dart';
 import '../screens/notifications_screen.dart';
 import '../first_aid_kit_screen.dart';
 import '../../../services/connectivity_service.dart';
+import '../../../core/widgets/help_tour_launcher.dart';
+import '../../../core/widgets/help_tour_overlay.dart';
+import '../../../core/widgets/custom_bottom_nav_bar.dart';
+import '../../../core/widgets/connectivity_badge.dart';
 import 'textbook_viewer_screen.dart';
 
 class _BookItem {
@@ -34,15 +39,32 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   bool _isOnline = true;
   DateTime _displayedMonth = DateTime.now();
+  int? _selectedNavIndex;
+
+  // Bottom nav
+  static const List<BottomNavItem> _navItems = [
+    BottomNavItem(icon: Icons.menu_book_outlined, label: 'Health\nJournal'),
+    BottomNavItem(
+      icon: Icons.center_focus_strong_outlined,
+      label: 'AI Vision\nCamera',
+    ),
+    BottomNavItem(icon: Icons.support_agent_outlined, label: 'Help &\nSupport'),
+  ];
 
   // Tour keys
   final GlobalKey _profileKey = GlobalKey();
   final GlobalKey _calendarKey = GlobalKey();
   final GlobalKey _actionTilesKey = GlobalKey();
+  final GlobalKey _journalNavKey = GlobalKey();
+  final GlobalKey _scannerNavKey = GlobalKey();
+  final GlobalKey _helpNavKey = GlobalKey();
+  final GlobalKey _bookCarouselKey = GlobalKey();
+
+  bool _showTour = false;
 
   // Book carousel
-  final PageController _bookController = PageController(viewportFraction: 0.55);
-  int _currentBookPage = 0;
+  final PageController _bookController = PageController(viewportFraction: 0.75);
+  int _currentBookPage = 1;
 
   final List<_BookItem> _books = const [
     _BookItem(
@@ -75,9 +97,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     ),
   ];
 
+  static bool _guestTourShownThisSession = false;
+
   @override
   void initState() {
     super.initState();
+    _bookController.addListener(_onBookScroll);
 
     // Check initial connectivity
     ConnectivityService().isOnline.then((online) {
@@ -88,11 +113,113 @@ class _DashboardScreenState extends State<DashboardScreen> {
     ConnectivityService().onlineStream.listen((online) {
       if (mounted) setState(() => _isOnline = online);
     });
+
+    HelpTourLauncher.instance.requestToken.addListener(_onTourRequested);
+    _maybeAutoShowTour();
   }
+
+  Future<void> _maybeAutoShowTour() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      // Guest session — show once per app run rather than persisting
+      // anything, since guest state doesn't survive a restart anyway.
+      if (!_guestTourShownThisSession) {
+        _guestTourShownThisSession = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(() => _showTour = true);
+        });
+      }
+      return;
+    }
+
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      if (doc.data()?['helpTourSeen'] == true) return;
+
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).update(
+        {'helpTourSeen': true},
+      );
+
+      if (mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(() => _showTour = true);
+        });
+      }
+    } catch (_) {
+      // Non-critical — if this fails, the tour simply won't auto-show.
+    }
+  }
+
+  void _onTourRequested() {
+    if (mounted) setState(() => _showTour = true);
+  }
+
+  void _onBookScroll() {
+    final page = _bookController.page;
+    if (page == null) return;
+    final rounded = page.round().clamp(0, _books.length - 1);
+    if (rounded != _currentBookPage) {
+      setState(() => _currentBookPage = rounded);
+    }
+  }
+
+  List<HelpTourStep> get _tourSteps => [
+    const HelpTourStep(
+      title: 'Welcome to Fine Aid',
+      description:
+          'A quick look at the main features - tap Next to continue, or '
+          'Skip Tour any time.',
+      icon: Icons.waving_hand_outlined,
+    ),
+    HelpTourStep(
+      targetKey: _scannerNavKey,
+      title: 'AI Scanner',
+      description:
+          'Point your camera at a wound or skin issue and get instant, '
+          'AI-powered first aid guidance.',
+      icon: Icons.center_focus_strong_outlined,
+    ),
+    HelpTourStep(
+      targetKey: _journalNavKey,
+      title: 'Health Journal',
+      description:
+          'Track your recovery over time, with healing-progress estimates '
+          'and reminders if something needs a closer look.',
+      icon: Icons.menu_book_outlined,
+    ),
+    HelpTourStep(
+      targetKey: _bookCarouselKey,
+      title: 'First Aid Textbook',
+      description:
+          'Browse trusted first aid reference books — available even '
+          'when you\'re offline, with search to jump straight to a topic.',
+      icon: Icons.import_contacts_outlined,
+    ),
+    HelpTourStep(
+      targetKey: _helpNavKey,
+      title: 'Help & Support',
+      description:
+          'Find answers to common questions, or come back here to replay '
+          'this tour whenever you like.',
+      icon: Icons.support_agent_outlined,
+    ),
+    HelpTourStep(
+      targetKey: _profileKey,
+      title: 'Profile & Settings',
+      description:
+          'Manage your profile, notifications, and account settings from '
+          'here.',
+      icon: Icons.account_circle_outlined,
+    ),
+  ];
 
   @override
   void dispose() {
     _bookController.dispose();
+    HelpTourLauncher.instance.requestToken.removeListener(_onTourRequested);
     super.dispose();
   }
 
@@ -114,14 +241,92 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return months[month - 1];
   }
 
+  void _handleNavTap(int index) {
+    setState(() => _selectedNavIndex = index);
+    switch (index) {
+      case 0:
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const JournalListScreen()),
+        );
+        break;
+      case 1:
+        if (!_isOnline) {
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              title: const Text('Your Currently Offline'),
+              content: const Text(
+                'AI Camera requires an internet connection. Check your '
+                'connection and try again, or use the offline First Aid '
+                'Health Kit instead.',
+              ),
+              actions: [
+                OutlinedButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const FirstAidKitScreen(),
+                      ),
+                    );
+                  },
+                  child: const Text('First Aid Kit'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Go Back'),
+                ),
+              ],
+            ),
+          );
+          return;
+        }
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const AiCameraScreen()),
+        );
+        break;
+      case 2:
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const HelpScreen()),
+        );
+        break;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final user = FirebaseAuth.instance.currentUser;
     final isGuest = user == null;
 
+    return Stack(
+      children: [
+        _buildScaffold(theme, isGuest),
+        if (_showTour)
+          HelpTourOverlay(
+            steps: _tourSteps,
+            onFinished: () => setState(() => _showTour = false),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildScaffold(ThemeData theme, bool isGuest) {
     return Scaffold(
-      bottomNavigationBar: _buildBottomNav(theme),
+      bottomNavigationBar: CustomBottomNavBar(
+        key: _actionTilesKey,
+        items: _navItems,
+        itemKeys: [_journalNavKey, _scannerNavKey, _helpNavKey],
+        selectedIndex: _selectedNavIndex,
+        onItemTap: _handleNavTap,
+      ),
       body: SafeArea(
         child: Column(
           children: [
@@ -136,6 +341,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     width: 70,
                     height: 50,
                   ),
+                  const SizedBox(width: 8),
+                  const ConnectivityBadge(),
                   const Spacer(),
                   // Notification bell
                   IconButton(
@@ -338,6 +545,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildBookCarousel(ThemeData theme) {
     return Container(
+      key: _bookCarouselKey,
       decoration: BoxDecoration(
         color: Color.lerp(
           theme.colorScheme.surfaceContainerHighest,
@@ -355,7 +563,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
               controller: _bookController,
               padEnds: false,
               itemCount: _books.length,
-              onPageChanged: (i) => setState(() => _currentBookPage = i),
               itemBuilder: (context, index) {
                 final book = _books[index];
                 return Padding(
@@ -387,9 +594,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 height: 8,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: isActive
-                      ? theme.colorScheme.primary
-                      : theme.colorScheme.primary.withValues(alpha: 0.3),
+                  color: isActive ? Colors.grey.shade700 : Colors.grey.shade300,
                 ),
               );
             }),
@@ -434,7 +639,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                   ),
                   Text(
-                    'First Aid Basic Guide — Free Access',
+                    'First Aid Basic Guide - Free Access',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.primary,
                     ),
@@ -516,9 +721,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 },
               ),
               Text(
-                '${_monthName(_displayedMonth.month)} '
+                '${_monthName(_displayedMonth.month).toUpperCase()} '
                 '${_displayedMonth.year}',
-                style: theme.textTheme.titleMedium,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1,
+                ),
               ),
               IconButton(
                 icon: const Icon(Icons.chevron_right),
@@ -547,7 +755,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       textAlign: TextAlign.center,
                       style: theme.textTheme.labelSmall?.copyWith(
                         fontWeight: FontWeight.bold,
-                        color: theme.colorScheme.primary,
+                        color: d == 'Su'
+                            ? Colors.red.shade400
+                            : theme.colorScheme.primary,
                       ),
                     ),
                   ),
@@ -584,7 +794,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) => const JournalListScreen(),
+                            builder: (context) =>
+                                DayEntriesScreen(initialDate: thisDate),
                           ),
                         );
                       }
@@ -668,131 +879,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ],
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildBottomNav(ThemeData theme) {
-    return Container(
-      key: _actionTilesKey,
-      decoration: BoxDecoration(
-        color: theme.colorScheme.primary,
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(20),
-          topRight: Radius.circular(20),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.2),
-            blurRadius: 10,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-          child: Row(
-            children: [
-              Expanded(
-                child: _bottomNavItem(
-                  icon: Icons.menu_book_outlined,
-                  label: 'Health\nJournal',
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const JournalListScreen(),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              Expanded(
-                child: _bottomNavItem(
-                  icon: Icons.center_focus_strong_outlined,
-                  label: 'AI Vision\nCamera',
-                  onTap: () {
-                    if (!_isOnline) {
-                      showDialog(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          title: const Text('Your Currently Offline'),
-                          content: const Text(
-                            'AI Camera is disabled. '
-                            'Check your connection or '
-                            'use First Aid Health Kit.',
-                          ),
-                          actions: [
-                            ElevatedButton(
-                              onPressed: () => Navigator.pop(context),
-                              child: const Text('Go Back'),
-                            ),
-                          ],
-                        ),
-                      );
-                      return;
-                    }
-
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const AiCameraScreen(),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              Expanded(
-                child: _bottomNavItem(
-                  icon: Icons.support_agent_outlined,
-                  label: 'Help &\nSupport',
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const HelpScreen(),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _bottomNavItem({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: Colors.white, size: 28),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

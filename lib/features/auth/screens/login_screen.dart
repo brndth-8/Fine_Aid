@@ -92,7 +92,12 @@ class LoginScreen extends StatelessWidget {
                 borderRadius: BorderRadius.circular(8),
               ),
             ),
-            child: const Text('Log In', style: TextStyle(fontSize: 12)),
+            child: Text(
+              'Log In',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: Colors.white),
+            ),
           ),
         ),
 
@@ -113,7 +118,10 @@ class LoginScreen extends StatelessWidget {
                 borderRadius: BorderRadius.circular(8),
               ),
             ),
-            child: const Text('Create Account', style: TextStyle(fontSize: 12)),
+            child: Text(
+              'Create Account',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
           ),
         ),
 
@@ -147,9 +155,9 @@ class LoginScreen extends StatelessWidget {
                 borderRadius: BorderRadius.circular(8),
               ),
             ),
-            child: const Text(
+            child: Text(
               'Continue as Guest',
-              style: TextStyle(fontSize: 12),
+              style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
         ),

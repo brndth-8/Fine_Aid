@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'help_topic_screen.dart';
+import '../../../core/widgets/help_tour_launcher.dart';
 
 class HelpScreen extends StatelessWidget {
   const HelpScreen({super.key});
@@ -86,6 +87,18 @@ class HelpScreen extends StatelessWidget {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 20),
+              OutlinedButton.icon(
+                onPressed: () {
+                  HelpTourLauncher.instance.requestTour();
+                  Navigator.of(context).popUntil((route) => route.isFirst);
+                },
+                icon: const Icon(Icons.play_circle_outline),
+                label: const Text('Replay Help Tour'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(48),
+                ),
               ),
             ],
           ),

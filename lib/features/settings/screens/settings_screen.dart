@@ -110,6 +110,14 @@ class SettingsScreen extends StatelessWidget {
               ElevatedButton.icon(
                 onPressed: () async {
                   await AuthService().signOut();
+                  if (context.mounted) {
+                    // Pop every pushed route (Dashboard, Settings, etc.)
+                    // back to AuthGate, which now shows the landing/login
+                    // screen since the user is signed out. Without this,
+                    // signing out leaves the authenticated screens sitting
+                    // on the navigation stack, reachable via back.
+                    Navigator.of(context).popUntil((route) => route.isFirst);
+                  }
                 },
                 icon: const Icon(Icons.logout),
                 label: const Text('Log Out'),

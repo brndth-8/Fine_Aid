@@ -52,6 +52,7 @@ class _HealthChecklistScreenState extends State<HealthChecklistScreen> {
                 'noneOfTheAbove': _noneOfTheAbove,
               },
               'healthProfileSavedAt': FieldValue.serverTimestamp(),
+              'healthProfileComplete': true,
             })
             .timeout(const Duration(seconds: 10));
         await AuthService().markOnboardingComplete(user.uid);

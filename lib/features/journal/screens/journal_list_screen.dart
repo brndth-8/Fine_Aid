@@ -2,11 +2,63 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import '../../../services/firebase/notification_service.dart';
 import 'new_entry_screen.dart';
 import 'entry_detail_screen.dart';
 
 class JournalListScreen extends StatelessWidget {
   const JournalListScreen({super.key});
+
+  static Future<bool> confirmAndDeleteEntry(
+    BuildContext context,
+    String entryId,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Delete Entry'),
+        content: const Text('Are you sure you want to delete this entry?'),
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return false;
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return false;
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('journalEntries')
+          .doc(entryId)
+          .delete()
+          .timeout(const Duration(seconds: 10));
+      await NotificationService().cancelHealingCheckIn(entryId);
+      return true;
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not delete entry. Please try again.'),
+          ),
+        );
+      }
+      return false;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -212,6 +264,11 @@ class JournalListScreen extends StatelessWidget {
                   ),
                 ],
               ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline, color: Colors.red),
+              tooltip: 'Delete entry',
+              onPressed: () => confirmAndDeleteEntry(context, entryId),
             ),
           ],
         ),

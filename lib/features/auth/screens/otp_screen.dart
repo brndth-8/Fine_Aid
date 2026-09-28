@@ -2,7 +2,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import '../../../services/api/semaphore_service.dart';
+import '../../../services/firebase/auth_service.dart';
+import 'package:flutter/services.dart';
 
 class OtpScreen extends StatefulWidget {
   const OtpScreen({super.key});
@@ -19,6 +22,7 @@ class _OtpScreenState extends State<OtpScreen> {
   final List<FocusNode> _focusNodes = List.generate(6, (_) => FocusNode());
 
   String? _phoneNumber;
+  String? _recoveryEmail;
   String? _verificationMethod;
   String? _otpError;
   bool _isLoading = false;
@@ -26,6 +30,11 @@ class _OtpScreenState extends State<OtpScreen> {
   bool _isResending = false;
   int _resendCooldown = 0;
   Timer? _cooldownTimer;
+  bool _isSigningOut = false;
+  bool _isEditingPhone = false;
+
+  bool get _isPhoneMethod => _verificationMethod == 'phone';
+  bool get _isEmailMethod => _verificationMethod == 'email';
 
   @override
   void initState() {
@@ -58,8 +67,13 @@ class _OtpScreenState extends State<OtpScreen> {
       if (mounted) {
         setState(() {
           _phoneNumber = doc.data()?['phoneNumber'] as String?;
+          _recoveryEmail = doc.data()?['recoveryEmail'] as String?;
+          // Every account before today's email-verification option was
+          // always phone-verified, so that's the correct default for any
+          // account missing this field — not 'email', which would send a
+          // real code to a recoveryEmail these older accounts don't have.
           _verificationMethod =
-              doc.data()?['verificationMethod'] as String? ?? 'email';
+              doc.data()?['verificationMethod'] as String? ?? 'phone';
         });
       }
 
@@ -68,8 +82,10 @@ class _OtpScreenState extends State<OtpScreen> {
         'phone=$_phoneNumber',
       );
 
-      if (_verificationMethod == 'phone' && _phoneNumber != null) {
+      if (_isPhoneMethod && _phoneNumber != null) {
         await _sendOtp();
+      } else if (_isEmailMethod && _recoveryEmail != null) {
+        await _sendEmailOtp();
       }
     } catch (e) {
       debugPrint('OTP loadUserInfo error: $e');
@@ -112,6 +128,43 @@ class _OtpScreenState extends State<OtpScreen> {
     }
   }
 
+  Future<void> _sendEmailOtp() async {
+    if (_recoveryEmail == null) {
+      setState(() => _otpError = 'No email address found for this account.');
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _otpError = null;
+    });
+
+    try {
+      await FirebaseFunctions.instance
+          .httpsCallable('sendAccountVerificationOtpEmail')
+          .call();
+      if (!mounted) return;
+      setState(() {
+        _codeSent = true;
+        _isLoading = false;
+      });
+      _startResendCooldown();
+    } on FirebaseFunctionsException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _otpError =
+            e.message ?? 'Failed to send the code. Please try again.';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _otpError = 'Failed to send the code. Please try again.';
+      });
+    }
+  }
+
   void _startResendCooldown() {
     setState(() => _resendCooldown = 60);
     _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -122,6 +175,127 @@ class _OtpScreenState extends State<OtpScreen> {
       setState(() => _resendCooldown--);
       if (_resendCooldown <= 0) timer.cancel();
     });
+  }
+
+  // This step is reached by AuthGate re-routing to OtpScreen directly
+  // (not a Navigator push), so there's no previous route to pop back to.
+  // Just signing out would leave the half-registered account (and its
+  // username reservation) behind — the user would land on a blank Create
+  // Account form but immediately get "username already taken" if they try
+  // the same one again. So "back" here means abandon this registration
+  // outright: delete the never-verified auth user, its profile doc, and
+  // release the username, then go to a genuinely fresh Create Account
+  // screen. The account is only ever this incomplete for the few seconds
+  // between registering and verifying, so this is always safe to discard.
+  Future<void> _handleBack() async {
+    if (_isSigningOut) return;
+    setState(() => _isSigningOut = true);
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      try {
+        final profileDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .get();
+        final username = profileDoc.data()?['username'] as String?;
+        if (username != null && username.trim().isNotEmpty) {
+          await FirebaseFirestore.instance
+              .collection('usernames')
+              .doc(username.trim().toLowerCase())
+              .delete();
+        }
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .delete();
+        await user.delete();
+      } catch (e) {
+        debugPrint('OTP back: could not fully clean up, signing out: $e');
+        await AuthService().signOut();
+      }
+    }
+
+    if (!mounted) return;
+    Navigator.of(
+      context,
+    ).pushNamedAndRemoveUntil('/registration', (route) => false);
+  }
+
+  Future<void> _handleEditPhoneNumber() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final controller = TextEditingController(text: _phoneNumber ?? '');
+    final newNumber = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Edit Phone Number'),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.phone,
+          autofocus: true,
+          inputFormatters: [
+            FilteringTextInputFormatter.allow(RegExp(r'[\d+]')),
+          ],
+          decoration: const InputDecoration(
+            hintText: 'e.g. 09171234567',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, controller.text.trim()),
+            child: const Text('Save & Resend'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+
+    if (newNumber == null || newNumber.isEmpty || newNumber == _phoneNumber) {
+      return;
+    }
+
+    setState(() {
+      _isEditingPhone = true;
+      _otpError = null;
+    });
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .update({'phoneNumber': newNumber})
+          .timeout(const Duration(seconds: 10));
+
+      for (final c in _controllers) {
+        c.clear();
+      }
+      _cooldownTimer?.cancel();
+      if (!mounted) return;
+      setState(() {
+        _phoneNumber = newNumber;
+        _codeSent = false;
+        _resendCooldown = 0;
+      });
+      await _sendOtp();
+    } catch (e) {
+      debugPrint('OTP edit phone number error: $e');
+      if (mounted) {
+        setState(() {
+          _otpError = 'Could not update phone number. Please try again.';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _isEditingPhone = false);
+    }
   }
 
   Future<void> _handleSubmit() async {
@@ -136,6 +310,11 @@ class _OtpScreenState extends State<OtpScreen> {
       _isLoading = true;
       _otpError = null;
     });
+
+    if (_isEmailMethod) {
+      await _handleSubmitEmail(code);
+      return;
+    }
 
     final result = await SemaphoreService().verifyOtp(code: code);
 
@@ -178,6 +357,31 @@ class _OtpScreenState extends State<OtpScreen> {
     }
   }
 
+  Future<void> _handleSubmitEmail(String code) async {
+    try {
+      await FirebaseFunctions.instance
+          .httpsCallable('verifyAccountVerificationOtp')
+          .call({'code': code});
+      if (!mounted) return;
+      Navigator.pushNamed(context, '/terms');
+    } on FirebaseFunctionsException catch (e) {
+      if (!mounted) return;
+      final expiredOrExhausted =
+          e.code == 'deadline-exceeded' || e.code == 'resource-exhausted';
+      setState(() {
+        _isLoading = false;
+        _otpError = e.message ?? 'Verification failed. Please try again.';
+        if (expiredOrExhausted) _codeSent = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _otpError = 'Verification failed. Please try again.';
+      });
+    }
+  }
+
   void _onDigitChanged(int index, String value) {
     if (value.isNotEmpty && index < 5) {
       _focusNodes[index + 1].requestFocus();
@@ -189,7 +393,8 @@ class _OtpScreenState extends State<OtpScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isPhoneMethod = _verificationMethod == 'phone';
+    final isPhoneMethod = _isPhoneMethod;
+    final hasCodeFlow = _isPhoneMethod || _isEmailMethod;
 
     return Scaffold(
       body: SafeArea(
@@ -197,7 +402,21 @@ class _OtpScreenState extends State<OtpScreen> {
           padding: const EdgeInsets.all(24),
           child: Column(
             children: [
-              const SizedBox(height: 24),
+              Row(
+                children: [
+                  IconButton(
+                    icon: _isSigningOut
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.arrow_back_ios, size: 18),
+                    tooltip: 'Back',
+                    onPressed: _isSigningOut ? null : _handleBack,
+                  ),
+                ],
+              ),
               Center(
                 child: Image.asset(
                   'assets/images/FINE_AID_Logo.png',
@@ -236,15 +455,55 @@ class _OtpScreenState extends State<OtpScreen> {
                                           'to try again.'
                                     : 'Preparing to '
                                           'send OTP...'
-                              : 'You chose email '
-                                    'verification. Check your '
-                                    'email for a verification '
-                                    'link, then tap Continue.',
+                              : _isEmailMethod
+                              ? _codeSent
+                                    ? 'Enter the code sent '
+                                          'to $_recoveryEmail'
+                                    : _isLoading
+                                    ? 'Sending a code to '
+                                          '$_recoveryEmail...'
+                                    : _otpError != null
+                                    ? 'Tap Resend to try again.'
+                                    : 'Preparing to send a code...'
+                              : 'Preparing to verify your account...',
                           style: theme.textTheme.bodyMedium,
                         ),
-                        const SizedBox(height: 20),
+                        if (isPhoneMethod && !_isEditingPhone)
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton(
+                              onPressed: _isLoading || _isResending
+                                  ? null
+                                  : _handleEditPhoneNumber,
+                              style: TextButton.styleFrom(
+                                padding: EdgeInsets.zero,
+                                minimumSize: const Size(0, 32),
+                                tapTargetSize:
+                                    MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              child: const Text('Wrong number? Edit'),
+                            ),
+                          ),
+                        if (_isEditingPhone)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 6),
+                            child: Row(
+                              children: [
+                                SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                                SizedBox(width: 8),
+                                Text('Updating phone number...'),
+                              ],
+                            ),
+                          ),
+                        const SizedBox(height: 12),
 
-                        if (isPhoneMethod && _codeSent) ...[
+                        if (hasCodeFlow && _codeSent) ...[
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: List.generate(
@@ -258,8 +517,42 @@ class _OtpScreenState extends State<OtpScreen> {
                                   keyboardType: TextInputType.number,
                                   maxLength: 1,
                                   enabled: !_isLoading,
-                                  decoration: const InputDecoration(
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.digitsOnly,
+                                  ],
+                                  style: const TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black,
+                                  ),
+                                  decoration: InputDecoration(
                                     counterText: '',
+                                    filled: true,
+                                    fillColor: Colors.white,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      vertical: 12,
+                                    ),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                      borderSide: BorderSide(
+                                        color: Colors.grey.shade400,
+                                      ),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                      borderSide: BorderSide(
+                                        color: Colors.grey.shade400,
+                                      ),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                      borderSide: BorderSide(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.primary,
+                                        width: 2,
+                                      ),
+                                    ),
                                   ),
                                   onChanged: (value) =>
                                       _onDigitChanged(index, value),
@@ -296,10 +589,8 @@ class _OtpScreenState extends State<OtpScreen> {
                                 Expanded(
                                   child: Text(
                                     _otpError!,
-                                    style: TextStyle(
-                                      color: Colors.red.shade700,
-                                      fontSize: 12,
-                                    ),
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(color: Colors.red.shade700),
                                   ),
                                 ),
                               ],
@@ -311,9 +602,9 @@ class _OtpScreenState extends State<OtpScreen> {
                         ElevatedButton(
                           onPressed: _isLoading
                               ? null
-                              : isPhoneMethod
+                              : hasCodeFlow
                               ? (_codeSent ? _handleSubmit : null)
-                              : () => Navigator.pushNamed(context, '/terms'),
+                              : null,
                           style: ElevatedButton.styleFrom(
                             minimumSize: const Size.fromHeight(50),
                           ),
@@ -326,7 +617,7 @@ class _OtpScreenState extends State<OtpScreen> {
                                     color: Colors.white,
                                   ),
                                 )
-                              : Text(isPhoneMethod ? 'Submit' : 'Continue'),
+                              : const Text('Submit'),
                         ),
                       ],
                     ),
@@ -335,7 +626,7 @@ class _OtpScreenState extends State<OtpScreen> {
               ),
 
               // Resend button
-              if (isPhoneMethod)
+              if (hasCodeFlow)
                 Padding(
                   padding: const EdgeInsets.only(top: 12),
                   child: TextButton(
@@ -351,16 +642,20 @@ class _OtpScreenState extends State<OtpScreen> {
                             for (final c in _controllers) {
                               c.clear();
                             }
-                            await _sendOtp();
+                            if (isPhoneMethod) {
+                              await _sendOtp();
+                            } else {
+                              await _sendEmailOtp();
+                            }
                             if (mounted) {
                               setState(() => _isResending = false);
                             }
                           },
                     child: Text(
                       _resendCooldown > 0
-                          ? 'Resend OTP in '
+                          ? 'Resend code in '
                                 '${_resendCooldown}s'
-                          : "Didn't receive the OTP? "
+                          : "Didn't receive the code? "
                                 'Resend',
                     ),
                   ),

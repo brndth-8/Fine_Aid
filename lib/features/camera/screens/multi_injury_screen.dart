@@ -9,10 +9,23 @@ class _DetectedWound {
   const _DetectedWound({required this.label, required this.region});
 }
 
+// Regions smaller than this (as a fraction of the image) are expanded so
+// every wound stays comfortably tappable on a phone screen, even when the
+// AI-detected box is small or the wounds are close together.
+const double _minRegionWidth = 0.22;
+const double _minRegionHeight = 0.16;
+
 class MultiInjuryScreen extends StatefulWidget {
   final String imagePath;
+  final List<String> woundDescriptions;
+  final List<Rect?> woundBoxes;
 
-  const MultiInjuryScreen({super.key, required this.imagePath});
+  const MultiInjuryScreen({
+    super.key,
+    required this.imagePath,
+    required this.woundDescriptions,
+    this.woundBoxes = const [],
+  });
 
   @override
   State<MultiInjuryScreen> createState() => _MultiInjuryScreenState();
@@ -21,16 +34,55 @@ class MultiInjuryScreen extends StatefulWidget {
 class _MultiInjuryScreenState extends State<MultiInjuryScreen> {
   int? _selectedIndex;
 
-  final List<_DetectedWound> _wounds = const [
-    _DetectedWound(
-      label: 'Wound 1 — Minor Cut',
-      region: Rect.fromLTWH(0.05, 0.35, 0.38, 0.35),
-    ),
-    _DetectedWound(
-      label: 'Wound 2 — Skin Irritation',
-      region: Rect.fromLTWH(0.52, 0.28, 0.42, 0.42),
-    ),
-  ];
+  late final List<_DetectedWound> _wounds;
+
+  Rect _fallbackRegion(int index) {
+    final col = index % 2;
+    final row = index ~/ 2;
+    return Rect.fromLTWH(
+      col == 0 ? 0.05 : 0.52,
+      0.25 + (row * 0.35),
+      0.38,
+      0.30,
+    );
+  }
+
+  Rect _ensureMinSize(Rect rect) {
+    var width = rect.width < _minRegionWidth ? _minRegionWidth : rect.width;
+    var height = rect.height < _minRegionHeight
+        ? _minRegionHeight
+        : rect.height;
+    width = width.clamp(0.0, 1.0);
+    height = height.clamp(0.0, 1.0);
+
+    var left = rect.center.dx - width / 2;
+    var top = rect.center.dy - height / 2;
+    left = left.clamp(0.0, 1.0 - width);
+    top = top.clamp(0.0, 1.0 - height);
+
+    return Rect.fromLTWH(left, top, width, height);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // Use the AI's own detected bounding box for each wound so the tap
+    // region actually corresponds to where the wound is in the photo.
+    // Fall back to a generated grid position only for a wound the model
+    // didn't return a usable box for.
+    _wounds = List.generate(widget.woundDescriptions.length, (index) {
+      final aiBox = index < widget.woundBoxes.length
+          ? widget.woundBoxes[index]
+          : null;
+      final region = _ensureMinSize(aiBox ?? _fallbackRegion(index));
+      return _DetectedWound(
+        label:
+            'Wound ${index + 1} — '
+            '${widget.woundDescriptions[index]}',
+        region: region,
+      );
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -105,6 +157,7 @@ class _MultiInjuryScreenState extends State<MultiInjuryScreen> {
                               height:
                                   wound.region.height * constraints.maxHeight,
                               child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
                                 onTap: () =>
                                     setState(() => _selectedIndex = index),
                                 child: Container(
@@ -139,10 +192,11 @@ class _MultiInjuryScreenState extends State<MultiInjuryScreen> {
                                     ),
                                     child: Text(
                                       'Wound ${index + 1}',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 10,
-                                      ),
+                                      style: theme.textTheme.labelSmall
+                                          ?.copyWith(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.normal,
+                                          ),
                                     ),
                                   ),
                                 ),
@@ -183,6 +237,9 @@ class _MultiInjuryScreenState extends State<MultiInjuryScreen> {
                           MaterialPageRoute(
                             builder: (context) => AssessmentResultScreen(
                               imagePath: widget.imagePath,
+                              woundHints: [
+                                widget.woundDescriptions[_selectedIndex!],
+                              ],
                             ),
                           ),
                         );
