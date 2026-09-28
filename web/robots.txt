@@ -1,0 +1,8 @@
+# The admin path is intentionally NOT listed here: robots.txt is public, so a
+# Disallow line would advertise it. It is kept out of search results by the
+# X-Robots-Tag: noindex header set in firebase.json instead.
+User-agent: *
+Allow: /
+
+# DOMAIN PLACEHOLDER — update when the GoDaddy domain is finalized.
+Sitemap: https://www.fineaid.com/sitemap.xml

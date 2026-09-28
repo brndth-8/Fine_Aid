@@ -1,12 +1,12 @@
 {
-    "name": "fine_aid",
-    "short_name": "fine_aid",
+    "name": "Fine Aid",
+    "short_name": "Fine Aid",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
-    "orientation": "portrait-primary",
+    "background_color": "#FFFFFF",
+    "theme_color": "#8B1A1A",
+    "description": "Your Smart First Aid Assistant",
+    "orientation": "any",
     "prefer_related_applications": false,
     "icons": [
         {
