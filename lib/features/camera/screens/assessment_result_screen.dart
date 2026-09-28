@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../services/api/gemini_service.dart';
 import '../../../services/firebase/storage_service.dart';
 import '../../../services/firebase/first_aid_content_service.dart';
@@ -611,6 +612,25 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
     );
   }
 
+  // Philippines' unified national emergency hotline.
+  static const String _emergencyPhoneNumber = '911';
+
+  Future<void> _callEmergencyServices() async {
+    final uri = Uri(scheme: 'tel', path: _emergencyPhoneNumber);
+    try {
+      await launchUrl(uri);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Could not open the dialer. Please call 911 directly.',
+          ),
+        ),
+      );
+    }
+  }
+
   Widget _buildTriageBanner(ThemeData theme, WoundAssessment a) {
     if (_triageBannerTitle(a) == null) return const SizedBox.shrink();
 
@@ -628,18 +648,43 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: color.shade300),
         ),
-        child: Row(
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: Text(
-                title,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: color.shade700,
-                  fontWeight: FontWeight.bold,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: color.shade700,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            // Emergency-level only — urgent-but-not-emergency and the
+            // "professional evaluation recommended" case are real but not
+            // immediately life-threatening, so a direct dial-out CTA isn't
+            // warranted there; the banner text alone already tells the
+            // user to seek care.
+            if (isEmergency) ...[
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _callEmergencyServices,
+                  icon: const Icon(Icons.call, size: 18),
+                  label: const Text('Call Emergency Services (911)'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red.shade700,
+                    foregroundColor: Colors.white,
+                  ),
                 ),
               ),
-            ),
+            ],
           ],
         ),
       ),
