@@ -6,7 +6,6 @@ import 'package:image_picker/image_picker.dart';
 import '../../../services/local_profile_photo.dart';
 import '../../../services/firebase/storage_service.dart';
 import '../../../core/password_requirements.dart';
-import '../../../core/widgets/password_requirements_checklist.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -213,21 +212,27 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       final newUsername = _usernameController.text.trim();
       final recoveryEmail = _recoveryEmailController.text.trim();
 
-      // Usernames are case-insensitive app-wide (see AuthService), so the
-      // uniqueness check and the `usernames/{lowercased}` index update
-      // here follow the exact same normalized-lowercase scheme
-      // registration uses — otherwise a rename here would leave the old
-      // index doc stale (still pointing logins at the old username) and
-      // wouldn't reliably catch a case-variant collision with someone
-      // else's account.
-      final oldKey = _originalUsername.trim().toLowerCase();
-      final newKey = newUsername.toLowerCase();
-      if (newKey != oldKey) {
-        final existing = await FirebaseFirestore.instance
-            .collection('usernames')
-            .doc(newKey)
+      // Usernames are case-sensitive app-wide (see AuthService) — the
+      // reservation doc is keyed by the exact-case username itself. An
+      // older account may still have its reservation under the legacy
+      // lowercased doc ID; either way, this releases whichever doc
+      // currently holds THIS account's reservation and creates the new
+      // one under the exact-case scheme, so a rename never leaves a stale
+      // index doc behind or lets a case-variant collide silently.
+      final oldUsername = _originalUsername.trim();
+      if (newUsername != oldUsername) {
+        final oldLowerKey = oldUsername.toLowerCase();
+        final usernamesRef = FirebaseFirestore.instance.collection('usernames');
+
+        final existingExact = await usernamesRef.doc(newUsername).get();
+        final existingLegacy = await usernamesRef
+            .doc(newUsername.toLowerCase())
             .get();
-        if (existing.exists) {
+        final legacyCollision =
+            existingLegacy.exists &&
+            existingLegacy.data()?['usernameExact'] == newUsername;
+
+        if (existingExact.exists || legacyCollision) {
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('That username is already taken.')),
@@ -239,14 +244,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         // The account's Firebase Auth email is always the generated
         // username@fineaid.app one (never the recovery email above), so
         // it's already right here on `user` — no extra read needed.
+        final oldExactDoc = await usernamesRef.doc(oldUsername).get();
         final batch = FirebaseFirestore.instance.batch();
         batch.delete(
-          FirebaseFirestore.instance.collection('usernames').doc(oldKey),
+          usernamesRef.doc(oldExactDoc.exists ? oldUsername : oldLowerKey),
         );
-        batch.set(
-          FirebaseFirestore.instance.collection('usernames').doc(newKey),
-          {'email': user.email, 'uid': user.uid, 'usernameExact': newUsername},
-        );
+        batch.set(usernamesRef.doc(newUsername), {
+          'email': user.email,
+          'uid': user.uid,
+          'usernameExact': newUsername,
+        });
         await batch.commit();
       }
 
@@ -510,7 +517,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                               controller: _passwordController,
                               obscureText: _obscurePassword,
                               enabled: _currentPasswordVerified,
-                              onChanged: (_) => setState(() {}),
+                              autovalidateMode:
+                                  AutovalidateMode.onUserInteraction,
                               decoration: InputDecoration(
                                 hintText: _currentPasswordVerified
                                     ? 'Create New Password'
@@ -528,12 +536,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                               ),
                               validator: _validatePassword,
                             ),
-                            if (_currentPasswordVerified) ...[
-                              const SizedBox(height: 8),
-                              PasswordRequirementsChecklist(
-                                password: _passwordController.text,
-                              ),
-                            ],
                             const SizedBox(height: 16),
                             Text(
                               'Confirm Password',

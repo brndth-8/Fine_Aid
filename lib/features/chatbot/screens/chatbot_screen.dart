@@ -6,15 +6,21 @@ import '../../../services/api/gemini_service.dart';
 import '../../../services/firebase/first_aid_content_service.dart';
 import '../../../services/voice_input_service.dart';
 import '../../../services/otc_filter_service.dart';
+import '../../../services/connectivity_service.dart';
+import '../../../services/guest_usage_service.dart';
 import '../../../core/widgets/voice_message_bubble.dart';
 import '../../../core/widgets/otc_suggestions_block.dart';
+import '../../../core/widgets/guest_gate_dialogs.dart';
+import '../../../core/widgets/guest_usage_badge.dart';
+import '../../../core/network_error.dart';
+import '../../../core/scope_check.dart';
 
 class _ChatMessage {
   final String text;
   final String? tagalog;
   final bool isUser;
   final bool isUrgent;
-  final List<String> otcSuggestions;
+  final List<OtcSuggestion> otcSuggestions;
   // Set only for a voice message — the recorded clip's local file path, so
   // it can be replayed as a chat bubble. `text` is always the transcript
   // either way.
@@ -187,6 +193,28 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
   Future<void> _sendMessage(String text, {String? audioPath}) async {
     if (text.isEmpty || _isTyping) return;
 
+    // Scope check first — free, no network, no quota — so it works
+    // offline and never counts against a guest's daily limit.
+    if (looksObviouslyOutOfScope(text)) {
+      setState(() {
+        _messages.add(
+          _ChatMessage(text: text, isUser: true, audioPath: audioPath),
+        );
+        _messages.add(
+          _ChatMessage(text: outOfScopeRefusalMessage, isUser: false),
+        );
+      });
+      _scrollToBottom();
+      return;
+    }
+
+    final isGuest = FirebaseAuth.instance.currentUser == null;
+    if (isGuest && await GuestUsageService.instance.hasReachedLimit()) {
+      if (!mounted) return;
+      await showGuestUsageLimitDialog(context);
+      return;
+    }
+
     setState(() {
       _messages.add(
         _ChatMessage(text: text, isUser: true, audioPath: audioPath),
@@ -195,10 +223,21 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     });
     _scrollToBottom();
 
+    final online = await ConnectivityService().isOnline;
+    if (!online) {
+      if (!mounted) return;
+      setState(() {
+        _messages.add(_ChatMessage(text: noInternetMessage, isUser: false));
+        _isTyping = false;
+      });
+      _scrollToBottom();
+      return;
+    }
+
     String english;
     String? tagalog;
     bool isUrgent = false;
-    List<String> otcSuggestions = const [];
+    List<OtcSuggestion> otcSuggestions = const [];
     try {
       // RAG: look up relevant chunks from the firstAidContent Firestore
       // collection before asking Gemini, so the answer is grounded in the
@@ -216,9 +255,16 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
       otcSuggestions = await OtcFilterService.instance.filter(
         parsed.otcSuggestions,
       );
+      if (isGuest && !isRefusalReply(english)) {
+        await GuestUsageService.instance.recordSuccessfulUse();
+      }
     } catch (e) {
-      // Fallback to mock response if the API call fails (e.g. during dev/testing)
-      english = _generateMockResponse(text);
+      // A real network failure between the connectivity check above and
+      // this request (or a request that simply hung) still shouldn't show
+      // a mock/canned response as if it were a genuine answer.
+      english = isNetworkError(e)
+          ? noInternetMessage
+          : _generateMockResponse(text);
     }
 
     if (!mounted) return;
@@ -412,7 +458,14 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: GuestUsageBadge(),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               child: _buildFollowUpInputBar(theme),
             ),
           ],

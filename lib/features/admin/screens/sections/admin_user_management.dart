@@ -100,14 +100,17 @@ class _AdminUserManagementState extends State<AdminUserManagement> {
     required String phoneNumber,
     required String password,
   }) async {
-    final normalizedUsername = username.trim().toLowerCase();
+    final exactUsername = username.trim();
 
-    final taken = await AuthService().isUsernameTaken(normalizedUsername);
+    final taken = await AuthService().isUsernameTaken(exactUsername);
     if (taken) {
       throw 'That username is already taken.';
     }
 
-    final generatedEmail = '$normalizedUsername@fineaid.app';
+    // The generated Auth email just needs to be a valid, stable address —
+    // lowercasing it here is unrelated to username case-sensitivity, which
+    // is enforced by the `usernames` doc ID below.
+    final generatedEmail = '${exactUsername.toLowerCase()}@fineaid.app';
 
     final secondaryApp = await Firebase.initializeApp(
       name: 'admin_create_user_${DateTime.now().millisecondsSinceEpoch}',
@@ -125,7 +128,7 @@ class _AdminUserManagementState extends State<AdminUserManagement> {
         app: secondaryApp,
       );
       await secondaryFirestore.collection('users').doc(uid).set({
-        'username': username.trim(),
+        'username': exactUsername,
         'email': generatedEmail,
         'phoneNumber': phoneNumber,
         'verificationMethod': 'phone',
@@ -134,10 +137,11 @@ class _AdminUserManagementState extends State<AdminUserManagement> {
         'onboardingComplete': false,
         'createdByAdmin': true,
       });
-      await secondaryFirestore
-          .collection('usernames')
-          .doc(normalizedUsername)
-          .set({'email': generatedEmail, 'uid': uid});
+      await secondaryFirestore.collection('usernames').doc(exactUsername).set({
+        'email': generatedEmail,
+        'uid': uid,
+        'usernameExact': exactUsername,
+      });
 
       await secondaryAuth.signOut();
     } finally {

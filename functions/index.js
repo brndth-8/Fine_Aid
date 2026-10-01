@@ -33,6 +33,27 @@ function generateCode() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
+// Mirrors AuthService._emailForUsername / isUsernameTaken on the Flutter
+// side: usernames are case-sensitive, keyed by their exact-case doc ID
+// going forward ("Juan" and "juan" are different accounts). An account
+// created before that change still has its doc under the lowercased form
+// — matched here only when the exact case given matches that legacy doc's
+// stored usernameExact, so an older account's behavior doesn't change but
+// a new case-variant username never silently resolves to the wrong doc.
+async function lookupUsernameDoc(exactUsername) {
+  const exactDoc = await db.collection("usernames").doc(exactUsername).get();
+  if (exactDoc.exists) return exactDoc;
+
+  const legacyDoc = await db
+    .collection("usernames")
+    .doc(exactUsername.toLowerCase())
+    .get();
+  if (legacyDoc.exists && legacyDoc.data().usernameExact === exactUsername) {
+    return legacyDoc;
+  }
+  return null;
+}
+
 // Shared by both email-OTP functions (password reset and account
 // verification) — same SMTP secrets, just a different subject/body.
 async function sendOtpEmail(to, subject, text) {
@@ -101,15 +122,13 @@ function isValidPassword(password) {
 exports.sendPasswordResetOtp = onCall(
   { secrets: [SEMAPHORE_API_KEY] },
   async (request) => {
-    const username = (request.data && request.data.username || "")
-      .trim()
-      .toLowerCase();
+    const username = (request.data && request.data.username || "").trim();
     if (!username) {
       throw new HttpsError("invalid-argument", "Username is required.");
     }
 
-    const usernameDoc = await db.collection("usernames").doc(username).get();
-    if (!usernameDoc.exists) {
+    const usernameDoc = await lookupUsernameDoc(username);
+    if (!usernameDoc) {
       return { sent: true };
     }
 
@@ -176,15 +195,14 @@ exports.sendPasswordResetOtp = onCall(
 exports.sendPasswordResetOtpEmail = onCall(
   { secrets: [SMTP_USER, SMTP_PASS] },
   async (request) => {
-    const username = (request.data && request.data.username || "")
-      .trim()
-      .toLowerCase();
+    const username = (request.data && request.data.username || "").trim();
     if (!username) {
       throw new HttpsError("invalid-argument", "Username is required.");
     }
 
-    const usernameDoc = await db.collection("usernames").doc(username).get();
-    if (!usernameDoc.exists) {
+    const usernameDoc = await lookupUsernameDoc(username);
+    if (!usernameDoc) {
+      console.log(`sendPasswordResetOtpEmail: no account found for username`);
       return { sent: true };
     }
 
@@ -192,6 +210,9 @@ exports.sendPasswordResetOtpEmail = onCall(
     const userDoc = await db.collection("users").doc(uid).get();
     const recoveryEmail = userDoc.data() && userDoc.data().recoveryEmail;
     if (!recoveryEmail) {
+      console.log(
+        `sendPasswordResetOtpEmail: no recoveryEmail on file for uid ${uid}`
+      );
       return { sent: true };
     }
 
@@ -218,7 +239,12 @@ exports.sendPasswordResetOtpEmail = onCall(
         `Your Fine Aid password reset code is ${code}. It's valid for ` +
           `${OTP_TTL_MINUTES} minutes. Do not share this code with anyone.`
       );
+      console.log(`sendPasswordResetOtpEmail: sent OK for uid ${uid}`);
     } catch (err) {
+      console.error(
+        `sendPasswordResetOtpEmail: SMTP send failed for uid ${uid}:`,
+        err
+      );
       throw new HttpsError(
         "internal",
         "Failed to send the reset code. Please try again."
@@ -237,7 +263,7 @@ exports.sendPasswordResetOtpEmail = onCall(
  */
 exports.verifyPasswordResetOtp = onCall(async (request) => {
   const data = request.data || {};
-  const username = (data.username || "").trim().toLowerCase();
+  const username = (data.username || "").trim();
   const code = (data.code || "").trim();
   const newPassword = data.newPassword || "";
 
@@ -256,8 +282,8 @@ exports.verifyPasswordResetOtp = onCall(async (request) => {
     );
   }
 
-  const usernameDoc = await db.collection("usernames").doc(username).get();
-  if (!usernameDoc.exists) {
+  const usernameDoc = await lookupUsernameDoc(username);
+  if (!usernameDoc) {
     throw new HttpsError("not-found", "Verification failed. Please try again.");
   }
   const uid = usernameDoc.data().uid;
@@ -348,7 +374,12 @@ exports.sendAccountVerificationOtpEmail = onCall(
         `Your Fine Aid verification code is ${code}. It's valid for ` +
           `${OTP_TTL_MINUTES} minutes. Do not share this code with anyone.`
       );
+      console.log(`sendAccountVerificationOtpEmail: sent OK for uid ${uid}`);
     } catch (err) {
+      console.error(
+        `sendAccountVerificationOtpEmail: SMTP send failed for uid ${uid}:`,
+        err
+      );
       throw new HttpsError(
         "internal",
         "Failed to send the verification code. Please try again."

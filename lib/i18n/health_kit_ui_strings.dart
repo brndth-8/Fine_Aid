@@ -47,7 +47,8 @@ class HealthKitStrings {
     'bannerBody':
         'Isang naka-preload na sanggunian para sa pangunahing first aid. '
         'Gumagana nang lubusang offline - hindi kailangan ng Wi-Fi o data.',
-    'categoryPrompt': 'Anong uri ng sugat o problema ang kailangan mo ng tulong?',
+    'categoryPrompt':
+        'Anong uri ng sugat o problema ang kailangan mo ng tulong?',
     'categoryHint': 'Pumili ng uri ng sugat',
     'concernLabel': 'Ilarawan ang iyong alalahanin (opsyonal)',
     'concernHint':
@@ -56,7 +57,8 @@ class HealthKitStrings {
     'questionDialogTitle': 'Tanong {n} ng {total}',
     'yes': 'Oo',
     'no': 'Hindi',
-    'redFlagInterstitialTitle': 'Inirerekomenda ang Konsultasyon sa Propesyonal',
+    'redFlagInterstitialTitle':
+        'Inirerekomenda ang Konsultasyon sa Propesyonal',
     'continueLabel': 'Magpatuloy',
     'yourConcern': 'Ang Iyong Alalahanin',
     'redFlagSummary':
@@ -90,8 +92,9 @@ class HealthKitStrings {
   }
 
   static String questionDialogTitle(int n, int total, HealthKitLocale locale) {
-    return of('questionDialogTitle', locale)
-        .replaceFirst('{n}', '$n')
-        .replaceFirst('{total}', '$total');
+    return of(
+      'questionDialogTitle',
+      locale,
+    ).replaceFirst('{n}', '$n').replaceFirst('{total}', '$total');
   }
 }

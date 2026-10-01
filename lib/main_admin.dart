@@ -5,8 +5,8 @@ import 'features/admin/theme/admin_theme.dart';
 import 'features/admin/admin_gate.dart';
 
 /// Standalone admin entry point (local development).
-/// In production the admin module is served by lib/main_web.dart behind the
-/// secret path — see docs/website_hosting.md.
+/// The website (lib/main_web.dart) also serves the admin module at the secret
+/// path from config/web.json.
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);

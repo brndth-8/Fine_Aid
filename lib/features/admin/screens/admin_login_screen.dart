@@ -101,6 +101,134 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
     }
   }
 
+  Future<void> _showForgotPasswordDialog() async {
+    final emailController = TextEditingController(text: _emailController.text);
+    final formKey = GlobalKey<FormState>();
+    bool isSending = false;
+    String? dialogError;
+    String? dialogSuccess;
+
+    await showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            return AlertDialog(
+              title: const Text('Reset password'),
+              content: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      "Enter the admin account's email and we'll send a "
+                      'link to reset the password.',
+                      style: TextStyle(fontSize: 13, color: Color(0xFF666666)),
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: emailController,
+                      keyboardType: TextInputType.emailAddress,
+                      autocorrect: false,
+                      enabled: dialogSuccess == null,
+                      decoration: const InputDecoration(
+                        labelText: 'Email address',
+                      ),
+                      validator: (v) {
+                        if (v == null || v.trim().isEmpty) {
+                          return 'Please enter an email address.';
+                        }
+                        if (!v.contains('@')) {
+                          return 'Enter a valid email address.';
+                        }
+                        return null;
+                      },
+                    ),
+                    if (dialogSuccess != null) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        dialogSuccess!,
+                        style: const TextStyle(
+                          color: Colors.green,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ] else if (dialogError != null) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        dialogError!,
+                        style: const TextStyle(
+                          color: Colors.redAccent,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isSending
+                      ? null
+                      : () => Navigator.of(dialogContext).pop(),
+                  child: Text(dialogSuccess == null ? 'Cancel' : 'Close'),
+                ),
+                if (dialogSuccess == null)
+                  ElevatedButton(
+                    onPressed: isSending
+                        ? null
+                        : () async {
+                            if (!formKey.currentState!.validate()) return;
+                            setDialogState(() {
+                              isSending = true;
+                              dialogError = null;
+                            });
+                            try {
+                              await FirebaseAuth.instance
+                                  .sendPasswordResetEmail(
+                                    email: emailController.text.trim(),
+                                  );
+                              setDialogState(() {
+                                isSending = false;
+                                dialogSuccess =
+                                    'Password reset email sent. Check the '
+                                    'inbox for further instructions.';
+                              });
+                            } on FirebaseAuthException catch (e) {
+                              setDialogState(() {
+                                isSending = false;
+                                dialogError = e.code == 'user-not-found'
+                                    ? 'No account found with that email.'
+                                    : 'Could not send reset email. Please '
+                                          'try again.';
+                              });
+                            } catch (_) {
+                              setDialogState(() {
+                                isSending = false;
+                                dialogError =
+                                    'Something went wrong. Please try again.';
+                              });
+                            }
+                          },
+                    child: isSending
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Send reset link'),
+                  ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    emailController.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -233,7 +361,26 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                             return null;
                           },
                         ),
-                        const SizedBox(height: 28),
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton(
+                            onPressed: _isLoading
+                                ? null
+                                : _showForgotPasswordDialog,
+                            style: TextButton.styleFrom(
+                              padding: EdgeInsets.zero,
+                              minimumSize: const Size(0, 32),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            child: Text(
+                              'Forgot password?',
+                              style: Theme.of(context).textTheme.labelMedium
+                                  ?.copyWith(color: _accentColor),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
                         SizedBox(
                           width: double.infinity,
                           height: 48,
@@ -264,7 +411,10 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                                     style: Theme.of(context)
                                         .textTheme
                                         .labelLarge
-                                        ?.copyWith(fontWeight: FontWeight.w600),
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.white,
+                                        ),
                                   ),
                           ),
                         ),

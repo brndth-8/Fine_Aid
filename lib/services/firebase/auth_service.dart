@@ -6,19 +6,33 @@ class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // Usernames are case-insensitive: "johndoe" and "JohnDoe" are the same
-  // account. The lookup key is always the lowercased form, so this matches
-  // regardless of how the username was typed — `usernameExact` (stored at
-  // registration) is kept only for display purposes elsewhere, never used
-  // to gate sign-in.
+  // Usernames are case-sensitive: "Juan" and "juan" are different accounts.
+  // New registrations reserve their doc under the exact-case username
+  // itself (`usernames/{exactUsername}`). Accounts created before this
+  // change still have their doc under the lowercased form (with the
+  // originally-typed case preserved in `usernameExact`) — those are only
+  // matched when the exact case typed at login matches `usernameExact`,
+  // so a legacy account's sign-in behavior doesn't change, but a new
+  // "juan" no longer silently resolves to an existing "Juan" account.
   Future<String?> _emailForUsername(String username) async {
+    final trimmed = username.trim();
     try {
-      final doc = await _firestore
+      final exactDoc = await _firestore
           .collection('usernames')
-          .doc(username.trim().toLowerCase())
+          .doc(trimmed)
           .get();
-      if (!doc.exists) return null;
-      return doc.data()?['email'] as String?;
+      if (exactDoc.exists) {
+        return exactDoc.data()?['email'] as String?;
+      }
+
+      final legacyDoc = await _firestore
+          .collection('usernames')
+          .doc(trimmed.toLowerCase())
+          .get();
+      if (legacyDoc.exists && legacyDoc.data()?['usernameExact'] == trimmed) {
+        return legacyDoc.data()?['email'] as String?;
+      }
+      return null;
     } catch (e) {
       debugPrint('_emailForUsername error: $e');
       return null;
@@ -26,13 +40,21 @@ class AuthService {
   }
 
   Future<bool> isUsernameTaken(String username) async {
+    final trimmed = username.trim();
     try {
-      final doc = await _firestore
+      final exactDoc = await _firestore
           .collection('usernames')
-          .doc(username.trim().toLowerCase())
+          .doc(trimmed)
           .get()
           .timeout(const Duration(seconds: 10));
-      return doc.exists;
+      if (exactDoc.exists) return true;
+
+      final legacyDoc = await _firestore
+          .collection('usernames')
+          .doc(trimmed.toLowerCase())
+          .get()
+          .timeout(const Duration(seconds: 10));
+      return legacyDoc.exists && legacyDoc.data()?['usernameExact'] == trimmed;
     } catch (_) {
       return false;
     }
@@ -90,12 +112,13 @@ class AuthService {
         })
         .timeout(const Duration(seconds: 10));
 
-    // Write to public usernames collection. `usernameExact` preserves the
-    // case the user actually registered with, so sign-in can require it to
-    // match exactly even though the doc ID itself is lowercased.
+    // Write to public usernames collection, keyed by the exact-case
+    // username itself so sign-in (see _emailForUsername) is case-sensitive
+    // going forward. `usernameExact` is kept for symmetry with legacy docs
+    // and for display purposes.
     await _firestore
         .collection('usernames')
-        .doc(username.trim().toLowerCase())
+        .doc(username.trim())
         .set({
           'email': generatedEmail,
           'uid': uid,
@@ -169,44 +192,64 @@ class AuthService {
     });
   }
 
+  static const Map<String, bool> _onboardingFlagDefaults = {
+    'phoneVerified': true,
+    'termsAccepted': true,
+    'permissionStepComplete': true,
+    'healthProfileComplete': true,
+    'onboardingComplete': true,
+  };
+
+  Map<String, bool> _onboardingFlagsFromData(Map<String, dynamic>? data) {
+    if (data == null) return _onboardingFlagDefaults;
+
+    // Users onboarded before per-step tracking existed only ever had
+    // `onboardingComplete`; grandfather them in rather than forcing them
+    // back through Terms/Permission/Health Profile retroactively.
+    final legacyComplete = data['onboardingComplete'] == true;
+
+    return {
+      'phoneVerified': data['phoneVerified'] == true,
+      'termsAccepted': legacyComplete || data['termsAccepted'] == true,
+      'permissionStepComplete':
+          legacyComplete || data['permissionStepComplete'] == true,
+      'healthProfileComplete':
+          legacyComplete || data['healthProfileComplete'] == true,
+      'onboardingComplete': legacyComplete,
+    };
+  }
+
   /// Fetches every per-step onboarding flag for [uid] in a single read, so
   /// the app can resume onboarding at whichever step is actually
   /// incomplete instead of restarting the whole flow (eg, from OTP) every
   /// time the user reopens the app mid-setup.
+  ///
+  /// Tries the on-device cache first — instant, no network wait — so app
+  /// launch stays fast offline; only falls through to a live (short-
+  /// timeout) read when there's no cache yet (eg the very first launch on
+  /// a device, before anything has ever synced).
   Future<Map<String, bool>> fetchOnboardingFlags(String uid) async {
-    const defaults = {
-      'phoneVerified': true,
-      'termsAccepted': true,
-      'permissionStepComplete': true,
-      'healthProfileComplete': true,
-      'onboardingComplete': true,
-    };
+    try {
+      final cacheDoc = await _firestore
+          .collection('users')
+          .doc(uid)
+          .get(const GetOptions(source: Source.cache));
+      if (cacheDoc.exists) {
+        return _onboardingFlagsFromData(cacheDoc.data());
+      }
+    } catch (_) {
+      // No cache yet — fall through to a live read below.
+    }
 
     try {
       final doc = await _firestore
           .collection('users')
           .doc(uid)
           .get()
-          .timeout(const Duration(seconds: 8));
-      final data = doc.data();
-      if (data == null) return defaults;
-
-      // Users onboarded before per-step tracking existed only ever had
-      // `onboardingComplete`; grandfather them in rather than forcing them
-      // back through Terms/Permission/Health Profile retroactively.
-      final legacyComplete = data['onboardingComplete'] == true;
-
-      return {
-        'phoneVerified': data['phoneVerified'] == true,
-        'termsAccepted': legacyComplete || data['termsAccepted'] == true,
-        'permissionStepComplete':
-            legacyComplete || data['permissionStepComplete'] == true,
-        'healthProfileComplete':
-            legacyComplete || data['healthProfileComplete'] == true,
-        'onboardingComplete': legacyComplete,
-      };
+          .timeout(const Duration(seconds: 5));
+      return _onboardingFlagsFromData(doc.data());
     } catch (_) {
-      return defaults;
+      return _onboardingFlagDefaults;
     }
   }
 
@@ -224,6 +267,32 @@ class AuthService {
       debugPrint('isAdmin error: $e');
       return false;
     }
+  }
+
+  /// Whether the signed-in admin [uid] must change their password before
+  /// reaching the dashboard (set by the seed_admin script for newly created
+  /// accounts). Defaults to false — including on read errors — so a lookup
+  /// hiccup can never lock an existing admin out of their own dashboard.
+  Future<bool> adminMustChangePassword(String uid) async {
+    try {
+      final doc = await _firestore
+          .collection('admins')
+          .doc(uid)
+          .get()
+          .timeout(const Duration(seconds: 5));
+      return doc.data()?['mustChangePassword'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Clears the forced-password-change flag after the admin sets their own
+  /// password. Firestore rules only allow an admin to flip this one field
+  /// on their own doc to false — nothing else.
+  Future<void> clearAdminMustChangePassword(String uid) async {
+    await _firestore.collection('admins').doc(uid).update({
+      'mustChangePassword': false,
+    });
   }
 
   Future<void> signOut() async {

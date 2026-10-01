@@ -17,7 +17,13 @@ import '../../../data/health_profile_cautions.dart';
 import '../../../core/widgets/nearby_healthcare_sheet.dart';
 import '../../../core/widgets/voice_message_bubble.dart';
 import '../../../core/widgets/otc_suggestions_block.dart';
+import '../../../core/widgets/guest_gate_dialogs.dart';
+import '../../../core/widgets/guest_usage_badge.dart';
+import '../../../services/guest_usage_service.dart';
+import '../../../core/network_error.dart';
 import '../../../core/follow_up_fallback.dart';
+import '../../../core/display_formatters.dart';
+import '../../../core/scope_check.dart';
 import '../../dashboard/first_aid_kit_screen.dart';
 
 class _FollowUpMessage {
@@ -26,7 +32,7 @@ class _FollowUpMessage {
   final bool isUser;
   final bool suggestNearby;
   final bool isUrgent;
-  final List<String> otcSuggestions;
+  final List<OtcSuggestion> otcSuggestions;
   // Set only for a voice follow-up question — the recorded clip's local
   // file path, so it can be replayed as a chat bubble. `text` is always the
   // transcript either way.
@@ -63,22 +69,11 @@ const List<(String, double)> _analysisStages = [
 class AssessmentResultScreen extends StatefulWidget {
   final String imagePath;
   final List<String> woundHints;
-  // Set only when opened from the multi-injury results screen for one
-  // specific injury the batch call already analyzed — skips this screen's
-  // own analyzeWoundV2() call and shows this result directly, since
-  // re-running a single-wound analysis on a multi-injury photo would just
-  // pick one wound at random rather than the one the user actually tapped.
-  final WoundAssessment? precomputedAssessment;
-  // Shown alongside the title when set (eg "Injury 2 of 3 — left knee"),
-  // so it's clear this is one part of a multi-injury session.
-  final String? injuryContextLabel;
 
   const AssessmentResultScreen({
     super.key,
     required this.imagePath,
     this.woundHints = const [],
-    this.precomputedAssessment,
-    this.injuryContextLabel,
   });
 
   @override
@@ -98,7 +93,7 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
   bool _tagalogTranslationFailed = false;
   final TextEditingController _chatController = TextEditingController();
 
-  List<FirstAidChunk> _otcSuggestions = [];
+  List<OtcSuggestion> _otcSuggestions = [];
   bool _isLoadingOtc = false;
   List<String> _healthCautions = [];
 
@@ -165,17 +160,6 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
     // unrelated earlier wound's conversation bleeding into this one.
     GeminiService().resetChat();
 
-    final precomputed = widget.precomputedAssessment;
-    if (precomputed != null) {
-      setState(() {
-        _assessment = precomputed;
-        _tagalogSteps = null;
-        _isAnalyzing = false;
-      });
-      _loadOtcSuggestions();
-      return;
-    }
-
     _startAnalyzingTimer();
 
     final online = await ConnectivityService().isOnline;
@@ -237,49 +221,18 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
     }
   }
 
-  String _otcQueryForCategory(String category, List<String> otcOptions) {
-    // Deliberately specific, condition-matched terms rather than generic
-    // words like "pain" or "relief" alone — those matched unrelated
-    // products (an antacid, a cough lozenge) that happened to share one
-    // generic keyword. FirstAidContentService now also requires 2+
-    // overlapping keywords by default, so precise phrasing here matters.
-    // The model's own otc_options are folded in as extra search terms,
-    // not shown directly as if they were verified local products.
-    final base = switch (category) {
-      WoundCategories.burn =>
-        'burn wound antiseptic burn ointment silver sulfadiazine '
-            'antipyretic paracetamol ibuprofen',
-      WoundCategories.laceration || WoundCategories.punctureWound =>
-        'wound antiseptic povidone iodine betadine antibiotic ointment '
-            'gauze dressing tetanus',
-      WoundCategories.minorCut ||
-      WoundCategories.abrasion ||
-      WoundCategories.scratch =>
-        'wound antiseptic povidone iodine betadine antibiotic ointment '
-            'bandage dressing infection disinfectant',
-      WoundCategories.rash =>
-        'antihistamine antipruritic anti-itch calamine rash topical skin '
-            'antifungal hydrocortisone',
-      WoundCategories.bruise || WoundCategories.swelling =>
-        'anti-inflammatory analgesic gel diclofenac ibuprofen topical '
-            'swelling bruise muscle pain',
-      _ => 'antiseptic wound care topical ointment',
-    };
-    return otcOptions.isEmpty ? base : '$base ${otcOptions.join(' ')}';
-  }
-
+  // The wound-assessment model returns its own generic-name (brand),
+  // age/allergy/how-to-use OTC suggestions directly (see gemini_service's
+  // shared OTC_OPTIONS rules) — this just re-validates them through the
+  // same denylist/allowlist filter every other AI surface uses, so this
+  // screen and chat follow-ups can never show different things.
   Future<void> _loadOtcSuggestions() async {
     final assessment = _assessment;
     if (assessment == null) return;
     setState(() => _isLoadingOtc = true);
     try {
-      final query = _otcQueryForCategory(
-        assessment.category,
+      final results = await OtcFilterService.instance.filter(
         assessment.otcOptions,
-      );
-      final results = await FirstAidContentService().searchOtcMedications(
-        query,
-        limit: 8,
       );
       if (mounted) {
         setState(() {
@@ -340,8 +293,8 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
 
   String _synthesizeDescription(WoundAssessment a) {
     final buffer = StringBuffer();
-    buffer.writeln('Wound type: ${a.woundType}');
-    buffer.writeln('Triage: ${a.triage.name}');
+    buffer.writeln('Wound type: ${woundTypeDisplayLabel(a.woundType)}');
+    buffer.writeln('Triage: ${triageDisplayLabel(a.triage)}');
     if (a.firstAidSteps.isNotEmpty) {
       buffer.writeln('\nFIRST AID STEPS:');
       for (var i = 0; i < a.firstAidSteps.length; i++) {
@@ -360,7 +313,11 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
   Future<void> _saveToJournal() async {
     final user = FirebaseAuth.instance.currentUser;
     final assessment = _assessment;
-    if (user == null || assessment == null) return;
+    if (assessment == null) return;
+    if (user == null) {
+      await showGuestSaveGateDialog(context);
+      return;
+    }
 
     setState(() => _isSaving = true);
 
@@ -382,7 +339,15 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
         'apparentDepth': assessment.apparentDepth,
         'needsProfessionalEvaluation': assessment.needsProfessionalEvaluation,
         'otcSuggestions': _otcSuggestions
-            .map((c) => {'title': c.title, 'content': c.content})
+            .map(
+              (c) => {
+                'name': c.name,
+                'ageLimit': c.ageLimit,
+                'allergyPrecaution': c.allergyPrecaution,
+                'howToUse': c.howToUse,
+                'category': c.category.name,
+              },
+            )
             .toList(),
         'userConcern': _userConcern,
         'followUpConversation': _followUpMessages
@@ -417,11 +382,12 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
             .timeout(const Duration(seconds: 10));
 
         final healingDays = healingDurationDays[assessment.category];
-        if (healingDays != null) {
-          NotificationService().scheduleHealingCheckIn(
+        if (healingDays != null && mounted) {
+          await NotificationService().ensureHealingReminderPermission(context);
+          await NotificationService().scheduleHealingCheckIn(
             entryId: docRef.id,
             classification: assessment.category,
-            scheduledDate: DateTime.now().add(Duration(days: healingDays)),
+            healingDays: healingDays,
           );
         }
 
@@ -530,11 +496,6 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
       return Icons.block_outlined;
     }
     return Icons.check_circle_outline;
-  }
-
-  String? _extractField(String content, String label) {
-    final match = RegExp('$label:\\s*(.+)').firstMatch(content);
-    return match?.group(1)?.trim();
   }
 
   /// The triage banner's text, or null when no banner is shown.
@@ -650,9 +611,7 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'Could not open the dialer. Please call 911 directly.',
-          ),
+          content: Text('Could not open the dialer. Please call 911 directly.'),
         ),
       );
     }
@@ -990,59 +949,10 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
     );
   }
 
-  Widget _buildOtcCard(ThemeData theme, FirstAidChunk item) {
-    final indication = _extractField(item.content, 'Indications');
-    return GestureDetector(
-      onTap: () => _showOtcDetails(item),
-      child: Container(
-        width: 150,
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: theme.colorScheme.outlineVariant),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(
-              Icons.medication_outlined,
-              size: 20,
-              color: theme.colorScheme.primary,
-            ),
-            const SizedBox(height: 6),
-            Text(
-              item.title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Expanded(
-              child: Text(
-                indication ?? 'Tap for details',
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: Colors.grey.shade600,
-                ),
-              ),
-            ),
-            Text(
-              'Non-Rx',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.primary,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
+  // Renders through the same shared OtcSuggestionsBlock widget every AI
+  // entry point uses (see otc_suggestions_block.dart) — already filtered
+  // via OtcFilterService in _loadOtcSuggestions, and grouped into
+  // "Suggested OTC options"/"Suggested supplies" by suggestion.category.
   Widget _buildOtcSuggestions(ThemeData theme) {
     if (_otcSuggestions.isEmpty && !_isLoadingOtc) {
       return const SizedBox.shrink();
@@ -1062,7 +972,7 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
             ),
             const SizedBox(width: 8),
             Text(
-              'Looking up related OTC products…',
+              'Looking up OTC suggestions…',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: Colors.grey.shade600,
               ),
@@ -1072,107 +982,8 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
       );
     }
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.local_pharmacy_outlined,
-                  size: 16,
-                  color: theme.colorScheme.primary,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  'Suggested OTC Products',
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 118,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: _otcSuggestions.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 10),
-              itemBuilder: (context, index) =>
-                  _buildOtcCard(theme, _otcSuggestions[index]),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(left: 16, top: 4),
-            child: Text(
-              'These are general suggestions, not a prescription. Ask a '
-              'pharmacist before taking any medication.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: Colors.grey.shade600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showOtcDetails(FirstAidChunk item) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (sheetContext) {
-        final theme = Theme.of(sheetContext);
-        return DraggableScrollableSheet(
-          initialChildSize: 0.5,
-          minChildSize: 0.3,
-          maxChildSize: 0.9,
-          expand: false,
-          builder: (context, scrollController) {
-            return Padding(
-              padding: const EdgeInsets.all(20),
-              child: ListView(
-                controller: scrollController,
-                children: [
-                  Text(
-                    item.title,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Non-prescription (OTC)',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.primary,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(item.content, style: theme.textTheme.bodyMedium),
-                  const SizedBox(height: 12),
-                  Text(
-                    'This is general product information, not a '
-                    'recommendation. Ask a pharmacist or doctor before '
-                    'taking any medication.',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: Colors.grey.shade600,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: OtcSuggestionsBlock(suggestions: _otcSuggestions),
     );
   }
 
@@ -1183,6 +994,22 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
     final text = (textOverride ?? _chatController.text).trim();
     if (text.isEmpty || _isSendingFollowUp) return;
 
+    // Deliberately no local out-of-scope pre-check here (unlike the
+    // standalone chatbot) — this screen already has a specific wound in
+    // context (CURRENT WOUND ANALYSIS, sent with every message below), so
+    // a message like "I have a headache" is very plausibly ABOUT that
+    // wound (eg a head injury) even without repeating wound-related
+    // words. A keyword-only check can't see that context and would wrongly
+    // refuse it; the shared system prompt's own scope/borderline-case
+    // judgment, which DOES see the wound context, is the right place to
+    // decide here.
+    final isGuest = FirebaseAuth.instance.currentUser == null;
+    if (isGuest && await GuestUsageService.instance.hasReachedLimit()) {
+      if (!mounted) return;
+      await showGuestUsageLimitDialog(context);
+      return;
+    }
+
     setState(() {
       _followUpMessages.add(
         _FollowUpMessage(text: text, isUser: true, audioPath: audioPath),
@@ -1191,11 +1018,23 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
     });
     _chatController.clear();
 
+    final online = await ConnectivityService().isOnline;
+    if (!online) {
+      if (!mounted) return;
+      setState(() {
+        _followUpMessages.add(
+          _FollowUpMessage(text: noInternetMessage, isUser: false),
+        );
+        _isSendingFollowUp = false;
+      });
+      return;
+    }
+
     String english;
     String? tagalog;
     bool suggestNearby = false;
     bool isUrgent = false;
-    List<String> otcSuggestions = const [];
+    List<OtcSuggestion> otcSuggestions = const [];
     try {
       final category = _assessment?.category;
       // Include the wound's category in the retrieval query so follow-up
@@ -1224,9 +1063,14 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
       otcSuggestions = await OtcFilterService.instance.filter(
         parsed.otcSuggestions,
       );
+      if (isGuest && !isRefusalReply(english)) {
+        await GuestUsageService.instance.recordSuccessfulUse();
+      }
     } catch (e, st) {
       logFollowUpError('AssessmentResult', e, st);
-      english = randomFollowUpFallbackMessage();
+      english = isNetworkError(e)
+          ? noInternetMessage
+          : randomFollowUpFallbackMessage();
     }
 
     if (!mounted) return;
@@ -1344,11 +1188,17 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Ask a follow-up question',
-          style: theme.textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.bold,
-          ),
+        Row(
+          children: [
+            Text(
+              'Ask a follow-up question',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const Spacer(),
+            const GuestUsageBadge(),
+          ],
         ),
         const SizedBox(height: 10),
         ..._followUpMessages.map(
@@ -1613,13 +1463,6 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
                           'AI Vision Camera',
                           style: theme.textTheme.titleMedium,
                         ),
-                        if (widget.injuryContextLabel != null)
-                          Text(
-                            widget.injuryContextLabel!,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
                       ],
                     ),
                   ),

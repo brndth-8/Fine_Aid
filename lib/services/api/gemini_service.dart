@@ -4,6 +4,7 @@ import 'dart:ui' show Rect;
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:google_generative_ai/google_generative_ai.dart';
 import '../../core/constants/api_keys.dart';
+import '../../core/scope_check.dart';
 
 /// The fixed, extensible wound/skin-issue taxonomy used across detection,
 /// the result screen's category badge, and OTC-suggestion mapping. Add new
@@ -135,9 +136,10 @@ class BilingualReply {
 
   /// Raw OTC product suggestions from the model's "OTC:" field, exactly as
   /// it wrote them — NOT yet checked against the denylist/allowlist. Every
-  /// caller must run these through the OTC filter (otc_filter.dart) before
-  /// showing them, per the OTC PRODUCT SUGGESTIONS system-prompt rule.
-  final List<String> otcSuggestions;
+  /// caller must run these through the OTC filter (otc_filter_service.dart)
+  /// before showing them, per the OTC PRODUCT SUGGESTIONS system-prompt
+  /// rule.
+  final List<OtcSuggestion> otcSuggestions;
 
   const BilingualReply({
     required this.english,
@@ -195,19 +197,143 @@ BilingualReply parseBilingualReply(String raw) {
   );
 }
 
-// Splits the model's "OTC: item | item | item" (or "OTC: none") field into
-// individual suggestion strings. Never throws on malformed input — worst
-// case is an empty list, which just hides the OTC block.
-List<String> _parseRawOtcField(String? raw) {
+/// Whether an [OtcSuggestion] is a medicine/product (antiseptic, pain
+/// reliever, etc) or a supply (dressing, gloves) — determined by
+/// OtcFilterService from which allowlist category the suggestion matched,
+/// not by the AI itself, so it's consistent regardless of model wording.
+/// Defaults to [product] until a suggestion has actually been through the
+/// filter.
+enum OtcSuggestionCategory { product, supply }
+
+/// One structured OTC suggestion, shared by every AI entry point (chat
+/// follow-ups and the initial wound assessment) so they can never drift
+/// apart in shape or wording. Deliberately limited to just these fields
+/// per the OTC PRODUCT SUGGESTIONS format — no manufacturer/brand-company
+/// field, ingredients list, price, or long description.
+class OtcSuggestion {
+  final String name; // "Generic name (Brand example)"
+  final String ageLimit;
+  final String allergyPrecaution;
+  final String howToUse;
+  final OtcSuggestionCategory category;
+
+  const OtcSuggestion({
+    required this.name,
+    required this.ageLimit,
+    required this.allergyPrecaution,
+    required this.howToUse,
+    this.category = OtcSuggestionCategory.product,
+  });
+
+  OtcSuggestion copyWith({OtcSuggestionCategory? category}) => OtcSuggestion(
+    name: name,
+    ageLimit: ageLimit,
+    allergyPrecaution: allergyPrecaution,
+    howToUse: howToUse,
+    category: category ?? this.category,
+  );
+}
+
+/// The substantive OTC-suggestion content rules — naming format, the
+/// three allowed detail fields, scope/safety limits — shared verbatim by
+/// the chat model AND both wound-assessment models below, so the format
+/// and wording can never drift apart between AI entry points. Each model
+/// wraps this with its own wire-format instructions (the chat's "OTC:"
+/// line vs the assessment schemas' `otc_options` JSON array).
+const String _otcContentRules =
+    '- GENERIC NAME FORMAT: prefer affordable generic terms over '
+    'brand names, since brand products can be pricey — a user should '
+    'be able to pick whichever brand of that generic product fits '
+    'their budget. Always lead with the generic name or active '
+    'ingredient, and if you mention a brand at all, give it only as '
+    'a parenthetical example in the form "Generic name (Brand '
+    'example)" — e.g. \'Iodine (Betadine)\', \'Paracetamol '
+    '(Biogesic)\', \'Antibiotic ointment with bacitracin '
+    '(Bactroban)\'. The parentheses make clear the brand is just an '
+    'example of that generic substance, not a different one. Never '
+    'lead with or use only a brand name, and never name which '
+    'company manufactures a product. This format applies to every '
+    'suggestion — antiseptics, pain relievers, ointments, dressings, '
+    'gloves, everything.\n'
+    '- PER-SUGGESTION DETAILS: for every suggestion, give exactly '
+    'three short details and nothing more — no ingredients list, '
+    'price, or long description:\n'
+    '  - Age limit: the minimum age it\'s safe for (e.g. "Adults and '
+    'children 12 years and above"). If it\'s not safe for young '
+    'children, say so plainly.\n'
+    '  - Allergy precaution: the main group who should avoid it or '
+    'be careful, in one short phrase (e.g. "Do not use if allergic '
+    'to iodine").\n'
+    '  - How to use: short and simple — the dose or amount, how '
+    'often, and the route (apply on skin, take by mouth, etc).\n'
+    'For a supply (dressing, bandage, gloves) rather than a '
+    'medicine, still give all three: age limit is usually "All '
+    'ages" or "Adults and children", allergy precaution is "None '
+    'known" unless something like latex applies, and how to use '
+    'briefly says when/how to use it (e.g. "Wear before touching '
+    'the wound to avoid contamination").\n'
+    '- Where relevant, also suggest supplies in the same generic '
+    'style — which type of dressing or bandage fits the wound (eg, '
+    'sterile gauze pad, adhesive bandage, non-stick dressing) and '
+    'whether gloves are needed before touching the wound (eg, '
+    'disposable gloves).\n'
+    '- Only suggest products/supplies for minor injuries. For '
+    'severe, deep, infected-looking, or high-risk wounds, prioritize '
+    'seeking medical care and never present these as a substitute.\n'
+    '- Don\'t invent specific doses beyond what\'s on a typical '
+    'package label. Fold a pregnancy/existing-medication caution '
+    'into the allergy precaution detail when relevant, and suggest '
+    'checking with a pharmacist or doctor if unsure.\n'
+    '- Never recommend prescription drugs.\n'
+    '- Keep it short: 1-3 suggestions, phrased as \'you may '
+    'consider...\', not as a diagnosis or prescription.\n'
+    '- Users are in the Philippines, so prefer products commonly '
+    'available in local pharmacies, and give the Tagalog product/'
+    'ingredient name if the user\'s language is Tagalog.\n'
+    '- RELEVANCE: Only suggest products designed and labeled for '
+    'treating wounds, skin injuries, or their symptoms (pain, '
+    'swelling, itching, infection prevention). Never suggest products '
+    'for unrelated body areas or purposes, even if the brand is '
+    'similar to a wound-care product.\n'
+    '- Explicitly exclude feminine washes and intimate hygiene '
+    'products (including Betadine Feminine Wash), mouthwashes, '
+    'throat gargles or sprays, shampoos, body or facial washes, '
+    'cosmetics, deodorants, and unrelated supplements or vitamins.\n'
+    '- If a brand has multiple variants, recommend only the '
+    'wound-appropriate form (e.g. \'Povidone-iodine (Betadine '
+    'Antiseptic Solution)\' for minor cuts, not another variant of '
+    'that brand meant for a different purpose).\n'
+    '- If no relevant product or supply fits, suggest none.';
+
+// Splits the model's "OTC: Name (Brand) :: Age :: Allergy :: HowTo || ..."
+// (or "OTC: none") field into structured suggestions. Never throws on
+// malformed input — a suggestion missing some fields just shows blank
+// details rather than being dropped, and an entry with no name at all is
+// skipped; worst case overall is an empty list, which just hides the block.
+List<OtcSuggestion> _parseRawOtcField(String? raw) {
   final trimmed = raw?.trim();
   if (trimmed == null || trimmed.isEmpty || trimmed.toLowerCase() == 'none') {
     return const [];
   }
   return trimmed
-      .split('|')
-      .map((s) => s.trim())
-      .where((s) => s.isNotEmpty && s.toLowerCase() != 'none')
+      .split('||')
+      .map((item) => item.trim())
+      .where((item) => item.isNotEmpty && item.toLowerCase() != 'none')
+      .map(_parseOtcSuggestionItem)
+      .whereType<OtcSuggestion>()
       .toList();
+}
+
+OtcSuggestion? _parseOtcSuggestionItem(String item) {
+  final parts = item.split('::').map((p) => p.trim()).toList();
+  final name = parts.isNotEmpty ? parts[0] : '';
+  if (name.isEmpty) return null;
+  return OtcSuggestion(
+    name: name,
+    ageLimit: parts.length > 1 ? parts[1] : '',
+    allergyPrecaution: parts.length > 2 ? parts[2] : '',
+    howToUse: parts.length > 3 ? parts[3] : '',
+  );
 }
 
 /// Triage urgency from the v2 wound-assessment schema.
@@ -275,7 +401,7 @@ class WoundAssessment {
   final TriageLevel triage;
   final List<String> redFlags;
   final List<String> firstAidSteps;
-  final List<String> otcOptions;
+  final List<OtcSuggestion> otcOptions;
   final bool needsProfessionalEvaluation;
   final List<String> uncertainties;
   final String? error;
@@ -325,6 +451,47 @@ class WoundAssessment {
 List<String> _stringList(dynamic value) =>
     (value as List?)?.map((e) => e.toString()).toList() ?? const [];
 
+/// Parses the wound-assessment schema's `otc_options` array (objects with
+/// name/age_limit/allergy_precaution/how_to_use) into [OtcSuggestion]s —
+/// the same shared model the chat's OTC field parses into, so both places
+/// render through the same widget. Defensive against drift and against
+/// old cached/malformed data: a plain string entry (the pre-this-change
+/// shape) is kept as a name-only suggestion rather than dropped or
+/// crashing, a non-string/non-map entry is skipped, and a map missing
+/// some fields just leaves those fields blank (the UI hides a blank
+/// detail row rather than showing "null").
+List<OtcSuggestion> _parseOtcOptionsFromJson(dynamic value) {
+  if (value is! List) return const [];
+  final result = <OtcSuggestion>[];
+  for (final entry in value) {
+    if (entry is Map) {
+      final name = entry['name']?.toString().trim() ?? '';
+      if (name.isEmpty) continue;
+      result.add(
+        OtcSuggestion(
+          name: name,
+          ageLimit: entry['age_limit']?.toString().trim() ?? '',
+          allergyPrecaution:
+              entry['allergy_precaution']?.toString().trim() ?? '',
+          howToUse: entry['how_to_use']?.toString().trim() ?? '',
+        ),
+      );
+    } else if (entry is String) {
+      final name = entry.trim();
+      if (name.isEmpty || name.toLowerCase() == 'none') continue;
+      result.add(
+        OtcSuggestion(
+          name: name,
+          ageLimit: '',
+          allergyPrecaution: '',
+          howToUse: '',
+        ),
+      );
+    }
+  }
+  return result;
+}
+
 /// Shared by both the single-wound and multi-injury schemas — every field
 /// below is identical between "one JSON object" and "one entry in the
 /// injuries array", so both parsers build a [WoundAssessment] the same way.
@@ -340,7 +507,7 @@ WoundAssessment _woundAssessmentFromMap(Map<String, dynamic> map) {
     triage: _parseTriage(map['triage']?.toString()),
     redFlags: _stringList(map['red_flags']),
     firstAidSteps: _stringList(map['first_aid_steps']),
-    otcOptions: _stringList(map['otc_options']),
+    otcOptions: _parseOtcOptionsFromJson(map['otc_options']),
     needsProfessionalEvaluation: map['needs_professional_evaluation'] == true,
     uncertainties: _stringList(map['uncertainties']),
     error: map['error']?.toString(),
@@ -378,64 +545,6 @@ WoundAssessment parseWoundAssessment(String raw) {
 /// Structured result of the multi-injury JSON schema: every injury the
 /// model found in the photo, each parsed the same way as the single-wound
 /// schema, plus a combined treat-first-to-last ordering.
-class MultiWoundAssessment {
-  final List<WoundAssessment> injuries;
-  // 0-based indices into [injuries], ordered treat-first to treat-last.
-  final List<int> priorityOrder;
-  final String? error;
-
-  const MultiWoundAssessment({
-    required this.injuries,
-    required this.priorityOrder,
-    this.error,
-  });
-
-  factory MultiWoundAssessment.errorFallback(String message) =>
-      MultiWoundAssessment(injuries: const [], priorityOrder: const [], error: message);
-
-  bool get hasError => error != null || injuries.isEmpty;
-}
-
-/// Parses the multi-injury model's JSON response (an `injuries` array plus
-/// a `priority_order` array of indices into it). Falls back to an empty,
-/// error-flagged result rather than crashing or guessing at injuries from
-/// unparseable output — the caller should fall back to the single-wound
-/// path when [MultiWoundAssessment.hasError] is true.
-MultiWoundAssessment parseMultiWoundAssessment(String raw) {
-  try {
-    final map = jsonDecode(_stripCodeFences(raw)) as Map<String, dynamic>;
-    final rawInjuries = (map['injuries'] as List?) ?? const [];
-    final injuries = rawInjuries
-        .map((e) => _woundAssessmentFromMap(e as Map<String, dynamic>))
-        .toList();
-    if (injuries.isEmpty) {
-      return MultiWoundAssessment.errorFallback(
-        'No injuries found in the response.',
-      );
-    }
-
-    final rawPriority = (map['priority_order'] as List?) ?? const [];
-    final priorityOrder = rawPriority
-        .map((e) => (e as num).toInt())
-        .where((i) => i >= 0 && i < injuries.length)
-        .toList();
-    // The model left it out, returned something malformed, or didn't cover
-    // every injury — fall back to array order rather than dropping
-    // injuries the priority list missed.
-    final completePriority = priorityOrder.length == injuries.length
-        ? priorityOrder
-        : List<int>.generate(injuries.length, (i) => i);
-
-    return MultiWoundAssessment(
-      injuries: injuries,
-      priorityOrder: completePriority,
-    );
-  } catch (e) {
-    debugPrint('parseMultiWoundAssessment error: $e — raw: $raw');
-    return MultiWoundAssessment.errorFallback(e.toString());
-  }
-}
-
 class GeminiService {
   static final GeminiService _instance = GeminiService._internal();
   factory GeminiService() => _instance;
@@ -448,9 +557,12 @@ class GeminiService {
     return GenerativeModel(
       model: 'gemini-3.5-flash',
       apiKey: ApiKeys.gemini,
+      // 512 can cut the reply off once several wounds (each with a
+      // description and a box line) are listed — the same failure that cut
+      // off the assessment reply — so later wounds would silently vanish.
       generationConfig: GenerationConfig(
         temperature: 0.1,
-        maxOutputTokens: 512,
+        maxOutputTokens: 2048,
       ),
       systemInstruction: Content.system(
         'You are the image validation and pre-check step for Fine Aid, a '
@@ -554,19 +666,44 @@ class GeminiService {
         'recommended care and it fits naturally, offer to help find '
         'nearby healthcare.\n\n'
         'STEP 1 — SCOPE CHECK:\n'
-        'Decide whether the USER QUESTION is actually about a first aid '
-        'concern — an injury, wound, burn, bite, bleeding, skin condition, '
-        'symptom, medical emergency, or a question about an OTC medicine.\n'
+        'Fine Aid only answers questions about: wounds (cuts, scrapes, '
+        'punctures, burns, bites, etc.), minor injuries (sprains, '
+        'bruises, minor swelling, etc.), and skin conditions (rashes, '
+        'itching, acne, fungal infections, etc.) — including a question '
+        'about an OTC medicine for one of these. Everything else is out '
+        'of scope, EVEN IF it sounds like a general medical question — '
+        'eg dry or wet cough, colds/flu, fever with no wound or skin '
+        'cause, chronic illnesses (diabetes, hypertension, asthma, etc.), '
+        'stomach or digestive problems, headaches, mental health, or any '
+        'other general medical concern.\n'
+        'BORDERLINE CASES ARE IN SCOPE: a symptom linked to a wound or '
+        'skin problem is in scope even if the symptom alone wouldn\'t be '
+        '— eg fever WITH an infected wound, swelling around a bite. If '
+        'it\'s genuinely unclear whether something is wound/skin-related, '
+        'you may ask ONE short clarifying question about the wound or '
+        'skin issue instead of refusing outright.\n'
         'IN-SCOPE examples: "I cut my finger", "is this rash dangerous", '
-        '"can I take paracetamol for a headache", "my wound is swelling", '
-        '"what if it doesn\'t heal in a week", "paano gamutin ang paso".\n'
-        'OUT-OF-SCOPE examples: small talk or greetings with no health '
-        'concern stated, requests unrelated to first aid ("help me with my '
+        '"my wound is swelling", "what if it doesn\'t heal in a week", '
+        '"my cut is red and I have a fever", "paano gamutin ang paso".\n'
+        'OUT-OF-SCOPE examples: "I have a cough", "I have diabetes, what '
+        'should I eat?", small talk or greetings with no health concern '
+        'stated, requests unrelated to first aid ("help me with my '
         'homework", "write my essay", "what\'s the weather", "tell me a '
-        'joke"), and statements that merely mention an unrelated object, '
-        'food, or activity without describing any injury or symptom. '
-        'If OUT-OF-SCOPE: reply with ONLY a short, friendly 1-2 sentence '
-        'redirect and stop there.\n'
+        'joke"), and any general medical question with no stated '
+        'connection to a wound, injury, or skin condition.\n'
+        'If OUT-OF-SCOPE: reply with ONLY this exact message, translated '
+        'to Tagalog for the TL: field, and nothing else — no partial '
+        'answer, no OTC suggestion, no follow-up question about the '
+        'out-of-scope topic: "$outOfScopeRefusalMessage"\n'
+        'This applies per-message: if THIS message is entirely about '
+        'something out of scope (eg a follow-up like "also, I have a '
+        'cough" after an earlier in-scope wound question), refuse just '
+        'this message the same way — the conversation continues '
+        'normally on the next in-scope message about the wound. A '
+        'refusal is still a normal reply, not an error — still follow '
+        'the FORMAT below (EN:/TL:/NEARBY:/SEVERITY:/OTC:), just with '
+        '"NEARBY: no", "SEVERITY: normal", "OTC: none", and the refusal '
+        'text (and its Tagalog translation) as the EN:/TL: content.\n'
         'If IN-SCOPE: continue.\n\n'
         'STEP 2 — ANSWER DIRECTLY, USING WOUND CONTEXT:\n'
         'Ground your answer in REFERENCE MATERIALS and, when present, the '
@@ -614,38 +751,7 @@ class GeminiService {
         'hydrocortisone cream or antihistamines for itching or minor '
         'allergic reactions, and cold packs for swelling.\n'
         'Rules:\n'
-        '- Recommend generic product types or active ingredients (e.g. '
-        '\'an antibiotic ointment with bacitracin\'). Brand names are '
-        'optional and only as examples.\n'
-        '- Only suggest products for minor injuries. For severe, deep, '
-        'infected-looking, or high-risk wounds, prioritize seeking '
-        'medical care and never present OTC products as a substitute.\n'
-        '- Say to follow the package label for dosage. Don\'t invent '
-        'specific doses. Mention relevant cautions (allergies, pregnancy, '
-        'children, existing medications) and suggest checking with a '
-        'pharmacist or doctor if unsure.\n'
-        '- Never recommend prescription drugs.\n'
-        '- Include red-flag warnings: spreading redness, pus, fever, '
-        'worsening pain, heavy bleeding, numbness, or no improvement in a '
-        'few days means seeing a healthcare professional.\n'
-        '- Keep it short: 1-3 suggestions, phrased as \'you may '
-        'consider...\', not as a diagnosis or prescription.\n'
-        '- Users are in the Philippines, so prefer products commonly '
-        'available in local pharmacies, and give the Tagalog product/'
-        'ingredient name if the user\'s language is Tagalog.\n'
-        '- RELEVANCE: Only suggest products designed and labeled for '
-        'treating wounds, skin injuries, or their symptoms (pain, '
-        'swelling, itching, infection prevention). Never suggest products '
-        'for unrelated body areas or purposes, even if the brand is '
-        'similar to a wound-care product.\n'
-        '- Explicitly exclude feminine washes and intimate hygiene '
-        'products (including Betadine Feminine Wash), mouthwashes, '
-        'throat gargles or sprays, shampoos, body or facial washes, '
-        'cosmetics, deodorants, and unrelated supplements or vitamins.\n'
-        '- If a brand has multiple variants, recommend only the '
-        'wound-appropriate form (e.g. \'povidone-iodine antiseptic '
-        'solution for minor cuts\').\n'
-        '- If no relevant OTC product fits, suggest none.\n\n'
+        '$_otcContentRules\n\n'
         'NEARBY HEALTHCARE: if the user asks where to go, how to find a '
         'hospital/clinic/doctor, or similar, OR if you just recommended '
         'seeking professional/emergency care, you may offer to help find '
@@ -676,11 +782,21 @@ class GeminiService {
         'situation per the red-flag/emergency guidance above), or '
         '"SEVERITY: normal" otherwise, then a line "OTC: " followed by '
         'your OTC suggestions (per the OTC PRODUCT SUGGESTIONS rules '
-        'above) separated by " | ", or "OTC: none" if none apply. Do NOT '
-        'repeat the OTC suggestions inside EN: or TL: — they belong only '
-        'in the OTC: field, since the app renders them in their own '
-        'labeled block. Do not add any other lines, headers, or '
-        'commentary outside these five.',
+        'above), or "OTC: none" if none apply. Format the OTC line '
+        'exactly like this, all on one line, no line breaks within it: '
+        'each suggestion as "Name (Brand example) :: Age limit :: '
+        'Allergy precaution :: How to use", and separate multiple '
+        'suggestions with " || ". Example: "OTC: Iodine (Betadine) :: '
+        'Adults and children 2 years and above :: Do not use if allergic '
+        'to iodine :: Apply a small amount on the wound 1-2 times daily '
+        '|| Paracetamol (Biogesic) :: Adults and children 6 years and '
+        'above :: Avoid if allergic to paracetamol or have liver disease '
+        ':: Take by mouth every 4-6 hours as needed, follow the package '
+        'label for the exact dose". Do NOT repeat the OTC suggestions '
+        'inside EN: or TL: — they belong only in the OTC: field, since '
+        'the app renders them in their own labeled block with its own '
+        'reminder to consult a doctor or pharmacist. Do not add any '
+        'other lines, headers, or commentary outside these five.',
       ),
     );
   }
@@ -691,7 +807,10 @@ class GeminiService {
       apiKey: ApiKeys.gemini,
       generationConfig: GenerationConfig(
         temperature: 0.2,
-        maxOutputTokens: 2048,
+        // 2048 cut the JSON off mid-reply for serious wounds (long steps,
+        // red flags and several OTC entries), which failed to parse and
+        // showed as "Unable to Classify".
+        maxOutputTokens: 8192,
         responseMimeType: 'application/json',
       ),
       systemInstruction: Content.system(
@@ -711,7 +830,7 @@ class GeminiService {
         '  "triage": string,            // "SELF_CARE" | "FIRST_AID" | "URGENT_CARE" | "EMERGENCY"\n'
         '  "red_flags": string[],       // e.g. "heavy bleeding", "exposed bone", "signs of infection"\n'
         '  "first_aid_steps": string[],\n'
-        '  "otc_options": string[],\n'
+        '  "otc_options": [{"name": string, "age_limit": string, "allergy_precaution": string, "how_to_use": string}],\n'
         '  "needs_professional_evaluation": boolean,\n'
         '  "uncertainties": string[]    // anything the model is unsure about from the image\n'
         '}\n\n'
@@ -732,7 +851,16 @@ class GeminiService {
         '- Distinguish general hand-hygiene-before-touching-a-wound (a brief, '
         'secondary note at most) from care of the actual affected area shown in '
         'the photo (the main content of first_aid_steps) — never phrase hand '
-        'hygiene as if it IS the affected-area care.',
+        'hygiene as if it IS the affected-area care.\n'
+        '- Do not include applying petroleum jelly (or a similar occlusive '
+        'ointment) as a routine first_aid_steps item unless it is genuinely '
+        'indicated for this specific wound_type — it is not common first aid '
+        'practice for most minor wounds (e.g. do not suggest it for an '
+        'abrasion/scrape). Prefer standard care instead (cleaning, antiseptic, '
+        'a sterile non-stick dressing).\n'
+        '- OTC_OPTIONS: populate "otc_options" per these rules (same rules '
+        'used for follow-up chat suggestions, so both places match):\n'
+        '$_otcContentRules',
       ),
     );
   }
@@ -777,119 +905,6 @@ class GeminiService {
     } catch (e) {
       debugPrint('Gemini analyzeWoundV2 error: $e');
       return WoundAssessment.errorFallback(e.toString());
-    }
-  }
-
-  GenerativeModel _createMultiInjuryAssessmentModel() {
-    return GenerativeModel(
-      model: 'gemini-3.5-flash',
-      apiKey: ApiKeys.gemini,
-      generationConfig: GenerationConfig(
-        temperature: 0.2,
-        maxOutputTokens: 4096,
-        responseMimeType: 'application/json',
-      ),
-      systemInstruction: Content.system(
-        'You are a wound-assessment vision model. The submitted image '
-        'contains MORE THAN ONE separate, distinct wound or skin-condition '
-        'area — analyze EACH one individually and respond with ONLY a '
-        'single JSON object — no preamble, no explanation, no markdown '
-        'code fences, no trailing text. The response must be valid, '
-        'directly parseable JSON matching this schema exactly:\n\n'
-        '{\n'
-        '  "injuries": [\n'
-        '    {\n'
-        '      "location": string,        // brief body-part/location hint, e.g. "left knee", "right forearm" — use neutral phrasing like "affected area 1" only if the body part truly cannot be identified\n'
-        '      "is_wound": boolean,\n'
-        '      "confidence": number,        // 0.0-1.0\n'
-        '      "wound_type": string,        // e.g. "laceration", "abrasion", "puncture", "burn", "none"\n'
-        '      "visible_bleeding": string,  // "none" | "mild" | "moderate" | "severe"\n'
-        '      "apparent_depth": string,    // "superficial" | "partial_thickness" | "deep" | "unknown"\n'
-        '      "foreign_object_visible": boolean,\n'
-        '      "infection_signs_visible": boolean,\n'
-        '      "triage": string,            // "SELF_CARE" | "FIRST_AID" | "URGENT_CARE" | "EMERGENCY"\n'
-        '      "red_flags": string[],\n'
-        '      "first_aid_steps": string[],\n'
-        '      "otc_options": string[],\n'
-        '      "needs_professional_evaluation": boolean,\n'
-        '      "uncertainties": string[]\n'
-        '    }\n'
-        '  ],\n'
-        '  "priority_order": number[]   // 0-based indices into "injuries", ordered from treat-first to treat-last\n'
-        '}\n\n'
-        'Rules:\n'
-        '- List every separate, distinct wound or skin-condition area '
-        'visible as its own entry in "injuries" — do not merge unrelated '
-        'injuries into one entry, and do not split one injury into two.\n'
-        '- Each injury\'s fields follow the exact same rules as a '
-        'single-wound assessment would: reflect image-quality limits in '
-        '"confidence"/"uncertainties" rather than guessing; default '
-        '"triage" to "URGENT_CARE" or "EMERGENCY" and '
-        '"needs_professional_evaluation" to true for any sign of heavy/'
-        'uncontrolled bleeding, exposed bone/tendon, suspected fracture, '
-        'deep puncture, large burns, or infection signs — bias toward '
-        'caution when uncertain; do not conclude '
-        '"needs_professional_evaluation": false unless confidence is high '
-        'and no red flags are present; distinguish general hand-hygiene-'
-        'before-touching-a-wound (a brief, secondary note at most) from '
-        'care of that specific injury (the main content of '
-        'first_aid_steps).\n'
-        '- "priority_order" must rank injuries by clinical urgency first '
-        '(EMERGENCY before URGENT_CARE before FIRST_AID before SELF_CARE), '
-        'then by severity within the same triage level (eg, more severe '
-        'bleeding or a deeper wound treated first). It must include every '
-        'index in "injuries" exactly once.\n'
-        '- Output the JSON object and nothing else. If you cannot produce '
-        'valid JSON, still return the schema with an added "error" field '
-        'rather than free text.',
-      ),
-    );
-  }
-
-  /// Runs the multi-injury structured assessment on [imagePath] — same
-  /// per-injury fields and rules as [analyzeWoundV2], but for a photo
-  /// already known (via the wound-count pre-check) to contain more than
-  /// one separate wound. Returns every injury found plus a combined
-  /// treat-first-to-last order. On failure, returns a
-  /// [MultiWoundAssessment] with [MultiWoundAssessment.hasError] true —
-  /// callers should fall back to the single-wound flow in that case rather
-  /// than show a broken multi-injury screen.
-  Future<MultiWoundAssessment> analyzeMultipleWoundsV2(
-    String imagePath, {
-    String? referenceContext,
-  }) async {
-    try {
-      final imageBytes = await File(imagePath).readAsBytes();
-      final model = _createMultiInjuryAssessmentModel();
-
-      final referenceBlock =
-          referenceContext != null && referenceContext.trim().isNotEmpty
-          ? 'Trusted reference material — use it to ground first_aid_steps '
-                'and otc_options where relevant, and do not contradict it:\n'
-                '$referenceContext\n\n'
-          : '';
-
-      final response = await model
-          .generateContent([
-            Content.multi([
-              TextPart(
-                '${referenceBlock}This photo contains multiple separate '
-                'wounds or skin-condition areas. Analyze each one and '
-                'respond per the schema.',
-              ),
-              DataPart('image/jpeg', imageBytes),
-            ]),
-          ])
-          .timeout(
-            const Duration(seconds: 45),
-            onTimeout: () =>
-                throw Exception('Analysis timed out. Please try again.'),
-          );
-
-      return parseMultiWoundAssessment(response.text ?? '{}');
-    } catch (e) {
-      debugPrint('Gemini analyzeMultipleWoundsV2 error: $e');
-      return MultiWoundAssessment.errorFallback(e.toString());
     }
   }
 

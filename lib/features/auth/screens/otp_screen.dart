@@ -5,6 +5,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import '../../../services/api/semaphore_service.dart';
 import '../../../services/firebase/auth_service.dart';
+import '../../../services/connectivity_service.dart';
+import '../../../core/network_error.dart';
 import 'package:flutter/services.dart';
 
 class OtpScreen extends StatefulWidget {
@@ -32,6 +34,8 @@ class _OtpScreenState extends State<OtpScreen> {
   Timer? _cooldownTimer;
   bool _isSigningOut = false;
   bool _isEditingPhone = false;
+  int _resendCount = 0;
+  static const int _maxResends = 5;
 
   bool get _isPhoneMethod => _verificationMethod == 'phone';
   bool get _isEmailMethod => _verificationMethod == 'email';
@@ -101,14 +105,32 @@ class _OtpScreenState extends State<OtpScreen> {
       return;
     }
 
+    final online = await ConnectivityService().isOnline;
+    if (!mounted) return;
+    if (!online) {
+      setState(() => _otpError = noInternetMessage);
+      return;
+    }
+
     setState(() {
       _isLoading = true;
       _otpError = null;
     });
 
-    final success = await SemaphoreService().sendOtp(
-      phoneNumber: _phoneNumber!,
-    );
+    bool success;
+    try {
+      success = await SemaphoreService().sendOtp(phoneNumber: _phoneNumber!);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _otpError = isNetworkError(e)
+            ? noInternetMessage
+            : 'Failed to send OTP. Please check your '
+                  'phone number and try again.';
+      });
+      return;
+    }
 
     if (mounted) {
       if (success) {
@@ -134,6 +156,13 @@ class _OtpScreenState extends State<OtpScreen> {
       return;
     }
 
+    final online = await ConnectivityService().isOnline;
+    if (!mounted) return;
+    if (!online) {
+      setState(() => _otpError = noInternetMessage);
+      return;
+    }
+
     setState(() {
       _isLoading = true;
       _otpError = null;
@@ -153,14 +182,17 @@ class _OtpScreenState extends State<OtpScreen> {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _otpError =
-            e.message ?? 'Failed to send the code. Please try again.';
+        _otpError = isNetworkError(e)
+            ? noInternetMessage
+            : e.message ?? 'Failed to send the code. Please try again.';
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _otpError = 'Failed to send the code. Please try again.';
+        _otpError = isNetworkError(e)
+            ? noInternetMessage
+            : 'Failed to send the code. Please try again.';
       });
     }
   }
@@ -200,9 +232,11 @@ class _OtpScreenState extends State<OtpScreen> {
             .get();
         final username = profileDoc.data()?['username'] as String?;
         if (username != null && username.trim().isNotEmpty) {
+          // Registration reserves the username under its exact-case doc ID
+          // (see AuthService.registerWithUsername) — release that same doc.
           await FirebaseFirestore.instance
               .collection('usernames')
-              .doc(username.trim().toLowerCase())
+              .doc(username.trim())
               .delete();
         }
         await FirebaseFirestore.instance
@@ -306,6 +340,13 @@ class _OtpScreenState extends State<OtpScreen> {
       return;
     }
 
+    final online = await ConnectivityService().isOnline;
+    if (!mounted) return;
+    if (!online) {
+      setState(() => _otpError = noInternetMessage);
+      return;
+    }
+
     setState(() {
       _isLoading = true;
       _otpError = null;
@@ -370,14 +411,18 @@ class _OtpScreenState extends State<OtpScreen> {
           e.code == 'deadline-exceeded' || e.code == 'resource-exhausted';
       setState(() {
         _isLoading = false;
-        _otpError = e.message ?? 'Verification failed. Please try again.';
+        _otpError = isNetworkError(e)
+            ? noInternetMessage
+            : e.message ?? 'Verification failed. Please try again.';
         if (expiredOrExhausted) _codeSent = false;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _otpError = 'Verification failed. Please try again.';
+        _otpError = isNetworkError(e)
+            ? noInternetMessage
+            : 'Verification failed. Please try again.';
       });
     }
   }
@@ -438,10 +483,14 @@ class _OtpScreenState extends State<OtpScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'OTP Verification',
-                          style: theme.textTheme.headlineSmall,
+                          isPhoneMethod
+                              ? 'OTP Verification'
+                              : _isEmailMethod
+                              ? 'Email Verification'
+                              : 'Account Verification',
+                          style: theme.textTheme.titleSmall,
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 10),
                         Text(
                           isPhoneMethod
                               ? _codeSent
@@ -478,8 +527,7 @@ class _OtpScreenState extends State<OtpScreen> {
                               style: TextButton.styleFrom(
                                 padding: EdgeInsets.zero,
                                 minimumSize: const Size(0, 32),
-                                tapTargetSize:
-                                    MaterialTapTargetSize.shrinkWrap,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               ),
                               child: const Text('Wrong number? Edit'),
                             ),
@@ -631,13 +679,17 @@ class _OtpScreenState extends State<OtpScreen> {
                   padding: const EdgeInsets.only(top: 12),
                   child: TextButton(
                     onPressed:
-                        (_isResending || _resendCooldown > 0 || _isLoading)
+                        (_isResending ||
+                            _resendCooldown > 0 ||
+                            _isLoading ||
+                            _resendCount >= _maxResends)
                         ? null
                         : () async {
                             setState(() {
                               _isResending = true;
                               _codeSent = false;
                               _otpError = null;
+                              _resendCount++;
                             });
                             for (final c in _controllers) {
                               c.clear();
@@ -652,7 +704,9 @@ class _OtpScreenState extends State<OtpScreen> {
                             }
                           },
                     child: Text(
-                      _resendCooldown > 0
+                      _resendCount >= _maxResends
+                          ? 'Resend limit reached. Please try again later.'
+                          : _resendCooldown > 0
                           ? 'Resend code in '
                                 '${_resendCooldown}s'
                           : "Didn't receive the code? "

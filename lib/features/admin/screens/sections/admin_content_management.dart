@@ -24,6 +24,13 @@ class _AdminContentManagementState extends State<AdminContentManagement> {
     'Burns',
   ];
 
+  /// The curated categories, plus whatever `_category` currently holds if
+  /// it isn't one of them — keeps the dropdown from crashing when editing
+  /// an article whose real category came from bulk-imported data.
+  List<String> get _dropdownCategories => _categories.contains(_category)
+      ? _categories
+      : [..._categories, _category];
+
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _contentStream =
       FirebaseFirestore.instance
           .collection('firstAidContent')
@@ -195,7 +202,16 @@ class _AdminContentManagementState extends State<AdminContentManagement> {
                                         ),
                                         Expanded(
                                           child: Text(
-                                            data['category'] ?? '',
+                                            // Bulk-imported articles (via
+                                            // seed_firestore/seed.js) store
+                                            // this under `subtopic`/`topic`
+                                            // instead of `category`, which
+                                            // only articles saved through
+                                            // this admin form itself set.
+                                            data['category'] as String? ??
+                                                data['subtopic'] as String? ??
+                                                data['topic'] as String? ??
+                                                '',
                                             style: theme.textTheme.titleMedium
                                                 ?.copyWith(
                                                   color: Colors.black87,
@@ -242,9 +258,22 @@ class _AdminContentManagementState extends State<AdminContentManagement> {
                                                   data['content'] ?? '';
                                               setState(() {
                                                 _editingId = doc.id;
+                                                // Same fallback as the list
+                                                // column: bulk-imported
+                                                // articles store this under
+                                                // `subtopic`/`topic` instead
+                                                // of `category`.
+                                                final resolved =
+                                                    data['category']
+                                                        as String? ??
+                                                    data['subtopic']
+                                                        as String? ??
+                                                    data['topic'] as String?;
                                                 _category =
-                                                    data['category'] ??
-                                                    'Emergency';
+                                                    (resolved == null ||
+                                                        resolved.isEmpty)
+                                                    ? 'Emergency'
+                                                    : resolved;
                                               });
                                             },
                                             child: Text(
@@ -316,8 +345,17 @@ class _AdminContentManagementState extends State<AdminContentManagement> {
                                   ),
                                   const SizedBox(height: 6),
                                   DropdownButtonFormField<String>(
+                                    // DropdownButtonFormField asserts/crashes
+                                    // if `initialValue` isn't one of `items`.
+                                    // Bulk-imported articles can carry a
+                                    // category (from `subtopic`/`topic`)
+                                    // that isn't one of the 5 curated
+                                    // options below, so that value is added
+                                    // to the list rather than dropped —
+                                    // editing never crashes, and the admin
+                                    // can still switch to a curated one.
                                     initialValue: _category,
-                                    items: _categories
+                                    items: _dropdownCategories
                                         .map(
                                           (c) => DropdownMenuItem(
                                             value: c,

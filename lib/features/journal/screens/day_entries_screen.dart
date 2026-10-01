@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import '../../../core/network_error.dart';
 import 'entry_detail_screen.dart';
 
 class DayEntriesScreen extends StatefulWidget {
@@ -94,9 +95,10 @@ class _DayEntriesScreenState extends State<DayEntriesScreen> {
                               date.day,
                             );
                             markedDates.add(dayKey);
-                            entriesByDay
-                                .putIfAbsent(dayKey, () => [])
-                                .add((doc.id, doc.data()));
+                            entriesByDay.putIfAbsent(dayKey, () => []).add((
+                              doc.id,
+                              doc.data(),
+                            ));
                           }
                         }
                         final selectedEntries =
@@ -117,7 +119,21 @@ class _DayEntriesScreenState extends State<DayEntriesScreen> {
                             const SizedBox(height: 4),
                             const Divider(),
                             const SizedBox(height: 8),
-                            if (!snapshot.hasData)
+                            if (snapshot.hasError)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 24,
+                                ),
+                                child: Text(
+                                  isNetworkError(snapshot.error!)
+                                      ? noInternetMessage
+                                      : 'Could not load entries for this '
+                                            'day. Please try again.',
+                                  textAlign: TextAlign.center,
+                                  style: theme.textTheme.bodyMedium,
+                                ),
+                              )
+                            else if (!snapshot.hasData)
                               const Padding(
                                 padding: EdgeInsets.symmetric(vertical: 24),
                                 child: Center(
@@ -139,11 +155,8 @@ class _DayEntriesScreenState extends State<DayEntriesScreen> {
                               )
                             else
                               ...selectedEntries.map(
-                                (entry) => _buildEntryTile(
-                                  theme,
-                                  entry.$1,
-                                  entry.$2,
-                                ),
+                                (entry) =>
+                                    _buildEntryTile(theme, entry.$1, entry.$2),
                               ),
                           ],
                         );
@@ -186,7 +199,11 @@ class _DayEntriesScreenState extends State<DayEntriesScreen> {
         ),
         child: Row(
           children: [
-            Icon(Icons.calendar_today, color: theme.colorScheme.primary, size: 20),
+            Icon(
+              Icons.calendar_today,
+              color: theme.colorScheme.primary,
+              size: 20,
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(

@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../services/firebase/storage_service.dart';
+import '../../../core/widgets/guest_gate_dialogs.dart';
 
 class NewEntryScreen extends StatefulWidget {
   const NewEntryScreen({super.key});
@@ -92,6 +93,11 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
   }
 
   Future<void> _handleSave() async {
+    if (FirebaseAuth.instance.currentUser == null) {
+      await showGuestSaveGateDialog(context);
+      return;
+    }
+
     if (_titleController.text.trim().isEmpty) {
       ScaffoldMessenger.of(
         context,

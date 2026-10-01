@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../services/firebase/auth_service.dart';
 import '../../../core/password_requirements.dart';
-import '../../../core/widgets/password_requirements_checklist.dart';
+import '../../../core/ph_phone_validator.dart';
 
 class RegistrationScreen extends StatefulWidget {
   const RegistrationScreen({super.key});
@@ -54,9 +54,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     if (value == null || value.trim().isEmpty) {
       return 'Phone number is required';
     }
-    final phoneRegex = RegExp(r'^9\d{9}$');
-    if (!phoneRegex.hasMatch(value.trim())) {
-      return 'Enter a valid 10-digit number (e.g. 9123456789)';
+    if (normalizePhMobileNumber(value) == null) {
+      return phPhoneErrorMessage;
     }
     return null;
   }
@@ -86,6 +85,15 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
   Future<void> _handleSignUp() async {
     if (!_formKey.currentState!.validate()) return;
+
+    final normalizedPhone = normalizePhMobileNumber(_phoneController.text);
+    if (normalizedPhone == null) {
+      // The form validator already checks this, but guard here too since
+      // this value is about to be persisted as the account's phone number.
+      setState(() {});
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     try {
@@ -94,7 +102,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       await _authService.registerWithUsername(
         username: _usernameController.text.trim(),
         password: _passwordController.text,
-        phoneNumber: '+63${_phoneController.text.trim()}',
+        phoneNumber: normalizedPhone,
         recoveryEmail: email.isEmpty ? null : email,
         verificationMethod: isEmailMethod ? 'email' : 'phone',
       );
@@ -117,7 +125,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                 ? 'A verification code will be sent to:\n$email\n\n'
                       'Please check your inbox.'
                 : 'A verification code will be sent to:\n'
-                      '+63${_phoneController.text.trim()}\n\n'
+                      '$normalizedPhone\n\n'
                       'Please have your phone ready.',
           ),
           actions: [
@@ -230,8 +238,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                   controller: _phoneController,
                   keyboardType: TextInputType.phone,
                   decoration: const InputDecoration(
-                    prefixText: '+63 ',
-                    hintText: '9123456789',
+                    hintText: '09923456789',
                     prefixIcon: Icon(Icons.phone_outlined),
                   ),
                   validator: _validatePhone,
@@ -260,7 +267,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                 TextFormField(
                   controller: _passwordController,
                   obscureText: _obscurePassword,
-                  onChanged: (_) => setState(() {}),
+                  autovalidateMode: AutovalidateMode.onUserInteraction,
                   decoration: InputDecoration(
                     hintText: 'Create password',
                     prefixIcon: const Icon(Icons.lock_outline),
@@ -275,10 +282,6 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                     ),
                   ),
                   validator: validatePasswordStrength,
-                ),
-                const SizedBox(height: 8),
-                PasswordRequirementsChecklist(
-                  password: _passwordController.text,
                 ),
                 const SizedBox(height: 16),
 

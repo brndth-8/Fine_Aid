@@ -1,60 +1,46 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
   <!--
-    Replaced by `flutter build web --base-href`. Keep it "/" so that deep
-    paths (e.g. the admin path) still load /main.dart.js and /assets.
+    If you are serving your web app in a path other than the root, change the
+    href value below to reflect the base path you are serving from.
+
+    The path provided below has to start and end with a slash "/" in order for
+    it to work correctly.
+
+    For more details:
+    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+
+    This is a placeholder for base href that will be replaced by the value of
+    the `--base-href` argument provided to `flutter build`.
   -->
   <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-
-  <title>Fine Aid — Your Smart First Aid Assistant</title>
-  <meta name="description" content="Fine Aid is an AI-powered first aid assistant that scans wounds and minor injuries and gives evidence-based guidance cross-referenced with MIMS Philippines, WHO, and licensed medical professionals.">
-  <meta name="theme-color" content="#8B1A1A">
-
-  <!-- Open Graph / link previews (relative image URL keeps the build domain-agnostic) -->
-  <meta property="og:type" content="website">
-  <meta property="og:title" content="Fine Aid — Be the help until help arrives">
-  <meta property="og:description" content="AI-powered, evidence-based first aid guidance backed by licensed medical professionals.">
-  <meta property="og:image" content="icons/Icon-512.png">
+  <meta name="description" content="A new Flutter project.">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="Fine Aid">
+  <meta name="apple-mobile-web-app-title" content="fine_aid">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
+  <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
-  <link rel="manifest" href="manifest.json">
 
-  <style>
-    /* Shown until Flutter paints its first frame */
-    body { margin: 0; background: #fff; }
-    #splash { position: fixed; inset: 0; display: grid; place-items: center; }
-    #splash img { width: 96px; animation: pulse 1.8s ease-in-out infinite; }
-    @keyframes pulse { 0%, 60%, 100% { transform: scale(1); } 15% { transform: scale(1.05); } 45% { transform: scale(1.03); } }
-    @media (prefers-reduced-motion: reduce) { #splash img { animation: none; } }
-  </style>
+  <title>fine_aid</title>
+  <link rel="manifest" href="manifest.json">
 </head>
 <body>
-  <div id="splash" aria-hidden="true"><img src="icons/Icon-192.png" alt=""></div>
+  <!--
+    You can customize the "flutter_bootstrap.js" script.
+    This is useful to provide a custom configuration to the Flutter loader
+    or to give the user feedback during the initialization process.
 
-  <!-- Plain-text summary for crawlers and no-JS visitors (Flutter renders to canvas). -->
-  <noscript>
-    <h1>Fine Aid — Your Smart First Aid Assistant</h1>
-    <p>Be the help until help arrives. Fine Aid is an application integrating AI that allows you to capture images of wounds, minor injuries, and skin issues to provide evidence-based first aid guidance, cross-referenced with verified protocols from MIMS Philippines, the World Health Organization, and licensed medical professionals.</p>
-    <p>STI Altaraza Town Center, San Jose Del Monte, Bulacan · +63-905-817-1544 · <a href="mailto:admin.fineaid@gmail.com">admin.fineaid@gmail.com</a></p>
-  </noscript>
-
-  <script>
-    window.addEventListener('flutter-first-frame', function () {
-      var s = document.getElementById('splash');
-      if (s) s.remove();
-    });
-  </script>
+    For more details:
+    * https://docs.flutter.dev/platform-integration/web/initialization
+  -->
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

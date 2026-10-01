@@ -36,7 +36,8 @@ const List<HealthcareFacility> kHealthcareFacilities = [
     name: 'City Health Office - City of San Jose del Monte',
     category: 'Public Hospitals',
     contact: '(044) 691 2584',
-    address: 'Municipal Hall, M. Villarica Rd, SJDM, 3023 Bulacan, '
+    address:
+        'Municipal Hall, M. Villarica Rd, SJDM, 3023 Bulacan, '
         'Philippines, San Jose del Monte, Bulacan',
   ),
   HealthcareFacility(
@@ -46,7 +47,8 @@ const List<HealthcareFacility> kHealthcareFacilities = [
     address: 'Towerville Rd, Brgy. Minuyan Proper',
   ),
   HealthcareFacility(
-    name: 'Dr. Jose N. Rodriguez Memorial Hospital and Sanitarium - '
+    name:
+        'Dr. Jose N. Rodriguez Memorial Hospital and Sanitarium - '
         'Ambulatory Surgical Clinic',
     category: 'Public Hospitals',
     contact: '8294-2571',
@@ -70,21 +72,24 @@ const List<HealthcareFacility> kHealthcareFacilities = [
     name: 'City Health Center II',
     category: 'Municipal Health Offices',
     contact: '044 3078003 / 0956 986 9417',
-    address: 'Pecsonville, Brgy. Tungkong Mangga, San Jose del Monte, '
+    address:
+        'Pecsonville, Brgy. Tungkong Mangga, San Jose del Monte, '
         'Bulacan',
   ),
   HealthcareFacility(
     name: 'City Health Center IV',
     category: 'Municipal Health Offices',
     contact: 'chc4bb1@gmail.com',
-    address: 'Blk 18 Lot 16 Sta. Catalina Street, Fatima V Area, San Jose '
+    address:
+        'Blk 18 Lot 16 Sta. Catalina Street, Fatima V Area, San Jose '
         'del Monte, Bulacan',
   ),
   HealthcareFacility(
     name: 'City Health Center VII',
     category: 'Municipal Health Offices',
     contact: '0995 0350 632',
-    address: 'Blk 33 Open Area, Australia, Brgy. Muzon South, San Jose del '
+    address:
+        'Blk 33 Open Area, Australia, Brgy. Muzon South, San Jose del '
         'Monte, Bulacan',
   ),
   HealthcareFacility(
@@ -97,28 +102,32 @@ const List<HealthcareFacility> kHealthcareFacilities = [
     name: 'City Health Center X',
     category: 'Municipal Health Offices',
     contact: '0917 6282560',
-    address: 'Phase 1A Towerville, Brgy. Minuyan Proper, San Jose del '
+    address:
+        'Phase 1A Towerville, Brgy. Minuyan Proper, San Jose del '
         'Monte, Bulacan',
   ),
   HealthcareFacility(
     name: 'City Health Center XI',
     category: 'Municipal Health Offices',
     contact: '0991 5659370',
-    address: 'Blk 5 Lot 1&2 Phase E, Brgy. Francisco Homes, San Jose del '
+    address:
+        'Blk 5 Lot 1&2 Phase E, Brgy. Francisco Homes, San Jose del '
         'Monte, Bulacan',
   ),
   HealthcareFacility(
     name: 'City Health Center XIII',
     category: 'Municipal Health Offices',
     contact: '0930-790-7710',
-    address: 'Blk 8 Mapagbigay St., Graceville 3, San Jose del Monte, '
+    address:
+        'Blk 8 Mapagbigay St., Graceville 3, San Jose del Monte, '
         'Bulacan',
   ),
   HealthcareFacility(
     name: 'San Jose del Monte City Health Office',
     category: 'Municipal Health Offices',
     contact: '0956 9869 417',
-    address: 'JP Rizal St., Barangay Poblacion 1, San Jose del Monte, '
+    address:
+        'JP Rizal St., Barangay Poblacion 1, San Jose del Monte, '
         'Bulacan',
   ),
 
@@ -133,7 +142,8 @@ const List<HealthcareFacility> kHealthcareFacilities = [
     name: 'St. Bernadette Multispecialty and Primary Care Facility',
     category: 'General Practice',
     contact: '044 320 3536',
-    address: 'Phase II, San Jose del Monte Heights, Muzon East, San Jose '
+    address:
+        'Phase II, San Jose del Monte Heights, Muzon East, San Jose '
         'del Monte, Bulacan',
   ),
 
@@ -154,7 +164,8 @@ const List<HealthcareFacility> kHealthcareFacilities = [
     name: 'Grace Medical Center',
     category: 'Private Hospitals',
     contact: '(044) 769-1355 / (02) 8925-1131 / +63 998 973 2523',
-    address: 'Lot 2, Blk 1 Quirino Highway Ext., Brgy. Mulawin, Francisco '
+    address:
+        'Lot 2, Blk 1 Quirino Highway Ext., Brgy. Mulawin, Francisco '
         'Homes',
   ),
   HealthcareFacility(
@@ -205,7 +216,8 @@ const List<HealthcareFacility> kHealthcareFacilities = [
     name: 'Animal Bite Center',
     category: 'Animal Bite Clinics',
     contact: '0948 116 7750',
-    address: 'R26W+7W2, San Ignacio St, Poblacion 1, SJDM, 3023 Bulacan, '
+    address:
+        'R26W+7W2, San Ignacio St, Poblacion 1, SJDM, 3023 Bulacan, '
         'Philippines, San Jose del Monte, Bulacan',
   ),
   HealthcareFacility(
@@ -218,7 +230,8 @@ const List<HealthcareFacility> kHealthcareFacilities = [
     name: 'DR Animal Bite Clinic',
     category: 'Animal Bite Clinics',
     contact: '0936 933 9509',
-    address: 'BLK 22 LOT 15, Brgy. Graceville 1, Muzon Proper, SJDM, 3023 '
+    address:
+        'BLK 22 LOT 15, Brgy. Graceville 1, Muzon Proper, SJDM, 3023 '
         'Bulacan, Philippines, San Jose del Monte, Bulacan',
   ),
   HealthcareFacility(
@@ -237,7 +250,8 @@ const List<HealthcareFacility> kHealthcareFacilities = [
     name: 'DR CARE Medical Clinic and Animal Bite Center SJDM',
     category: 'Animal Bite Clinics',
     contact: '0927 326 6918',
-    address: 'Unit 16, KM35 Quirino Hwy, Santo Cristo, SJDM, 3023 Bulacan, '
+    address:
+        'Unit 16, KM35 Quirino Hwy, Santo Cristo, SJDM, 3023 Bulacan, '
         'Philippines, San Jose del Monte, Bulacan',
   ),
   HealthcareFacility(
@@ -302,7 +316,8 @@ const List<HealthcareFacility> kHealthcareFacilities = [
     name: 'Saint-Pio Animal Bite Center',
     category: 'Animal Bite Clinics',
     contact: '+63 948 787 0218',
-    address: 'Blk 1 Lot 1, VO. Bello Building, Welcome Francisco Homes, '
+    address:
+        'Blk 1 Lot 1, VO. Bello Building, Welcome Francisco Homes, '
         'Brgy. Mulawin',
     is24Hours: true,
   ),
@@ -316,7 +331,8 @@ const List<HealthcareFacility> kHealthcareFacilities = [
     name: 'Vaxicare Animal Bite Clinic',
     category: 'Animal Bite Clinics',
     contact: 'Check local clinic announcements for available slots',
-    address: '1st Floor, Unit 1, 9046 National Rd., Gov. Fortunato Halili '
+    address:
+        '1st Floor, Unit 1, 9046 National Rd., Gov. Fortunato Halili '
         'Rd.',
   ),
 
@@ -325,42 +341,48 @@ const List<HealthcareFacility> kHealthcareFacilities = [
     name: 'Archangels',
     category: 'General Clinics & Diagnostic Hubs',
     contact: '0932 200 0443',
-    address: 'Pecson Ville Subdivision, Tandoc Avenue, SJDM, 3023 '
+    address:
+        'Pecson Ville Subdivision, Tandoc Avenue, SJDM, 3023 '
         'Bulacan, Philippines, San Jose del Monte, Bulacan',
   ),
   HealthcareFacility(
     name: 'Biolab Diagnostic Center',
     category: 'General Clinics & Diagnostic Hubs',
     contact: '0926 298 7342',
-    address: 'Block 16, Lot 46 Road 1, Minuyan II, SJDM, 3023 Bulacan, '
+    address:
+        'Block 16, Lot 46 Road 1, Minuyan II, SJDM, 3023 Bulacan, '
         'Philippines, San Jose del Monte, Bulacan',
   ),
   HealthcareFacility(
     name: 'Calibre Medical and Diagnostic Center',
     category: 'General Clinics & Diagnostic Hubs',
     contact: '0961 451 2000',
-    address: '540 National Road, SJDM, 3023 Bulacan, Philippines, San '
+    address:
+        '540 National Road, SJDM, 3023 Bulacan, Philippines, San '
         'Jose del Monte, Bulacan',
   ),
   HealthcareFacility(
     name: 'City Health Office (Primary Care Command Center)',
     category: 'General Clinics & Diagnostic Hubs',
     contact: '+63 956 986 9417 / (044) 919-7370',
-    address: '2nd Floor, Right Wing, New Government Center, Brgy. Dulong '
+    address:
+        '2nd Floor, Right Wing, New Government Center, Brgy. Dulong '
         'Bayan',
   ),
   HealthcareFacility(
     name: 'CODEVAR Medical Arts Polyclinic & Diagnostic Center Clinic',
     category: 'General Clinics & Diagnostic Hubs',
     contact: '0935 405 1190',
-    address: 'R25X+G7X, SJDM, Bulacan, Philippines, San Jose del Monte, '
+    address:
+        'R25X+G7X, SJDM, Bulacan, Philippines, San Jose del Monte, '
         'Bulacan',
   ),
   HealthcareFacility(
     name: 'Fast Health Medical and Diagnostic Clinic Dulong Bayan',
     category: 'General Clinics & Diagnostic Hubs',
     contact: 'N/A',
-    address: 'Lot 750 B-1, Barangay, SJDM, 3023 Bulacan, Philippines, San '
+    address:
+        'Lot 750 B-1, Barangay, SJDM, 3023 Bulacan, Philippines, San '
         'Jose del Monte, Bulacan',
   ),
   HealthcareFacility(
@@ -373,70 +395,80 @@ const List<HealthcareFacility> kHealthcareFacilities = [
     name: 'JCMC',
     category: 'General Clinics & Diagnostic Hubs',
     contact: '0922 939 3553',
-    address: '225 Zone 2 Carriedo, Muzon, SJDM, 3023 Bulacan, Philippines, '
+    address:
+        '225 Zone 2 Carriedo, Muzon, SJDM, 3023 Bulacan, Philippines, '
         'San Jose del Monte, Bulacan',
   ),
   HealthcareFacility(
     name: 'JP Diagnostic Laboratory',
     category: 'General Clinics & Diagnostic Hubs',
     contact: '(044) 815 6934',
-    address: 'R25W+QWQ, M. Villarica Rd, SJDM, 3023 Bulacan, Philippines, '
+    address:
+        'R25W+QWQ, M. Villarica Rd, SJDM, 3023 Bulacan, Philippines, '
         'San Jose del Monte, Bulacan',
   ),
   HealthcareFacility(
     name: 'Labpro Diagnostic Center',
     category: 'General Clinics & Diagnostic Hubs',
     contact: '(044) 913 1152',
-    address: 'Q3PF+PMV, Pecson Ville Subdivision, SJDM, Bulacan, '
+    address:
+        'Q3PF+PMV, Pecson Ville Subdivision, SJDM, Bulacan, '
         'Philippines, San Jose del Monte, Bulacan',
   ),
   HealthcareFacility(
     name: 'LN Laboratory Clinic (Dr. Litava Co)',
     category: 'General Clinics & Diagnostic Hubs',
     contact: '0932 652 9967',
-    address: 'Barangay, Matiyaga Street, Area B, SJDM, 3024 Bulacan, '
+    address:
+        'Barangay, Matiyaga Street, Area B, SJDM, 3024 Bulacan, '
         'Philippines, San Jose del Monte, Bulacan',
   ),
   HealthcareFacility(
     name: 'Maxicare Primary Care Clinic - Skyline SJDM',
     category: 'General Clinics & Diagnostic Hubs',
     contact: '(02) 7798-7777 / +63 917 843 1481',
-    address: 'Skyline Drive Plaza, Quirino Highway, Brgy. Tungkong '
+    address:
+        'Skyline Drive Plaza, Quirino Highway, Brgy. Tungkong '
         'Mangga, SJDM',
   ),
   HealthcareFacility(
     name: 'Misiona Drug Testing Center',
     category: 'General Clinics & Diagnostic Hubs',
     contact: '0923 458 1127',
-    address: 'R22M+FQ2, Carriedo St, Muzon, SJDM, Bulacan, Philippines, '
+    address:
+        'R22M+FQ2, Carriedo St, Muzon, SJDM, Bulacan, Philippines, '
         'San Jose del Monte, Bulacan',
   ),
   HealthcareFacility(
     name: 'R. Gangan Medical Clinic',
     category: 'General Clinics & Diagnostic Hubs',
     contact: '0928 195 2836',
-    address: '1726 Linawan, SJDM, Bulacan, Philippines, San Jose del '
+    address:
+        '1726 Linawan, SJDM, Bulacan, Philippines, San Jose del '
         'Monte, Bulacan',
   ),
   HealthcareFacility(
     name: 'RABVIE Medical and Diagnostic Clinic (formerly Rabv Clinic)',
     category: 'General Clinics & Diagnostic Hubs',
     contact: '0917 802 9926',
-    address: 'Lot 10 Ipo Road, Minuyan Proper, SJDM, 3023 Bulacan, '
+    address:
+        'Lot 10 Ipo Road, Minuyan Proper, SJDM, 3023 Bulacan, '
         'Philippines, San Jose del Monte, Bulacan',
   ),
   HealthcareFacility(
     name: 'RRT Medical and Diagnostic Center',
     category: 'General Clinics & Diagnostic Hubs',
     contact: '0916 593 2758',
-    address: 'Matiyaga Street, SJDM, 3023 Bulacan, Philippines, San Jose '
+    address:
+        'Matiyaga Street, SJDM, 3023 Bulacan, Philippines, San Jose '
         'del Monte, Bulacan',
   ),
   HealthcareFacility(
     name: 'RRT Medical and Diagnostic Clinic - Rd 1',
     category: 'General Clinics & Diagnostic Hubs',
     contact: '0956 900 2826',
-    address: 'R3RH+WF3, Del Monte - Norzagaray Rd, SJDM, Bulacan, '
+    address:
+        'R3RH+WF3, Del Monte - Norzagaray Rd, SJDM, Bulacan, '
         'Philippines, San Jose del Monte, Bulacan',
   ),
   HealthcareFacility(
@@ -449,29 +481,34 @@ const List<HealthcareFacility> kHealthcareFacilities = [
     name: 'SJP Infirmary Diagnostic and Pharmacy',
     category: 'General Clinics & Diagnostic Hubs',
     contact: '0920 480 3529',
-    address: 'R25W+CW9, Daang Barrio Road, SJDM, Bulacan, Philippines, '
+    address:
+        'R25W+CW9, Daang Barrio Road, SJDM, Bulacan, Philippines, '
         'San Jose del Monte, Bulacan',
   ),
   HealthcareFacility(
     name: 'Tech Med',
     category: 'General Clinics & Diagnostic Hubs',
     contact: '0933 575 1346',
-    address: 'R25W+RVX, M. Villarica Rd, Poblacion 1, SJDM, 3023 Bulacan, '
+    address:
+        'R25W+RVX, M. Villarica Rd, Poblacion 1, SJDM, 3023 Bulacan, '
         'Philippines, San Jose del Monte, Bulacan',
   ),
   HealthcareFacility(
     name: 'The Medical City (TMC) Clinic - SM City San Jose del Monte',
     category: 'General Clinics & Diagnostic Hubs',
-    contact: '(02) 8396-9899 local 4006 / (044) 8492-8795 / +63 968 772 '
+    contact:
+        '(02) 8396-9899 local 4006 / (044) 8492-8795 / +63 968 772 '
         '6625',
-    address: '2/F, SM City San Jose del Monte, Quirino Highway, Brgy. '
+    address:
+        '2/F, SM City San Jose del Monte, Quirino Highway, Brgy. '
         'Tungkong Mangga',
   ),
   HealthcareFacility(
     name: 'WI Care Medical and Diagnostic Clinic',
     category: 'General Clinics & Diagnostic Hubs',
     contact: '0905 245 2318',
-    address: 'Quirino St, SJDM, 3023 Bulacan, Philippines, San Jose del '
+    address:
+        'Quirino St, SJDM, 3023 Bulacan, Philippines, San Jose del '
         'Monte, Bulacan',
   ),
 ];

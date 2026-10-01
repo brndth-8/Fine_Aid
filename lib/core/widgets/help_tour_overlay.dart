@@ -53,7 +53,9 @@ class _HelpTourOverlayState extends State<HelpTourOverlay>
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      setState(() => _displayRect = _targetRect(widget.steps[_index].targetKey));
+      setState(
+        () => _displayRect = _targetRect(widget.steps[_index].targetKey),
+      );
     });
   }
 
@@ -139,13 +141,20 @@ class _HelpTourOverlayState extends State<HelpTourOverlay>
     );
   }
 
-  Widget _buildTooltipCard(BuildContext context, HelpTourStep step, Size screenSize) {
+  Widget _buildTooltipCard(
+    BuildContext context,
+    HelpTourStep step,
+    Size screenSize,
+  ) {
     final theme = Theme.of(context);
     final cardWidth = screenSize.width < 360 ? screenSize.width - 32 : 300.0;
     final rect = _displayRect;
 
     final left = ((rect?.center.dx ?? screenSize.width / 2) - cardWidth / 2)
-        .clamp(16.0, (screenSize.width - cardWidth - 16).clamp(16.0, double.infinity));
+        .clamp(
+          16.0,
+          (screenSize.width - cardWidth - 16).clamp(16.0, double.infinity),
+        );
 
     double top;
     if (rect == null) {
@@ -187,7 +196,11 @@ class _HelpTourOverlayState extends State<HelpTourOverlay>
             color: theme.colorScheme.surface,
             borderRadius: BorderRadius.circular(18),
             boxShadow: const [
-              BoxShadow(color: Colors.black38, blurRadius: 16, offset: Offset(0, 6)),
+              BoxShadow(
+                color: Colors.black38,
+                blurRadius: 16,
+                offset: Offset(0, 6),
+              ),
             ],
           ),
           child: Column(
@@ -258,7 +271,10 @@ class _SpotlightPainter extends CustomPainter {
     }
 
     final padded = rect!.inflate(10);
-    final holeRRect = RRect.fromRectAndRadius(padded, const Radius.circular(18));
+    final holeRRect = RRect.fromRectAndRadius(
+      padded,
+      const Radius.circular(18),
+    );
     final holePath = Path()..addRRect(holeRRect);
     final combined = Path.combine(PathOperation.difference, fullPath, holePath);
     canvas.drawPath(combined, barrierPaint);

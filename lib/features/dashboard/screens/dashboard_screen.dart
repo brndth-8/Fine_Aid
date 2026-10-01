@@ -15,6 +15,7 @@ import '../../../core/widgets/help_tour_launcher.dart';
 import '../../../core/widgets/help_tour_overlay.dart';
 import '../../../core/widgets/custom_bottom_nav_bar.dart';
 import '../../../core/widgets/connectivity_badge.dart';
+import '../../../services/notification_inbox_store.dart';
 import 'textbook_viewer_screen.dart';
 
 class _BookItem {
@@ -53,6 +54,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   // Tour keys
   final GlobalKey _profileKey = GlobalKey();
+  final GlobalKey _settingsKey = GlobalKey();
   final GlobalKey _calendarKey = GlobalKey();
   final GlobalKey _actionTilesKey = GlobalKey();
   final GlobalKey _journalNavKey = GlobalKey();
@@ -208,11 +210,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
     ),
     HelpTourStep(
       targetKey: _profileKey,
-      title: 'Profile & Settings',
+      title: 'Profile',
       description:
-          'Manage your profile, notifications, and account settings from '
-          'here.',
+          'View and edit your profile, and manage your account details '
+          'from here.',
       icon: Icons.account_circle_outlined,
+    ),
+    HelpTourStep(
+      targetKey: _settingsKey,
+      title: 'Settings',
+      description:
+          'Adjust notifications, text size, and other app preferences '
+          'from here.',
+      icon: Icons.menu,
     ),
   ];
 
@@ -345,16 +355,54 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   const ConnectivityBadge(),
                   const Spacer(),
                   // Notification bell
-                  IconButton(
-                    icon: const Icon(Icons.notifications_outlined),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const NotificationsScreen(),
-                        ),
+                  ListenableBuilder(
+                    listenable: NotificationInboxStore.instance,
+                    builder: (context, child) {
+                      final unread =
+                          NotificationInboxStore.instance.unreadCount;
+                      return Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          child!,
+                          if (unread > 0)
+                            Positioned(
+                              right: 6,
+                              top: 6,
+                              child: Container(
+                                padding: const EdgeInsets.all(3),
+                                constraints: const BoxConstraints(
+                                  minWidth: 16,
+                                  minHeight: 16,
+                                ),
+                                decoration: const BoxDecoration(
+                                  color: Colors.red,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Text(
+                                  unread > 9 ? '9+' : '$unread',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
                       );
                     },
+                    child: IconButton(
+                      icon: const Icon(Icons.notifications_outlined),
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const NotificationsScreen(),
+                          ),
+                        );
+                      },
+                    ),
                   ),
                   // Profile icon
                   IconButton(
@@ -381,6 +429,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   // Hamburger menu
                   IconButton(
+                    key: _settingsKey,
                     icon: const Icon(Icons.menu),
                     onPressed: () {
                       Navigator.push(

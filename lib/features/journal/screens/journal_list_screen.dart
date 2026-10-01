@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../../../services/firebase/notification_service.dart';
+import '../../../core/network_error.dart';
 import 'new_entry_screen.dart';
 import 'entry_detail_screen.dart';
 
@@ -26,7 +27,10 @@ class JournalListScreen extends StatelessWidget {
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.grey.shade700,
+              foregroundColor: Colors.white,
+            ),
             child: const Text('Delete'),
           ),
         ],
@@ -131,8 +135,22 @@ class JournalListScreen extends StatelessWidget {
                           .snapshots(),
                       builder: (context, snapshot) {
                         if (snapshot.hasError) {
+                          // Never surface a raw exception (eg a bare
+                          // SocketException when there's no cache yet to
+                          // fall back on) — always a friendly message.
+                          final error = snapshot.error;
                           return Center(
-                            child: Text('Error: ${snapshot.error}'),
+                            child: Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Text(
+                                error != null && isNetworkError(error)
+                                    ? noInternetMessage
+                                    : 'Could not load your journal. '
+                                          'Please try again.',
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.bodyMedium,
+                              ),
+                            ),
                           );
                         }
                         if (!snapshot.hasData) {
@@ -266,7 +284,7 @@ class JournalListScreen extends StatelessWidget {
               ),
             ),
             IconButton(
-              icon: const Icon(Icons.delete_outline, color: Colors.red),
+              icon: Icon(Icons.delete_outline, color: Colors.grey.shade700),
               tooltip: 'Delete entry',
               onPressed: () => confirmAndDeleteEntry(context, entryId),
             ),

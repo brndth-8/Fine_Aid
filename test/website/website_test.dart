@@ -52,6 +52,8 @@ void main() {
         findsWidgets,
       );
       expect(find.textContaining('March 11, 2026'), findsOneWidget);
+      expect(find.text('MEET OUR EXPERTS'), findsOneWidget);
+      expect(find.text('Get to know them?'), findsOneWidget);
       expect(find.text('Main Menu'), findsOneWidget);
       await tester.pumpWidget(const SizedBox()); // dispose timers
     });
@@ -63,11 +65,11 @@ void main() {
     addTearDown(tester.view.reset);
 
     await pumpIgnoringFonts(tester, const MaterialApp(home: LandingPage()));
-    for (final label in ['About', 'Experts', 'Contact Us']) {
+    for (final label in ['ABOUT', 'EXPERTS', 'CONTACT US']) {
       // .last: the nav bar is painted above (after) the page content.
       final rect = tester.getRect(find.text(label).last);
       expect(rect.right, lessThanOrEqualTo(1280), reason: label);
-      expect(rect.top, lessThan(84), reason: label);
+      expect(rect.top, lessThan(104), reason: label);
     }
     await tester.pumpWidget(const SizedBox());
   });
@@ -78,13 +80,16 @@ void main() {
     addTearDown(tester.view.reset);
 
     await pumpIgnoringFonts(tester, const MaterialApp(home: LandingPage()));
-    await tester.tap(find.text('Experts').last);
+    await tester.tap(find.text('EXPERTS').last);
     for (var i = 0; i < 20; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
 
-    final title = find.text('EXPERTS');
-    expect(tester.getRect(title).top, inInclusiveRange(84, 200));
+    // Experts intro sits just below the 104px nav bar after the jump.
+    final title = find.textContaining('Backed by Credentials');
+    final section = find.byType(ExpertsIntroSection);
+    expect(tester.getRect(section).top, closeTo(104, 2));
+    expect(tester.getRect(title).bottom, lessThan(800));
     final opacity = tester.widget<AnimatedOpacity>(
       find.ancestor(of: title, matching: find.byType(AnimatedOpacity)).first,
     );
@@ -118,6 +123,8 @@ void main() {
     expect(mail.uri!.path, 'admin.fineaid@gmail.com');
     expect(mail.uri!.queryParameters['subject'], 'Fine Aid Inquiry');
     expect(links.any((l) => l.uri?.scheme == 'tel'), isTrue);
+    // QR / SCAN open the download link (phones can't scan their own screen).
+    expect(links.where((l) => l.uri == SiteConfig.downloadUri), isNotEmpty);
 
     final copy = find.byTooltip('Copy email address');
     await tester.ensureVisible(copy);

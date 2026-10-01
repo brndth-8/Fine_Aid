@@ -4,8 +4,9 @@ import '../../../services/api/gemini_service.dart';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'assessment_result_screen.dart';
-import 'multi_injury_result_screen.dart';
+import 'multi_injury_screen.dart';
 import '../../../services/connectivity_service.dart';
+import '../../../services/image_compressor.dart';
 import '../../dashboard/first_aid_kit_screen.dart';
 
 class AiCameraScreen extends StatefulWidget {
@@ -83,7 +84,13 @@ class _AiCameraScreenState extends State<AiCameraScreen> {
       final image = await _controller!.takePicture();
       if (!mounted) return;
       setState(() => _capturedImagePath = image.path);
-      await _processImage(image.path);
+      // Shrink the photo before it's analyzed: full-size camera photos are
+      // several MB, which made the AI calls slow and prone to timing out.
+      // Detection boxes and the selection screen then all use this same
+      // compressed copy (the original is returned if compression fails).
+      final compressedPath = await compressImageFile(image.path);
+      if (!mounted) return;
+      await _processImage(compressedPath);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -169,9 +176,10 @@ class _AiCameraScreenState extends State<AiCameraScreen> {
       await Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => MultiInjuryResultScreen(
+          builder: (context) => MultiInjuryScreen(
             imagePath: imagePath,
             woundDescriptions: detection.woundDescriptions,
+            woundBoxes: detection.woundBoxes,
           ),
         ),
       );

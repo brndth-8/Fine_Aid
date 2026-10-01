@@ -23,6 +23,12 @@ class _AdminReportsAnalyticsState extends State<AdminReportsAnalytics> {
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _journalEntriesStream =
       FirebaseFirestore.instance.collectionGroup('journalEntries').snapshots();
 
+  // Same 'source': 'ai_camera' marker used on the dashboard's AI scans card.
+  late final Stream<QuerySnapshot> _aiScansStream = FirebaseFirestore.instance
+      .collectionGroup('journalEntries')
+      .where('source', isEqualTo: 'ai_camera')
+      .snapshots();
+
   String _reportType = 'App usage summary';
   String _outputFormat = 'CSV';
   bool _generating = false;
@@ -174,12 +180,17 @@ class _AdminReportsAnalyticsState extends State<AdminReportsAnalytics> {
                       ),
                     ),
                     const SizedBox(width: 16),
-                    const Expanded(
-                      child: AdminAnalyticsCard(
-                        label: 'Total AI scans',
-                        value: '—',
-                        change: 'Requires AI integration',
-                        changeColor: Colors.orange,
+                    Expanded(
+                      child: StreamBuilder<QuerySnapshot>(
+                        stream: _aiScansStream,
+                        builder: (context, snap) => AdminAnalyticsCard(
+                          label: 'Total AI scans',
+                          value: snap.hasError
+                              ? '—'
+                              : '${snap.data?.docs.length ?? 0}',
+                          change: snap.hasError ? 'Failed to load' : null,
+                          changeColor: snap.hasError ? Colors.red : null,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 16),

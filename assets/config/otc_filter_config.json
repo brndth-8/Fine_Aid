@@ -29,6 +29,7 @@
     "vitamin c",
     "whitening"
   ],
+  "_comment2": "allowlistCategories may also set \"type\": \"supply\" (default is \"product\") — this decides whether a matched suggestion is grouped under \"Suggested OTC options\" or \"Suggested Supplies\" in the app.",
   "allowlistCategories": [
     {
       "key": "antiseptic_wound_cleanser",
@@ -39,6 +40,7 @@
         "wound solution",
         "povidone-iodine",
         "povidone iodine",
+        "iodine",
         "chlorhexidine",
         "hydrogen peroxide",
         "isopropyl alcohol",
@@ -60,6 +62,7 @@
     },
     {
       "key": "sterile_dressing_bandage",
+      "type": "supply",
       "keywords": [
         "sterile dressing",
         "non-stick dressing",
@@ -108,10 +111,24 @@
     },
     {
       "key": "cold_pack",
+      "type": "supply",
       "keywords": [
         "cold pack",
         "ice pack",
         "cold compress"
+      ]
+    },
+    {
+      "key": "protective_supplies",
+      "type": "supply",
+      "keywords": [
+        "gloves",
+        "disposable gloves",
+        "nitrile gloves",
+        "latex gloves",
+        "vinyl gloves",
+        "examination gloves",
+        "medical gloves"
       ]
     }
   ]

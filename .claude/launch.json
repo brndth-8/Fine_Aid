@@ -27,15 +27,6 @@
         "--dart-define-from-file=config/web.json"
       ],
       "port": 5960
-    },
-    {
-      "name": "fine-aid-website-release",
-      "runtimeExecutable": "python",
-      "runtimeArgs": [
-        "tool/serve_web.py",
-        "5961"
-      ],
-      "port": 5961
     }
   ]
 }

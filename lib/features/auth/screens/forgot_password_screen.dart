@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import '../../../core/password_requirements.dart';
-import '../../../core/widgets/password_requirements_checklist.dart';
 
 enum _ResetStep { username, otp, newPassword, done }
 
@@ -49,9 +48,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       final functionName = _method == _RecoveryMethod.sms
           ? 'sendPasswordResetOtp'
           : 'sendPasswordResetOtpEmail';
-      await FirebaseFunctions.instance
-          .httpsCallable(functionName)
-          .call({'username': _usernameController.text.trim()});
+      await FirebaseFunctions.instance.httpsCallable(functionName).call({
+        'username': _usernameController.text.trim(),
+      });
 
       if (!mounted) return;
       setState(() {
@@ -62,7 +61,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _error = e.message ?? 'Could not send the reset code. Please try again.';
+        _error =
+            e.message ?? 'Could not send the reset code. Please try again.';
       });
     } catch (e) {
       if (!mounted) return;
@@ -103,7 +103,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _error = e.message ?? 'Could not reset your password. Please try again.';
+        _error =
+            e.message ?? 'Could not reset your password. Please try again.';
       });
     } catch (e) {
       if (!mounted) return;
@@ -235,7 +236,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             TextFormField(
               controller: _passwordController,
               obscureText: _obscurePassword,
-              onChanged: (_) => setState(() {}),
+              autovalidateMode: AutovalidateMode.onUserInteraction,
               decoration: InputDecoration(
                 hintText: 'Create a new password',
                 suffixIcon: IconButton(
@@ -250,8 +251,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               ),
               validator: validatePasswordStrength,
             ),
-            const SizedBox(height: 8),
-            PasswordRequirementsChecklist(password: _passwordController.text),
             const SizedBox(height: 12),
             Text('Confirm New Password', style: theme.textTheme.titleSmall),
             const SizedBox(height: 6),
@@ -311,28 +310,44 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
   Widget _buildDoneStep() {
     final theme = Theme.of(context);
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        const Icon(Icons.check_circle_outline, size: 64, color: Colors.green),
-        const SizedBox(height: 16),
-        Text(
-          'Password reset!',
-          style: theme.textTheme.headlineSmall,
-          textAlign: TextAlign.center,
+    // Center + a content-sized Column (not a bare Column with
+    // mainAxisAlignment.center — that has no effect unless the Column
+    // itself is stretched to fill the available height first) so this
+    // stays centered both ways regardless of screen size, text scale, or
+    // safe-area insets.
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.check_circle_outline,
+              size: 64,
+              color: Colors.green,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Password reset!',
+              style: theme.textTheme.headlineSmall,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'You can now log in with your new password.',
+              style: theme.textTheme.bodyMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Back to Login'),
+            ),
+          ],
         ),
-        const SizedBox(height: 8),
-        Text(
-          'You can now log in with your new password.',
-          style: theme.textTheme.bodyMedium,
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 24),
-        ElevatedButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Back to Login'),
-        ),
-      ],
+      ),
     );
   }
 }

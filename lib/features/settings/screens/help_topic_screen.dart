@@ -139,10 +139,10 @@ class HelpTopicScreen extends StatelessWidget {
             'Your personal information, including your username and contact '
                 'details, is stored securely and is never shared without your '
                 'explicit consent.',
-            'Images attached to your Health Journal entries may be made viewable '
+            'Images attached to your Health Journal entries is not viewable '
                 'to the admin module for review purposes, to help improve the '
                 'accuracy and safety of guidance provided.',
-            'In Guest Mode, none of your entries or images are saved — they '
+            'In Guest Mode, none of your entries or images are saved - they '
                 'exist only temporarily during your session.',
           ],
           cards: const [],

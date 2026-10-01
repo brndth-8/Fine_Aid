@@ -10,16 +10,32 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == uid;
     }
 
-		match /usernames/{username} {
+    // Admins are the uids that have a doc in /admins (created manually in the
+    // console; clients can never write it). Enforced here, not just in the UI.
+    function isAdmin() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // USERNAMES
+    // Public read: login/registration resolve a username before any sign-in.
+    // A user may only create/change/delete their own mapping.
+    match /usernames/{username} {
       allow read: if true;
-      allow write: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if isSignedIn() &&
+        (resource.data.uid == request.auth.uid || isAdmin());
     }
 
     // USERS
+    // Profiles hold phone number and health data: owner or admin only.
     match /users/{uid} {
-      allow read: if true;
+      allow read: if isOwner(uid) || isAdmin();
       allow create: if isOwner(uid);
-      allow update: if isOwner(uid);
+      // Owners cannot flip their own `deactivated` flag.
+      allow update: if (isOwner(uid) &&
+          !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['deactivated'])) || isAdmin();
       allow delete: if false;
 
       match /journalEntries/{entryId} {
@@ -32,52 +48,71 @@ service cloud.firestore {
     }
 
     // ADMINS
-    // Any signed-in user can read their own admin doc
-    // (needed so isAdmin check works in the app)
+    // Any admin can read the full collection (needed for the Admin Accounts
+    // screen's list); a non-admin can still only ever read their own doc,
+    // which just means they'll never find one. Docs are otherwise
+    // created/managed manually in the console (or via the seed_admin script
+    // using the Admin SDK, which bypasses these rules) — the one exception
+    // is clearing the forced-password-change flag after an admin sets their
+    // own new password, which the client must be able to do.
     match /admins/{uid} {
-      allow read: if isOwner(uid);
-      allow write: if false;
+      allow read: if isOwner(uid) || isAdmin();
+      allow update: if isOwner(uid) &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['mustChangePassword']) &&
+        request.resource.data.mustChangePassword == false;
+      allow create, delete: if false;
     }
 
     // LOGIN ATTEMPTS
-    // Unauthenticated access needed (lockout check before login)
+    // Must stay open to unauthenticated clients (lockout check runs before
+    // login), but only the expected shape may be written. Real server-side
+    // lockout needs a Cloud Function; this is a client-side mitigation only.
     match /loginAttempts/{username} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create, update: if request.resource.data.keys()
+          .hasOnly(['attempts', 'lastAttempt', 'lockedUntil']) &&
+        request.resource.data.attempts is int;
+      allow delete: if false;
     }
 
-		match /otpVerifications/{uid} {
-      allow read, write: if isSignedIn() && isOwner(uid);
+    match /otpVerifications/{uid} {
+      allow read, write: if isOwner(uid);
     }
 
     // FEEDBACK
+    // Users submit as themselves; only admins read/triage.
     match /feedback/{feedbackId} {
-      allow create: if isSignedIn();
-      allow read, update, delete: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow read, update, delete: if isAdmin();
     }
 
     // FIRST AID CONTENT
-    // Public read (offline/guest mode needs this)
+    // Public read (offline/guest mode); admin-only write.
     match /firstAidContent/{docId} {
       allow read: if true;
-      allow write: if isSignedIn();
+      allow write: if isAdmin();
     }
 
     // SYSTEM NOTIFICATIONS
+    // Public read (same reasoning as usernames above): guests see local/
+    // system announcements (eg app updates) in the Notifications inbox
+    // too, not just signed-in users. Only admins publish.
     match /systemNotifications/{notifId} {
-      allow read, write: if isSignedIn();
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
     // AUDIT LOGS
     match /auditLogs/{logId} {
-      allow read, write: if isSignedIn();
+      allow read, write: if isAdmin();
     }
 
     // COLLECTION GROUP: journalEntries
-    // Needed for admin Journal Log Review (collectionGroup query)
+    // Admin Journal Log Review / analytics only. Owners read and write their
+    // own entries through the users/{uid}/journalEntries rule above.
     match /{path=**}/journalEntries/{entryId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() &&
-        request.auth.uid == resource.data.get('userId', '');
+      allow read: if isAdmin();
     }
   }
 }

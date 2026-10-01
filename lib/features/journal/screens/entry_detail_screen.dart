@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import '../../../services/export_service.dart';
+import '../../../services/firebase/notification_service.dart';
 import '../../../data/healing_durations.dart';
 import '../../../core/widgets/nearby_healthcare_sheet.dart';
 import '../../chatbot/screens/chatbot_screen.dart';
@@ -59,44 +60,64 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
     if (alreadyResponded) return;
 
     if (!mounted) return;
-    await _showMilestoneDialog(standard);
+    await _showMilestoneDialog();
   }
 
-  Future<void> _showMilestoneDialog(int standardDays) async {
-    final classification =
-        widget.data['classification'] as String? ?? 'this issue';
+  Future<void> _showMilestoneDialog() async {
+    final classification = widget.data['classification'] as String?;
 
-    final feelingBetter = await showDialog<bool>(
+    // '_better' / '_notYet' / '_worse' — a plain string result keeps this
+    // a 3-way choice without a one-off enum just for this dialog.
+    final choice = await showDialog<String>(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Healing Milestone'),
-        content: Text(
-          'You have reached your healing timeframe for [$classification].\n'
-          'Are you feeling better?\n\n'
-          'Duration: $standardDays Days Monitored',
-        ),
-        actionsAlignment: MainAxisAlignment.spaceBetween,
+        title: const Text(healingMilestoneTitle),
+        content: Text(healingMilestoneBody(classification)),
+        actionsAlignment: MainAxisAlignment.center,
         actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, '_notYet'),
+            child: const Text('Not yet'),
+          ),
           OutlinedButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Wound Worsened'),
+            onPressed: () => Navigator.pop(context, '_worse'),
+            child: const Text('It\'s getting worse'),
           ),
           ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Feeling Better'),
+            onPressed: () => Navigator.pop(context, '_better'),
+            child: const Text('Yes, I\'m feeling better'),
           ),
         ],
       ),
     );
 
-    if (feelingBetter == null) return; // dismissed without choosing
+    if (choice == null) return; // dismissed without choosing
 
-    await _recordMilestoneResponse(feelingBetter);
-
-    if (!feelingBetter && mounted) {
-      setState(() => _showingReferral = true);
+    switch (choice) {
+      case '_better':
+        await _recordMilestoneResponse(true);
+        await NotificationService().cancelHealingCheckIn(widget.entryId);
+        break;
+      case '_worse':
+        await _recordMilestoneResponse(false);
+        await NotificationService().cancelHealingCheckIn(widget.entryId);
+        if (mounted) setState(() => _showingReferral = true);
+        break;
+      case '_notYet':
+        await NotificationService().remindHealingCheckInTomorrow(
+          entryId: widget.entryId,
+          classification: classification ?? 'this issue',
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Okay — we\'ll check in again tomorrow.'),
+            ),
+          );
+        }
+        break;
     }
   }
 
@@ -397,7 +418,10 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.delete_outline, color: Colors.red),
+                    icon: Icon(
+                      Icons.delete_outline,
+                      color: Colors.grey.shade700,
+                    ),
                     tooltip: 'Delete entry',
                     onPressed: () async {
                       final deleted =
@@ -504,7 +528,7 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'We advise to seek medical consultation',
+                        'We recommend seeking professional consultation',
                         textAlign: TextAlign.center,
                         style: theme.textTheme.titleMedium?.copyWith(
                           color: theme.colorScheme.primary,

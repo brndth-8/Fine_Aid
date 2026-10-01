@@ -31,6 +31,15 @@ class _AdminMainDashboardState extends State<AdminMainDashboard> {
       .where('feelingBetter', isEqualTo: false)
       .snapshots();
 
+  // Counts journal entries the AI Camera flow actually saved (it tags them
+  // 'source': 'ai_camera' — see assessment_result_screen.dart). There's no
+  // separate "scan attempted" event logged anywhere, so a saved assessment
+  // is the closest real signal available for "AI scans".
+  late final Stream<QuerySnapshot> _aiScansStream = FirebaseFirestore.instance
+      .collectionGroup('journalEntries')
+      .where('source', isEqualTo: 'ai_camera')
+      .snapshots();
+
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _activityStream =
       FirebaseFirestore.instance
           .collection('auditLogs')
@@ -82,13 +91,18 @@ class _AdminMainDashboardState extends State<AdminMainDashboard> {
                       ),
                     ),
                     const SizedBox(width: 16),
-                    const Expanded(
-                      child: AdminStatCard(
-                        label: 'Total AI scans',
-                        value: '—',
-                        change: 'Requires AI integration',
-                        changeColor: Colors.orange,
-                        icon: Icons.camera_alt_outlined,
+                    Expanded(
+                      child: StreamBuilder<QuerySnapshot>(
+                        stream: _aiScansStream,
+                        builder: (context, snap) => AdminStatCard(
+                          label: 'Total AI scans',
+                          value: snap.hasError
+                              ? '—'
+                              : '${snap.data?.docs.length ?? 0}',
+                          change: snap.hasError ? 'Failed to load' : null,
+                          changeColor: snap.hasError ? Colors.red : null,
+                          icon: Icons.camera_alt_outlined,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 16),

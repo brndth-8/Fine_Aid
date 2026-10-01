@@ -110,8 +110,7 @@ class _NearbyHealthcareSheetState extends State<NearbyHealthcareSheet> {
                     (c) => DropdownMenuItem<String?>(value: c, child: Text(c)),
                   ),
                 ],
-                onChanged: (value) =>
-                    setState(() => _selectedCategory = value),
+                onChanged: (value) => setState(() => _selectedCategory = value),
               ),
               const SizedBox(height: 8),
               Expanded(

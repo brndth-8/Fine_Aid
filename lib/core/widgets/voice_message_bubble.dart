@@ -115,9 +115,7 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
         const SizedBox(width: 8),
         Text(
           _format(_state == PlayerState.stopped ? _duration : _position),
-          style: Theme.of(
-            context,
-          ).textTheme.bodySmall?.copyWith(color: color),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: color),
         ),
       ],
     );

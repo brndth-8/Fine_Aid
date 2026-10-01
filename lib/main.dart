@@ -17,7 +17,9 @@ import 'features/auth/screens/forgot_password_screen.dart';
 import 'services/firebase/auth_service.dart';
 import 'features/auth/screens/login_form_screen.dart';
 import 'services/firebase/notification_service.dart';
+import 'services/notification_inbox_store.dart';
 import 'core/navigation/app_navigator.dart';
+import 'core/widgets/global_offline_banner.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -32,8 +34,21 @@ void main() async {
     cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
   );
 
-  await NotificationService().initialize();
+  // Notification setup touches FCM (a network call) — timed out and
+  // swallowed so a slow or absent connection at first launch never leaves
+  // the app stuck before its first frame even paints.
+  try {
+    await NotificationService().initialize().timeout(
+      const Duration(seconds: 8),
+    );
+  } catch (e) {
+    debugPrint('NotificationService.initialize failed/timed out: $e');
+  }
   await TextScaleController.instance.load();
+  // Local-only and fast — loads before first frame so the notification
+  // bell's unread badge is correct immediately, not just after the
+  // Notifications screen has been opened once.
+  await NotificationInboxStore.instance.load();
   runApp(const MyApp());
 }
 
@@ -64,7 +79,7 @@ class MyApp extends StatelessWidget {
                   deviceScale * TextScaleController.instance.scale,
                 ),
               ),
-              child: child!,
+              child: GlobalOfflineBanner(child: child!),
             );
           },
           home: const AuthGate(),

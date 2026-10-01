@@ -7,7 +7,13 @@ import '../../services/firebase/first_aid_content_service.dart';
 import '../../services/firebase/notification_service.dart';
 import '../../services/voice_input_service.dart';
 import '../../services/health_profile_service.dart';
+import '../../services/connectivity_service.dart';
 import '../../services/otc_filter_service.dart';
+import '../../services/guest_usage_service.dart';
+import '../../core/widgets/guest_gate_dialogs.dart';
+import '../../core/widgets/guest_usage_badge.dart';
+import '../../core/network_error.dart';
+import '../../core/scope_check.dart';
 import '../../data/healing_durations.dart';
 import '../../data/health_profile_cautions.dart';
 import '../../core/follow_up_fallback.dart';
@@ -25,7 +31,7 @@ class _FollowUpMessage {
   // re-fetch. Null for user messages, since there's nothing to translate.
   final String? tagalog;
   final bool isUser;
-  final List<String> otcSuggestions;
+  final List<OtcSuggestion> otcSuggestions;
   // Set only for a voice follow-up question — the recorded clip's local
   // file path, so it can be replayed as a chat bubble. `text` is always the
   // transcript either way, so the journal and the answer pipeline never
@@ -568,7 +574,9 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(HealthKitStrings.questionDialogTitle(number, total, _locale)),
+        title: Text(
+          HealthKitStrings.questionDialogTitle(number, total, _locale),
+        ),
         content: Text(text),
         actionsAlignment: MainAxisAlignment.spaceEvenly,
         actions: [
@@ -685,12 +693,39 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
   Future<void> _sendFollowUp(String text, {String? audioPath}) async {
     if (text.isEmpty || _isSendingFollowUp) return;
 
+    // Deliberately no local out-of-scope pre-check here (unlike the
+    // standalone chatbot) — this screen only reaches the follow-up input
+    // after a category is already selected, so a message like "I have a
+    // headache" is very plausibly ABOUT that category even without
+    // repeating wound-related words. A keyword-only check can't see that
+    // context and would wrongly refuse it; the shared system prompt's own
+    // scope/borderline-case judgment, which DOES see the category context
+    // (passed below), is the right place to decide here.
+    final isGuest = FirebaseAuth.instance.currentUser == null;
+    if (isGuest && await GuestUsageService.instance.hasReachedLimit()) {
+      if (!mounted) return;
+      await showGuestUsageLimitDialog(context);
+      return;
+    }
+
     setState(() {
       _followUpMessages.add(
         _FollowUpMessage(text: text, isUser: true, audioPath: audioPath),
       );
       _isSendingFollowUp = true;
     });
+
+    final online = await ConnectivityService().isOnline;
+    if (!online) {
+      if (!mounted) return;
+      setState(() {
+        _followUpMessages.add(
+          _FollowUpMessage(text: noInternetMessage, isUser: false),
+        );
+        _isSendingFollowUp = false;
+      });
+      return;
+    }
 
     final category = _resultCategoryIndex != null
         ? _categories[_resultCategoryIndex!]
@@ -703,7 +738,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
 
     String response;
     String? responseTagalog;
-    List<String> otcSuggestions = const [];
+    List<OtcSuggestion> otcSuggestions = const [];
     try {
       final contextualQuery = [
         if (category != null) category.title,
@@ -723,13 +758,20 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
       final english = parsed.english.trim();
       response = english.isNotEmpty ? english : randomFollowUpFallbackMessage();
       final tagalog = parsed.tagalog?.trim();
-      responseTagalog = (tagalog != null && tagalog.isNotEmpty) ? tagalog : null;
+      responseTagalog = (tagalog != null && tagalog.isNotEmpty)
+          ? tagalog
+          : null;
       otcSuggestions = await OtcFilterService.instance.filter(
         parsed.otcSuggestions,
       );
+      if (isGuest && !isRefusalReply(response)) {
+        await GuestUsageService.instance.recordSuccessfulUse();
+      }
     } catch (e, st) {
       logFollowUpError('FirstAidKit', e, st);
-      response = randomFollowUpFallbackMessage();
+      response = isNetworkError(e)
+          ? noInternetMessage
+          : randomFollowUpFallbackMessage();
     }
 
     if (!mounted) return;
@@ -832,11 +874,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
   Future<void> _saveToJournal() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Log in to save this session to your Health Journal.'),
-        ),
-      );
+      await showGuestSaveGateDialog(context);
       return;
     }
     final index = _resultCategoryIndex;
@@ -888,11 +926,12 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
             .timeout(const Duration(seconds: 10));
 
         final healingDays = healingDurationDays[category.title];
-        if (healingDays != null) {
-          NotificationService().scheduleHealingCheckIn(
+        if (healingDays != null && mounted) {
+          await NotificationService().ensureHealingReminderPermission(context);
+          await NotificationService().scheduleHealingCheckIn(
             entryId: docRef.id,
             classification: category.title,
-            scheduledDate: DateTime.now().add(Duration(days: healingDays)),
+            healingDays: healingDays,
           );
         }
 
@@ -1364,11 +1403,17 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          _ui('askFollowUp'),
-          style: theme.textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.bold,
-          ),
+        Row(
+          children: [
+            Text(
+              _ui('askFollowUp'),
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const Spacer(),
+            const GuestUsageBadge(),
+          ],
         ),
         const SizedBox(height: 2),
         Text(

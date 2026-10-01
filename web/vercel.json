@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    { "source": "/fa-portal-en1cs4bb", "destination": "/index.html" },
+    { "source": "/fa-portal-en1cs4bb/:path*", "destination": "/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/fa-portal-en1cs4bb(.*)",
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }]
+    }
+  ]
+}

@@ -8,5 +8,11 @@ android/app/release.keystore
 
 lib/core/constants/api_keys.dart
 
+# tool/seed_admin secrets — never commit real admin credentials or a
+# Firebase service account key.
+tool/seed_admin/.env
+tool/seed_admin/serviceAccountKey.json
+tool/seed_admin/node_modules
+
 # Local Claude Code session state — machine/session-specific, not project config.
 .claude/scheduled_tasks.lock
