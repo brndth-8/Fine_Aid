@@ -1,21 +1,15 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fine_aid/services/firebase/notification_service.dart';
+import 'package:fine_aid/i18n/notification_strings.dart';
 import 'package:fine_aid/services/notification_inbox_store.dart';
 import 'package:fine_aid/features/dashboard/screens/notifications_screen.dart';
 
 void main() {
-  group('healingMilestoneBody', () {
-    test('uses the exact default sentence when no wound type is given', () {
-      expect(healingMilestoneBody(null), healingMilestoneDefaultBody);
-      expect(healingMilestoneBody(''), healingMilestoneDefaultBody);
-    });
-
-    test('folds in the wound type when available', () {
-      expect(
-        healingMilestoneBody('Burn'),
-        'Your Burn has reached its healing time frame. Are you feeling '
-        'better?',
-      );
+  group('check-in wording', () {
+    test('the notification only asks "Are you feeling better?"', () {
+      expect(NotificationStrings.en.checkInBody, 'Are you feeling better?');
+      expect(NotificationStrings.en.actionBetter, 'Feeling Better');
+      expect(NotificationStrings.en.actionNotYet, 'Not Yet');
+      expect(NotificationStrings.en.actionWorse, 'It\'s Worse');
     });
   });
 
@@ -61,8 +55,8 @@ void main() {
       final original = AppNotification(
         id: 'healing_abc_end',
         type: AppNotificationType.healingMilestone,
-        title: healingMilestoneTitle,
-        body: healingMilestoneBody('Burn'),
+        title: NotificationStrings.en.checkInTitle,
+        body: NotificationStrings.en.checkInBody,
         createdAt: DateTime(2026, 1, 1, 9),
         scheduledFor: DateTime(2026, 1, 2, 9),
         entryId: 'abc',
@@ -87,6 +81,33 @@ void main() {
       final restored = AppNotification.fromJson({'id': 'x'});
       expect(restored.type, AppNotificationType.reminder);
       expect(restored.title, 'Notification');
+    });
+  });
+
+  group('announcements for a new account', () {
+    final created = DateTime(2026, 10, 1, 12);
+
+    test('sent before the account existed -> not shown', () {
+      expect(
+        isAnnouncementForAccount(DateTime(2026, 9, 30, 11, 34), created),
+        isFalse,
+      );
+      expect(
+        isAnnouncementForAccount(DateTime(2026, 10, 1, 11, 59), created),
+        isFalse,
+      );
+    });
+
+    test('sent at or after the account was created -> shown', () {
+      expect(isAnnouncementForAccount(created, created), isTrue);
+      expect(
+        isAnnouncementForAccount(DateTime(2026, 10, 5, 9), created),
+        isTrue,
+      );
+    });
+
+    test('unknown creation time -> nothing is hidden', () {
+      expect(isAnnouncementForAccount(DateTime(2020), null), isTrue);
     });
   });
 

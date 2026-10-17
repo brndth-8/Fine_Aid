@@ -1,5 +1,6 @@
 /// Tagalog translations of the First Aid Health Kit's pre-written content
-/// (category titles, triage questions, first-aid steps, warning signs).
+/// (category titles, triage questions, warning signs). The step-by-step
+/// guides are in first_aid_guides_tl.dart.
 /// Kept as plain, natural Tagalog a layperson can follow; widely used
 /// medical/product loanwords (bandage, antiseptic, gasa) are kept as-is,
 /// and a less common term gets its English in parentheses on first use.
@@ -19,14 +20,12 @@ class QuestionTranslation {
 class CategoryTranslationTl {
   final String title;
   final List<QuestionTranslation> questions;
-  final List<String> steps;
   final List<String> watchFor;
   final String seekCareIf;
 
   const CategoryTranslationTl({
     required this.title,
     required this.questions,
-    required this.steps,
     required this.watchFor,
     required this.seekCareIf,
   });
@@ -87,15 +86,6 @@ final Map<String, CategoryTranslationTl> healthKitContentTl = {
       ),
       ...sharedTailQuestionsTl,
     ],
-    steps: [
-      'Maghugas muna ng kamay bago hawakan ang sugat.',
-      'Dahan-dahan ngunit matatag na pisilin ang sugat gamit ang malinis '
-          'na gasa o tela para pigilan ang pagdugo.',
-      'Banlawan ang sugat ng malinis na tubig kapag humupa na ang pagdugo.',
-      'Takpan ng sterile na bendahe o dressing.',
-      'Palitan ang takip araw-araw at panatilihing malinis at tuyo ang '
-          'bahaging ito.',
-    ],
     watchFor: defaultWatchForTl,
     seekCareIf:
         'Hindi humihinto ang pagdugo, malalim o malapad ang hiwa, o may '
@@ -114,14 +104,6 @@ final Map<String, CategoryTranslationTl> healthKitContentTl = {
             'sugat — magpatingin sa propesyonal na medikal na tulong.',
       ),
       ...sharedTailQuestionsTl,
-    ],
-    steps: [
-      'Maghugas ng kamay at banlawan ang hiwa sa malinis na tubig na '
-          'umaagos.',
-      'Dahan-dahang pisilin gamit ang malinis na tela kung dumudugo.',
-      'Maglagay ng antiseptic kung meron.',
-      'Takpan ng maliit na adhesive bandage.',
-      'Panatilihing malinis ang bahagi at palitan ang bandage araw-araw.',
     ],
     watchFor: defaultWatchForTl,
     seekCareIf:
@@ -143,14 +125,6 @@ final Map<String, CategoryTranslationTl> healthKitContentTl = {
       ),
       ...sharedTailQuestionsTl,
     ],
-    steps: [
-      'Hugasang mabuti ang kinalmot gamit ang sabon at malinis na tubig.',
-      'Maglagay ng antiseptic kung meron.',
-      'Takpan ng malinis na bandage kung ito ay nasa bahaging madalas '
-          'kumikiskis.',
-      'Bantayan ang bahaging ito araw-araw sa susunod na ilang araw.',
-      'Panatilihing malinis ang bahagi at iwasang kalmutin pa ito.',
-    ],
     watchFor: defaultWatchForTl,
     seekCareIf:
         'May kasangkot na hayop, o may senyales ng impeksyon na lumitaw.',
@@ -171,15 +145,6 @@ final Map<String, CategoryTranslationTl> healthKitContentTl = {
         text: 'Mas malaki ba ang gasgas kaysa sa palad mo?',
       ),
       ...sharedTailQuestionsTl,
-    ],
-    steps: [
-      'Banlawan nang dahan-dahan ang gasgas gamit ang malinis na tubig '
-          'na umaagos.',
-      'Maingat na alisin ang mga nakikitang dumi na hindi nakabaon nang '
-          'husto.',
-      'Maglagay ng antiseptic ointment kung meron.',
-      'Takpan ng sterile na dressing na hindi dumidikit.',
-      'Palitan ang takip araw-araw hanggang gumaling.',
     ],
     watchFor: defaultWatchForTl,
     seekCareIf:
@@ -204,16 +169,6 @@ final Map<String, CategoryTranslationTl> healthKitContentTl = {
       ),
       ...sharedTailQuestionsTl,
     ],
-    steps: [
-      'Maghugas ng kamay, pagkatapos ay dahan-dahang hugasan ang bahagi '
-          'gamit ang sabon at tubig.',
-      'Huwag pisilin ang sugat para lang "paluwagin" ang dugo bilang '
-          'paglilinis.',
-      'Dahan-dahang pisilin gamit ang malinis na gasa kung dumudugo.',
-      'Takpan ng malinis na bandage.',
-      'Bantayang mabuti ang senyales ng impeksyon sa susunod na ilang '
-          'araw.',
-    ],
     watchFor: defaultWatchForTl,
     seekCareIf:
         'Maruming/kalawangin ang bagay na sanhi, malalim ang tusok, o '
@@ -232,15 +187,6 @@ final Map<String, CategoryTranslationTl> healthKitContentTl = {
       ),
       const QuestionTranslation(text: 'May paltos o sugatang balat ba?'),
       ...sharedTailQuestionsTl,
-    ],
-    steps: [
-      'Ibabad ang paso sa malamig (hindi yelo) na tubig na umaagos sa '
-          'loob ng 10-20 minuto.',
-      'Huwag maglagay ng yelo nang direkta sa paso.',
-      'Alisin ang alahas o masikip na bagay na malapit sa napasong '
-          'bahagi.',
-      'Takpang maluwag gamit ang malinis na dressing na hindi dumidikit.',
-      'Huwag pipigain o sasaksakin ang anumang paltos na lumitaw.',
     ],
     watchFor: defaultWatchForTl,
     seekCareIf:
@@ -268,15 +214,6 @@ final Map<String, CategoryTranslationTl> healthKitContentTl = {
       ),
       ...sharedTailQuestionsTl,
     ],
-    steps: [
-      'Magpahinga at iwasan ang karagdagang epekto sa pasang bahagi.',
-      'Maglagay ng cold compress (nakabalot, hindi direkta sa balat) sa '
-          'loob ng 15-20 minuto.',
-      'Itaas ang bahagi nang mas mataas sa puso kung maaari.',
-      'Pagkatapos ng 48 oras, makakatulong ang warm compress sa '
-          'paggaling.',
-      'Obserbahan ang laki at kulay ng pasa sa susunod na ilang araw.',
-    ],
     watchFor: [
       'Lumalalang pamamaga o sakit',
       'Pamamanhid o hirap gumalaw ang bahagi',
@@ -303,15 +240,6 @@ final Map<String, CategoryTranslationTl> healthKitContentTl = {
         text: 'Mahirap ba galawin nang normal ang namamagang bahagi?',
       ),
       ...sharedTailQuestionsTl,
-    ],
-    steps: [
-      'Magpahinga sa namamagang bahagi.',
-      'Maglagay ng cold compress (nakabalot, hindi direkta sa balat) sa '
-          'loob ng 15-20 minuto.',
-      'Itaas ang bahagi nang mas mataas sa puso kung maaari.',
-      'Iwasan ang init o mabigat na aktibidad sa bahaging ito sa unang '
-          'araw.',
-      'Obserbahan ang pagbabago ng pamamaga sa susunod na 24-48 oras.',
     ],
     watchFor: [
       'Patuloy na lumalalang pamamaga',
@@ -345,17 +273,6 @@ final Map<String, CategoryTranslationTl> healthKitContentTl = {
       ),
       ...sharedTailQuestionsTl,
     ],
-    steps: [
-      'Iwasang kamutin ang apektadong bahagi.',
-      'Hugasang dahan-dahan ang bahagi gamit ang mild na sabon at '
-          'malamig na tubig.',
-      'Maglagay ng walang pabangong moisturizer o soothing lotion kung '
-          'meron.',
-      'Iwasan ang kilala mong mga irritant o allergen kung makikilala '
-          'mo ito.',
-      'Itala kung kailan nagsimula ang pantal at anumang bagong bagay '
-          'na naharap mo.',
-    ],
     watchFor: [
       'Mabilis na kumakalat na pantal',
       'Hirap sa paghinga o pamamaga ng mukha/lalamunan',
@@ -373,14 +290,6 @@ final Map<String, CategoryTranslationTl> healthKitContentTl = {
         text: 'Sobrang masakit ba o lubhang namamaga ang apektadong bahagi?',
       ),
       ...sharedTailQuestionsTl,
-    ],
-    steps: [
-      'Panatilihing malinis ang apektadong bahagi.',
-      'Maglapat ng angkop na first aid batay sa iyong nakikita '
-          '(paglilinis, cold compress, o pagpapahinga kung kinakailangan).',
-      'Iwasang lagyan ng diin o pressure ang nasugatang bahagi.',
-      'Obserbahan ang bahagi para sa mga pagbabago sa susunod na araw.',
-      'Kung hindi sigurado kung ano ito, mag-ingat at bantayang mabuti.',
     ],
     watchFor: defaultWatchForTl,
     seekCareIf:

@@ -5,6 +5,8 @@ const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const fetch = require("node-fetch");
 const nodemailer = require("nodemailer");
+const { buildAuditEntry } = require("./lib/audit");
+const jobs = require("./lib/jobs");
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -17,7 +19,7 @@ const SEMAPHORE_API_KEY = defineSecret("SEMAPHORE_API_KEY");
 //   firebase functions:secrets:set SMTP_USER
 //   firebase functions:secrets:set SMTP_PASS
 // Any SMTP account works (eg a Gmail address with a 16-character "app
-// password" generated under Google Account > Security > App passwords —
+// password" generated under Google Account > Security > App passwords â€”
 // not the regular account password). A transactional email provider
 // (Resend, SendGrid, Mailgun, etc) works the same way if preferred later;
 // only these two secrets and the host/port below would need to change.
@@ -37,7 +39,7 @@ function generateCode() {
 // side: usernames are case-sensitive, keyed by their exact-case doc ID
 // going forward ("Juan" and "juan" are different accounts). An account
 // created before that change still has its doc under the lowercased form
-// — matched here only when the exact case given matches that legacy doc's
+// â€” matched here only when the exact case given matches that legacy doc's
 // stored usernameExact, so an older account's behavior doesn't change but
 // a new case-variant username never silently resolves to the wrong doc.
 async function lookupUsernameDoc(exactUsername) {
@@ -55,7 +57,7 @@ async function lookupUsernameDoc(exactUsername) {
 }
 
 // Shared by both email-OTP functions (password reset and account
-// verification) — same SMTP secrets, just a different subject/body.
+// verification) â€” same SMTP secrets, just a different subject/body.
 async function sendOtpEmail(to, subject, text) {
   const transporter = nodemailer.createTransport({
     host: "smtp.gmail.com",
@@ -184,7 +186,7 @@ exports.sendPasswordResetOtp = onCall(
 /**
  * Same as sendPasswordResetOtp above, but for accounts that added a
  * recovery email (users/{uid}.recoveryEmail, set from Edit Profile or at
- * registration — optional, so not every account has one). Writes to the
+ * registration â€” optional, so not every account has one). Writes to the
  * same passwordResetOtps/{uid} doc, so verifyPasswordResetOtp below
  * handles both delivery methods identically once the user has the code.
  *
@@ -258,7 +260,7 @@ exports.sendPasswordResetOtpEmail = onCall(
 /**
  * Step 2: verifies the OTP server-side (never trust a client-only check
  * for something this sensitive) and, only if it's valid, uses the Admin
- * SDK to set the account's new password directly — the client SDK has no
+ * SDK to set the account's new password directly â€” the client SDK has no
  * way to do this without the old password.
  */
 exports.verifyPasswordResetOtp = onCall(async (request) => {
@@ -329,7 +331,7 @@ exports.verifyPasswordResetOtp = onCall(async (request) => {
 
 /**
  * Registration's email-verification path (the alternative to the phone
- * OTP flow) — sends a 6-digit code to the account's recoveryEmail, which
+ * OTP flow) â€” sends a 6-digit code to the account's recoveryEmail, which
  * is required at registration time whenever "Email" was chosen as the
  * verification method. Uses request.auth.uid (the caller is already
  * signed in at this point, right after registering) rather than a
@@ -392,7 +394,7 @@ exports.sendAccountVerificationOtpEmail = onCall(
 
 /**
  * Verifies the code from sendAccountVerificationOtpEmail above and, if
- * correct, marks the account verified — reuses the same `phoneVerified`
+ * correct, marks the account verified â€” reuses the same `phoneVerified`
  * flag AuthGate already checks to gate onboarding, regardless of which
  * channel (SMS or email) actually did the verifying.
  */
@@ -447,7 +449,7 @@ exports.verifyAccountVerificationOtp = onCall(async (request) => {
 
 /**
  * Fans a newly-created admin announcement out as a real FCM push
- * notification, so it reaches users even while the app is fully closed —
+ * notification, so it reaches users even while the app is fully closed â€”
  * not deployed yet (requires the Blaze plan, same as the OTP functions
  * above), but ready to go once you deploy. The client subscribes every
  * install to the "all_users" topic in NotificationService.initialize(),
@@ -458,7 +460,7 @@ exports.sendSystemNotificationPush = onDocumentCreated(
   async (event) => {
     const data = event.data && event.data.data();
     if (!data) return;
-    // A scheduled-for-later announcement has no sentAt yet — leave it
+    // A scheduled-for-later announcement has no sentAt yet â€” leave it
     // alone here; sendScheduledSystemNotifications below sends it (and
     // stamps sentAt) once it's actually due.
     if (data.status === "scheduled") return;
@@ -474,42 +476,112 @@ exports.sendSystemNotificationPush = onDocumentCreated(
   }
 );
 
+
 /**
- * Runs every 5 minutes looking for admin announcements the "Schedule"
- * button queued for a future time that's now due, stamps them as sent,
- * and sends the push (sendSystemNotificationPush above only fires at
- * document *creation*, before scheduledFor has arrived, so this is the
- * only place a scheduled announcement's push actually goes out).
+ * Runs every 5 minutes: sends the announcements the "Schedule" button queued
+ * once they are due (sendSystemNotificationPush above only fires when a
+ * document is created, before scheduledFor, so this is the only place a
+ * scheduled push goes out). Each one is claimed in a transaction first, so
+ * overlapping runs never double-send and a cancelled one is skipped; see
+ * processDueNotifications in lib/jobs.js.
  */
 exports.sendScheduledSystemNotifications = onSchedule(
   "every 5 minutes",
   async () => {
-    const db2 = admin.firestore();
-    const now = admin.firestore.Timestamp.now();
-    const dueDocs = await db2
-      .collection("systemNotifications")
-      .where("status", "==", "scheduled")
-      .where("scheduledFor", "<=", now)
-      .get();
-
-    if (dueDocs.empty) return;
-
-    await Promise.all(
-      dueDocs.docs.map(async (doc) => {
-        const data = doc.data();
-        await doc.ref.update({
-          status: "sent",
-          sentAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
-        await admin.messaging().send({
-          topic: "all_users",
-          notification: {
-            title: data.title || "Fine Aid Update",
-            body: data.body || "",
-          },
-          android: { priority: "high" },
-        });
-      })
-    );
+    const result = await jobs.processDueNotifications({
+      db,
+      messaging: admin.messaging(),
+    });
+    console.log("sendScheduledSystemNotifications:", JSON.stringify(result));
   }
+);
+
+// ---------------------------------------------------------------------------
+// Admin-only callables and jobs. The logic lives in lib/jobs.js (tested
+// against the emulator); these are thin wrappers.
+// ---------------------------------------------------------------------------
+
+/**
+ * The only way a client can add an audit entry: Firestore rules deny every
+ * client write to auditLogs, so an entry can't be forged, edited or deleted
+ * from a browser. The actor and the timestamp come from the verified sign-in
+ * and the server clock, never from the request body.
+ */
+exports.writeAuditLog = onCall(async (request) => {
+  const adminData = await jobs.requireAdmin(db, request);
+  const data = request.data || {};
+  let entry;
+  try {
+    entry = buildAuditEntry({
+      action: data.action,
+      type: data.type,
+      actorUid: request.auth.uid,
+      actorName: adminData.displayName || adminData.email || null,
+      targetType: data.targetType,
+      targetId: data.targetId,
+      targetName: data.targetName,
+      result: data.result,
+      reason: data.reason,
+    });
+  } catch (err) {
+    throw new HttpsError("invalid-argument", "An action is required.");
+  }
+  await db.collection("auditLogs").add(entry);
+  return { logged: true };
+});
+
+/**
+ * Warns the user first, then deactivates after a grace period (7 days). The
+ * in-app notice, the schedule and the audit entry are written in one
+ * transaction, so an account is never scheduled without the warning.
+ */
+exports.scheduleAccountDeactivation = onCall(async (request) =>
+  jobs.scheduleDeactivation({
+    db,
+    request,
+    uid: request.data && request.data.uid,
+  })
+);
+
+/** Cancels a pending deactivation and tells the user. */
+exports.cancelAccountDeactivation = onCall(async (request) =>
+  jobs.cancelDeactivation({
+    db,
+    request,
+    uid: request.data && request.data.uid,
+  })
+);
+
+/**
+ * Hourly: deactivates every account whose grace period has ended (disables
+ * the Firebase Auth account, revokes sessions, flags the profile, logs it).
+ */
+exports.processScheduledDeactivations = onSchedule(
+  "every 60 minutes",
+  async () => {
+    const result = await jobs.processDueDeactivations({
+      db,
+      auth: admin.auth(),
+    });
+    console.log("processScheduledDeactivations:", JSON.stringify(result));
+  }
+);
+
+/** Re-enables a deactivated account (Auth + profile). */
+exports.reactivateAccount = onCall(async (request) =>
+  jobs.reactivateAccount({
+    db,
+    auth: admin.auth(),
+    request,
+    uid: request.data && request.data.uid,
+  })
+);
+
+/** Cancels an announcement that has not been sent yet. */
+exports.cancelScheduledNotification = onCall(async (request) =>
+  jobs.cancelScheduledNotification({
+    db,
+    request,
+    notificationId: request.data && request.data.notificationId,
+  })
 );

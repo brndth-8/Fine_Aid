@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../services/firebase/auth_service.dart';
+import '../../../i18n/checklist_strings.dart';
 
 class HealthChecklistScreen extends StatefulWidget {
   const HealthChecklistScreen({super.key});
@@ -10,12 +11,31 @@ class HealthChecklistScreen extends StatefulWidget {
   State<HealthChecklistScreen> createState() => _HealthChecklistScreenState();
 }
 
+// The allergy types under "Common Allergies": the stored id and its icon.
+const List<(String, IconData)> _allergyTypes = [
+  ('rhinitis', Icons.local_florist_outlined),
+  ('food', Icons.restaurant),
+  ('skin', Icons.back_hand),
+  ('insect', Icons.bug_report_outlined),
+  ('drug', Icons.medication_outlined),
+  ('latex', Icons.pan_tool_outlined),
+];
+
+const Color _maroon = Color(0xFF780000);
+const Color _cardTint = Color(0xFFF9EFEF);
+const Color _iconTint = Color(0xFFF6D9D9);
+
 class _HealthChecklistScreenState extends State<HealthChecklistScreen> {
   bool _diabetes = false;
   bool _hemophilia = false;
-  bool _severeAllergies = false;
+  final Set<String> _allergies = {};
+  bool _allergiesExpanded = false;
   bool _noneOfTheAbove = false;
   bool _isLoading = false;
+
+  // Any selected allergy type means "has allergies" — the same
+  // `severeAllergies` flag the rest of the app reads.
+  bool get _hasAllergies => _allergies.isNotEmpty;
 
   void _toggleNoneOfTheAbove(bool? value) {
     setState(() {
@@ -23,7 +43,7 @@ class _HealthChecklistScreenState extends State<HealthChecklistScreen> {
       if (_noneOfTheAbove) {
         _diabetes = false;
         _hemophilia = false;
-        _severeAllergies = false;
+        _allergies.clear();
       }
     });
   }
@@ -32,6 +52,17 @@ class _HealthChecklistScreenState extends State<HealthChecklistScreen> {
     setState(() {
       setter(value ?? false);
       if (value == true) _noneOfTheAbove = false;
+    });
+  }
+
+  void _toggleAllergy(String id, bool? value) {
+    setState(() {
+      if (value == true) {
+        _allergies.add(id);
+        _noneOfTheAbove = false;
+      } else {
+        _allergies.remove(id);
+      }
     });
   }
 
@@ -48,7 +79,10 @@ class _HealthChecklistScreenState extends State<HealthChecklistScreen> {
               'healthProfile': {
                 'diabetes': _diabetes,
                 'hemophiliaOrBloodDisorders': _hemophilia,
-                'severeAllergies': _severeAllergies,
+                'severeAllergies': _hasAllergies,
+                // Which kinds of allergy (an addition; the flag above is
+                // what the rest of the app reads).
+                'allergyTypes': _allergies.toList(),
                 'noneOfTheAbove': _noneOfTheAbove,
               },
               'healthProfileSavedAt': FieldValue.serverTimestamp(),
@@ -68,35 +102,191 @@ class _HealthChecklistScreenState extends State<HealthChecklistScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Could not save your health profile. Please try again.',
-          ),
-        ),
+        SnackBar(content: Text(ChecklistStrings.of(context).saveError)),
       );
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
+  Widget _checkbox(bool value, void Function(bool?) onChanged) {
+    return Checkbox(
+      value: value,
+      onChanged: onChanged,
+      activeColor: _maroon,
+      side: BorderSide(color: Colors.grey.shade600, width: 2),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+    );
+  }
+
+  Widget _iconBox(IconData icon) {
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        color: _iconTint,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Icon(icon, color: _maroon, size: 22),
+    );
+  }
+
   Widget _conditionTile({
+    required IconData icon,
     required String title,
+    required String description,
     required bool value,
     required void Function(bool?) onChanged,
   }) {
     final theme = Theme.of(context);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(16),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: _cardTint,
+        borderRadius: BorderRadius.circular(18),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: () => onChanged(!value),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
+            child: Row(
+              children: [
+                _iconBox(icon),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        description,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                _checkbox(value, onChanged),
+              ],
+            ),
+          ),
+        ),
       ),
-      child: CheckboxListTile(
-        value: value,
-        onChanged: onChanged,
-        title: Text(title, style: theme.textTheme.titleSmall),
-        controlAffinity: ListTileControlAffinity.leading,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    );
+  }
+
+  String _allergyLabel(ChecklistStrings s, String id) => switch (id) {
+    'rhinitis' => s.allergyRhinitis,
+    'food' => s.allergyFood,
+    'skin' => s.allergySkin,
+    'insect' => s.allergyInsect,
+    'drug' => s.allergyDrug,
+    _ => s.allergyLatex,
+  };
+
+  // "Common Allergies": a card that opens to the six allergy types.
+  Widget _allergyGroup(ChecklistStrings s) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Container(
+        decoration: BoxDecoration(
+          color: _cardTint,
+          borderRadius: BorderRadius.circular(18),
+          border: _allergiesExpanded
+              ? Border.all(color: _maroon, width: 1.4)
+              : null,
+        ),
+        child: Column(
+          children: [
+            InkWell(
+              borderRadius: BorderRadius.circular(18),
+              onTap: () =>
+                  setState(() => _allergiesExpanded = !_allergiesExpanded),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+                child: Row(
+                  children: [
+                    _iconBox(Icons.coronavirus_outlined),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            s.commonAllergies,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            s.severeAllergiesInfo,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: Colors.grey.shade700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(
+                      _allergiesExpanded
+                          ? Icons.keyboard_arrow_up
+                          : Icons.keyboard_arrow_down,
+                      color: _maroon,
+                      size: 28,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (_allergiesExpanded)
+              Container(
+                margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Column(
+                  children: [
+                    for (var i = 0; i < _allergyTypes.length; i++) ...[
+                      if (i > 0) Divider(height: 1, color: Colors.grey),
+                      InkWell(
+                        onTap: () => _toggleAllergy(
+                          _allergyTypes[i].$1,
+                          !_allergies.contains(_allergyTypes[i].$1),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(_allergyTypes[i].$2, color: _maroon, size: 20),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                _allergyLabel(s, _allergyTypes[i].$1),
+                                style: theme.textTheme.bodyMedium,
+                              ),
+                            ),
+                            _checkbox(
+                              _allergies.contains(_allergyTypes[i].$1),
+                              (v) => _toggleAllergy(_allergyTypes[i].$1, v),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -104,74 +294,119 @@ class _HealthChecklistScreenState extends State<HealthChecklistScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final s = ChecklistStrings.of(context);
     final canContinue =
-        _diabetes || _hemophilia || _severeAllergies || _noneOfTheAbove;
+        _diabetes || _hemophilia || _hasAllergies || _noneOfTheAbove;
 
     return Scaffold(
+      backgroundColor: Colors.white,
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: 16),
-              Center(
-                child: Image.asset(
-                  'assets/images/FINE_AID_Logo.png',
-                  width: 160,
-                  height: 160,
+        child: Column(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Center(
+                      child: Image.asset(
+                        'assets/images/FINE_AID_Logo.png',
+                        width: 220,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Text(
+                      s.title,
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(s.intro, style: theme.textTheme.bodyMedium),
+                    const SizedBox(height: 18),
+                    _conditionTile(
+                      icon: Icons.water_drop_outlined,
+                      title: s.diabetes,
+                      description: s.diabetesInfo,
+                      value: _diabetes,
+                      onChanged: (v) =>
+                          _toggleCondition((val) => _diabetes = val, v),
+                    ),
+                    _conditionTile(
+                      icon: Icons.bloodtype_outlined,
+                      title: s.hemophilia,
+                      description: s.hemophiliaInfo,
+                      value: _hemophilia,
+                      onChanged: (v) =>
+                          _toggleCondition((val) => _hemophilia = val, v),
+                    ),
+                    _allergyGroup(s),
+                    _conditionTile(
+                      icon: Icons.edit_note,
+                      title: s.noneOfTheAbove,
+                      description: s.noneInfo,
+                      value: _noneOfTheAbove,
+                      onChanged: _toggleNoneOfTheAbove,
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 40,
+                          height: 40,
+                          decoration: const BoxDecoration(
+                            color: _iconTint,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.verified_user_outlined,
+                            color: _maroon,
+                            size: 22,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                s.privacyTitle,
+                                style: theme.textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                s.privacy,
+                                style: theme.textTheme.bodyMedium,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                 ),
               ),
-              const SizedBox(height: 24),
-              Text('Health Profile', style: theme.textTheme.headlineSmall),
-              const SizedBox(height: 12),
-              Text(
-                'To provide the effective medical assistance, we need to understand your '
-                'health profile. Certain conditions can significantly affect how your body '
-                'responds to injuries and the specific clinical protocols required for '
-                'immediate care.',
-                style: theme.textTheme.bodyMedium,
-              ),
-              const SizedBox(height: 20),
-              _conditionTile(
-                title: 'Diabetes',
-                value: _diabetes,
-                onChanged: (v) => _toggleCondition((val) => _diabetes = val, v),
-              ),
-              _conditionTile(
-                title: 'Hemophilia or Blood Disorders',
-                value: _hemophilia,
-                onChanged: (v) =>
-                    _toggleCondition((val) => _hemophilia = val, v),
-              ),
-              _conditionTile(
-                title: 'Severe Allergies',
-                value: _severeAllergies,
-                onChanged: (v) =>
-                    _toggleCondition((val) => _severeAllergies = val, v),
-              ),
-              _conditionTile(
-                title:
-                    "I don't have any of the listed conditions (Provide Standard Clinical Protocols)",
-                value: _noneOfTheAbove,
-                onChanged: _toggleNoneOfTheAbove,
-              ),
-              const SizedBox(height: 12),
-              Text('Privacy & Data Use:', style: theme.textTheme.titleSmall),
-              const SizedBox(height: 8),
-              Text(
-                'In accordance with the Data Privacy Act, your personal information is '
-                'stored securely only on your device and is not shared with anyone without '
-                'your explicit consent.',
-                style: theme.textTheme.bodyMedium,
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton(
+            ),
+            // Continue stays at the bottom of the screen.
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+              child: ElevatedButton(
                 onPressed: (_isLoading || !canContinue)
                     ? null
                     : _handleContinue,
                 style: ElevatedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(50),
+                  backgroundColor: const Color(0xFF8B0000),
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: Colors.grey.shade300,
+                  disabledForegroundColor: Colors.grey.shade600,
+                  minimumSize: const Size.fromHeight(52),
+                  shape: const StadiumBorder(),
                 ),
                 child: _isLoading
                     ? const SizedBox(
@@ -182,10 +417,16 @@ class _HealthChecklistScreenState extends State<HealthChecklistScreen> {
                           color: Colors.white,
                         ),
                       )
-                    : const Text('Continue'),
+                    : Text(
+                        s.continueButton,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: canContinue ? Colors.white : null,
+                        ),
+                      ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

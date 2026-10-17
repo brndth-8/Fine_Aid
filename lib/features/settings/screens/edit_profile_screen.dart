@@ -6,6 +6,28 @@ import 'package:image_picker/image_picker.dart';
 import '../../../services/local_profile_photo.dart';
 import '../../../services/firebase/storage_service.dart';
 import '../../../core/password_requirements.dart';
+import '../../../core/widgets/password_checklist.dart';
+
+/// Password-change rules for Edit Profile, kept as plain functions so they
+/// can be tested without Firebase. The strength rules themselves are the
+/// shared ones from core/password_requirements.dart (same as Sign Up).
+String? currentPasswordRequiredError(String current) =>
+    current.isEmpty ? 'Current password is required' : null;
+
+String? newPasswordError({required String current, required String newPw}) {
+  if (newPw.isEmpty) return 'New password is required';
+  final strength = validatePasswordStrength(newPw);
+  if (strength != null) return strength;
+  if (newPw == current) {
+    return 'New password must be different from your current password';
+  }
+  return null;
+}
+
+String? confirmPasswordError({
+  required String newPw,
+  required String confirm,
+}) => confirm == newPw ? null : 'Passwords do not match';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -31,12 +53,27 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
   String _originalUsername = '';
+  String _originalRecoveryEmail = '';
+  // Shown under the Current Password field (wrong / missing password).
+  String? _currentPasswordError;
   final ImagePicker _picker = ImagePicker();
   XFile? _pickedPhoto;
 
   @override
   void initState() {
     super.initState();
+    // Keep the Save button's enabled state in step with every field.
+    for (final c in [
+      _usernameController,
+      _recoveryEmailController,
+      _currentPasswordController,
+      _passwordController,
+      _confirmPasswordController,
+    ]) {
+      c.addListener(() {
+        if (mounted) setState(() {});
+      });
+    }
     _loadCurrentProfile();
     final existingPath = LocalProfilePhoto().path;
     if (existingPath != null) {
@@ -90,8 +127,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       setState(() {
         _originalUsername = doc.data()?['username'] as String? ?? '';
         _usernameController.text = _originalUsername;
-        _recoveryEmailController.text =
-            doc.data()?['recoveryEmail'] as String? ?? '';
+        _originalRecoveryEmail = doc.data()?['recoveryEmail'] as String? ?? '';
+        _recoveryEmailController.text = _originalRecoveryEmail;
         _isLoading = false;
       });
     }
@@ -112,14 +149,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (user?.email == null) return;
 
     final currentPassword = _currentPasswordController.text;
-    if (currentPassword.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter your current password first.')),
-      );
+    final missing = currentPasswordRequiredError(currentPassword);
+    if (missing != null) {
+      setState(() => _currentPasswordError = missing);
       return;
     }
 
-    setState(() => _isVerifyingCurrentPassword = true);
+    setState(() {
+      _isVerifyingCurrentPassword = true;
+      _currentPasswordError = null;
+    });
     try {
       final credential = EmailAuthProvider.credential(
         email: user!.email!,
@@ -134,15 +173,20 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         ),
       );
     } on FirebaseAuthException catch (e) {
-      final message =
-          (e.code == 'wrong-password' || e.code == 'invalid-credential')
-          ? 'Incorrect current password.'
-          : 'Could not verify your password. Please try again.';
+      final wrong =
+          e.code == 'wrong-password' || e.code == 'invalid-credential';
       if (!mounted) return;
-      setState(() => _currentPasswordVerified = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
+      setState(() {
+        _currentPasswordVerified = false;
+        if (wrong) _currentPasswordError = 'Current password is incorrect';
+      });
+      if (!wrong) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not verify your password. Please try again.'),
+          ),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() => _currentPasswordVerified = false);
@@ -169,15 +213,41 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     return null;
   }
 
+  // The password fields only matter once the current password is verified
+  // (that is how a user says "I want to change my password").
   String? _validatePassword(String? value) {
-    if (value == null || value.isEmpty) return null; // optional on edit
-    return validatePasswordStrength(value);
+    if (!_currentPasswordVerified) return null;
+    return newPasswordError(
+      current: _currentPasswordController.text,
+      newPw: value ?? '',
+    );
   }
 
   String? _validateConfirmPassword(String? value) {
-    if (_passwordController.text.isEmpty) return null;
-    if (value != _passwordController.text) return 'Passwords do not match';
-    return null;
+    if (!_currentPasswordVerified) return null;
+    return confirmPasswordError(
+      newPw: _passwordController.text,
+      confirm: value ?? '',
+    );
+  }
+
+  /// Save is enabled only when everything entered is valid AND something
+  /// actually changed (username, email, or a completed password change).
+  bool get _canSave {
+    if (_isLoading || _isSaving) return false;
+    if (_validateUsername(_usernameController.text) != null) return false;
+    if (_validateRecoveryEmail(_recoveryEmailController.text) != null) {
+      return false;
+    }
+    if (_currentPasswordVerified &&
+        (_validatePassword(_passwordController.text) != null ||
+            _validateConfirmPassword(_confirmPasswordController.text) !=
+                null)) {
+      return false;
+    }
+    return _usernameController.text.trim() != _originalUsername.trim() ||
+        _recoveryEmailController.text.trim() != _originalRecoveryEmail.trim() ||
+        _currentPasswordVerified;
   }
 
   String? _validateRecoveryEmail(String? value) {
@@ -317,16 +387,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     alignment: Alignment.topLeft,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: TextButton.icon(
+                      child: IconButton(
                         onPressed: () => Navigator.pop(context),
                         icon: const Icon(
                           Icons.arrow_back_ios,
                           color: Colors.white,
-                          size: 16,
-                        ),
-                        label: const Text(
-                          'Back',
-                          style: TextStyle(color: Colors.white),
+                          size: 18,
                         ),
                       ),
                     ),
@@ -451,15 +517,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                                     obscureText: _obscureCurrentPassword,
                                     enabled: !_currentPasswordVerified,
                                     onChanged: (_) {
-                                      if (_currentPasswordVerified) {
-                                        setState(
-                                          () =>
-                                              _currentPasswordVerified = false,
-                                        );
+                                      if (_currentPasswordVerified ||
+                                          _currentPasswordError != null) {
+                                        setState(() {
+                                          _currentPasswordVerified = false;
+                                          _currentPasswordError = null;
+                                        });
                                       }
                                     },
                                     decoration: InputDecoration(
                                       hintText: 'Enter Current Password',
+                                      errorText: _currentPasswordError,
                                       suffixIcon: IconButton(
                                         icon: Icon(
                                           _obscureCurrentPassword
@@ -505,7 +573,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                             ),
                             const SizedBox(height: 16),
                             Text(
-                              'Password',
+                              'New Password',
                               style: theme.textTheme.titleSmall?.copyWith(
                                 color: _currentPasswordVerified
                                     ? null
@@ -536,9 +604,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                               ),
                               validator: _validatePassword,
                             ),
+                            if (_currentPasswordVerified) ...[
+                              const SizedBox(height: 8),
+                              PasswordChecklist(
+                                password: _passwordController.text,
+                              ),
+                            ],
                             const SizedBox(height: 16),
                             Text(
-                              'Confirm Password',
+                              'Confirm New Password',
                               style: theme.textTheme.titleSmall?.copyWith(
                                 color: _currentPasswordVerified
                                     ? null
@@ -570,9 +644,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
                             const SizedBox(height: 32),
                             ElevatedButton(
-                              onPressed: _isSaving ? null : _handleSave,
+                              onPressed: _canSave ? _handleSave : null,
                               style: ElevatedButton.styleFrom(
                                 minimumSize: const Size.fromHeight(50),
+                                disabledBackgroundColor: Colors.grey.shade300,
+                                disabledForegroundColor: Colors.grey.shade600,
                               ),
                               child: _isSaving
                                   ? const SizedBox(

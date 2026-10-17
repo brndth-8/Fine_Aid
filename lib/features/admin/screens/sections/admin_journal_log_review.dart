@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../widgets/admin_pagination.dart';
 import '../widgets/admin_shared_widgets.dart';
 
 class AdminJournalLogReview extends StatefulWidget {
@@ -10,15 +11,19 @@ class AdminJournalLogReview extends StatefulWidget {
 }
 
 class _AdminJournalLogReviewState extends State<AdminJournalLogReview> {
-  // Created once per mount instead of inline in build(): a fresh Stream
-  // object on every rebuild makes StreamBuilder drop its cached data and
-  // resubscribe from scratch, which is what made the list appear to
-  // "disappear" or reload on every unrelated rebuild (e.g. a window resize).
-  late final Stream<QuerySnapshot<Map<String, dynamic>>> _entriesStream =
-      FirebaseFirestore.instance
-          .collectionGroup('journalEntries')
-          .orderBy('createdAt', descending: true)
-          .snapshots();
+  // Created once per mount (not inside build()) so rebuilds such as a window
+  // resize don't tear down the listener and reload the page.
+  late final AdminPageController _pager = AdminPageController(
+    FirebaseFirestore.instance
+        .collectionGroup('journalEntries')
+        .orderBy('createdAt', descending: true),
+  );
+
+  @override
+  void dispose() {
+    _pager.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -32,13 +37,9 @@ class _AdminJournalLogReviewState extends State<AdminJournalLogReview> {
               'Review user health journal entries and monitor healing progress.',
         ),
         Expanded(
-          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: _entriesStream,
-            builder: (context, snapshot) {
-              final fallback = adminSnapshotFallback(snapshot);
-              if (fallback != null) return fallback;
-
-              final docs = snapshot.data!.docs;
+          child: AdminPagedList(
+            controller: _pager,
+            builder: (context, docs) {
               if (docs.isEmpty) {
                 return Center(
                   child: Text(
@@ -147,6 +148,7 @@ class _AdminJournalLogReviewState extends State<AdminJournalLogReview> {
                           ],
                         );
                       }),
+                      AdminPager(controller: _pager),
                     ],
                   ),
                 ),

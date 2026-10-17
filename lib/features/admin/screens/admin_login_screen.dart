@@ -4,7 +4,10 @@ import '../../../services/firebase/auth_service.dart';
 import 'admin_dashboard_screen.dart';
 
 class AdminLoginScreen extends StatefulWidget {
-  const AdminLoginScreen({super.key});
+  /// Neutral message shown above the form, e.g. after an idle sign-out.
+  final String? notice;
+
+  const AdminLoginScreen({super.key, this.notice});
 
   @override
   State<AdminLoginScreen> createState() => _AdminLoginScreenState();
@@ -267,6 +270,44 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                               ),
                         ),
                         const SizedBox(height: 24),
+                        if (widget.notice != null && _errorMessage == null) ...[
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: const Color(0xFF94A3B8),
+                              ),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Icon(
+                                  Icons.info_outline,
+                                  color: Color(0xFF475569),
+                                  size: 16,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    widget.notice!,
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(
+                                          color: const Color(0xFF334155),
+                                          height: 1.4,
+                                        ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                        ],
                         if (_errorMessage != null) ...[
                           Container(
                             width: double.infinity,

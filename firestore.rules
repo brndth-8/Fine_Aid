@@ -32,17 +32,36 @@ service cloud.firestore {
     match /users/{uid} {
       allow read: if isOwner(uid) || isAdmin();
       allow create: if isOwner(uid);
-      // Owners cannot flip their own `deactivated` flag.
+      // Owners cannot touch their own deactivation state (the flag, the
+      // scheduled date, or who/when requested it) — otherwise a user could
+      // simply delete `deactivateAt` to cancel their own deactivation.
       allow update: if (isOwner(uid) &&
           !request.resource.data.diff(resource.data).affectedKeys()
-            .hasAny(['deactivated'])) || isAdmin();
+            .hasAny(['deactivated', 'deactivateAt', 'deactivatedAt',
+                     'deactivationRequestedBy',
+                     'deactivationRequestedAt'])) || isAdmin();
       allow delete: if false;
 
       match /journalEntries/{entryId} {
         allow read, write: if isOwner(uid);
+
+        // Journal photos (storage paths). Owner only. The admin
+        // collection-group rule at the bottom matches `journalEntries`
+        // documents, not this `photos` subcollection, so admins are denied
+        // here by default: photo access is enforced by the rules, not hidden
+        // in the UI. Unused until the app moves photos here (see
+        // tool/journal_photos_migration).
+        match /photos/{photoId} {
+          allow read, write: if isOwner(uid);
+        }
       }
 
       match /notifications/{notifId} {
+        allow read, write: if isOwner(uid);
+      }
+
+      // AI-scan reliability counters (one summary doc): owner only.
+      match /aiScanStats/{statsId} {
         allow read, write: if isOwner(uid);
       }
     }
@@ -82,9 +101,26 @@ service cloud.firestore {
 
     // FEEDBACK
     // Users submit as themselves; only admins read/triage.
+    // An admin's response (response / respondedBy / respondedByName /
+    // respondedAt) can be written once: it must be 1-1000 characters, credit
+    // the admin saving it, and can't be changed after that. Other fields
+    // (eg status) stay freely editable by admins.
     match /feedback/{feedbackId} {
       allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
-      allow read, update, delete: if isAdmin();
+      allow read, delete: if isAdmin();
+      allow update: if isAdmin() &&
+        (
+          !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['response', 'respondedBy', 'respondedByName', 'respondedAt'])
+          ||
+          (
+            !('response' in resource.data) &&
+            request.resource.data.response is string &&
+            request.resource.data.response.size() > 0 &&
+            request.resource.data.response.size() <= 1000 &&
+            request.resource.data.respondedBy == request.auth.uid
+          )
+        );
     }
 
     // FIRST AID CONTENT
@@ -104,8 +140,21 @@ service cloud.firestore {
     }
 
     // AUDIT LOGS
+    // Append-only and tamper-proof: admins can read, but no client can
+    // create, edit or delete an entry. Entries are written by Cloud Functions
+    // (Admin SDK, bypasses rules): the writeAuditLog callable for admin
+    // actions, and server jobs. The actor and timestamp are set server-side.
     match /auditLogs/{logId} {
-      allow read, write: if isAdmin();
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // COLLECTION GROUP: aiScanStats
+    // Dashboard performance card only: sums the per-account scan counters
+    // (counts only, no personal content). Owners keep their own read/write
+    // through the users/{uid}/aiScanStats rule above.
+    match /{path=**}/aiScanStats/{statsId} {
+      allow read: if isAdmin();
     }
 
     // COLLECTION GROUP: journalEntries

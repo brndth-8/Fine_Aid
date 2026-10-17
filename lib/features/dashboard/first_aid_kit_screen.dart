@@ -5,6 +5,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/api/gemini_service.dart';
 import '../../services/firebase/first_aid_content_service.dart';
 import '../../services/firebase/notification_service.dart';
+import '../../core/widgets/remind_me_checkbox.dart';
+import '../../i18n/notification_strings.dart';
 import '../../services/voice_input_service.dart';
 import '../../services/health_profile_service.dart';
 import '../../services/connectivity_service.dart';
@@ -14,11 +16,13 @@ import '../../core/widgets/guest_gate_dialogs.dart';
 import '../../core/widgets/guest_usage_badge.dart';
 import '../../core/network_error.dart';
 import '../../core/scope_check.dart';
+import '../../data/first_aid_guides.dart';
 import '../../data/healing_durations.dart';
 import '../../data/health_profile_cautions.dart';
 import '../../core/follow_up_fallback.dart';
 import '../../core/widgets/voice_message_bubble.dart';
 import '../../core/widgets/otc_suggestions_block.dart';
+import '../../i18n/first_aid_guides_tl.dart';
 import '../../i18n/health_kit_content_tl.dart';
 import '../../i18n/health_kit_locale.dart';
 import '../../i18n/health_kit_ui_strings.dart';
@@ -74,7 +78,6 @@ class _Category {
   final String title;
   final IconData icon;
   final List<_Question> questions;
-  final List<String> steps;
   final List<String> watchFor;
   final String seekCareIf;
 
@@ -83,7 +86,6 @@ class _Category {
     required this.title,
     required this.icon,
     required this.questions,
-    required this.steps,
     required this.watchFor,
     required this.seekCareIf,
   });
@@ -151,13 +153,6 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
         ),
         ..._sharedTailQuestions,
       ],
-      steps: [
-        'Wash your hands before touching the wound.',
-        'Apply gentle, firm pressure with clean gauze or cloth to control bleeding.',
-        'Rinse the wound with clean running water once bleeding slows.',
-        'Cover with a sterile bandage or dressing.',
-        'Change the dressing daily and keep the area clean and dry.',
-      ],
       watchFor: _defaultWatchFor,
       seekCareIf:
           'Bleeding doesn\'t stop, the cut is deep/gaping, or you '
@@ -180,13 +175,6 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
         ),
         ..._sharedTailQuestions,
       ],
-      steps: [
-        'Wash your hands and rinse the cut under clean running water.',
-        'Apply gentle pressure with a clean cloth if it\'s bleeding.',
-        'Apply an antiseptic if available.',
-        'Cover with a small adhesive bandage.',
-        'Keep the area clean and change the bandage daily.',
-      ],
       watchFor: _defaultWatchFor,
       seekCareIf:
           'There\'s an embedded object, or signs of infection '
@@ -208,13 +196,6 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
         const _Question(text: 'Is there any swelling around the scratch?'),
         ..._sharedTailQuestions,
       ],
-      steps: [
-        'Wash the scratch thoroughly with soap and clean water.',
-        'Apply an antiseptic if available.',
-        'Cover with a clean bandage if it\'s in an area prone to friction.',
-        'Monitor the area daily for the next few days.',
-        'Keep the area clean and avoid scratching it further.',
-      ],
       watchFor: _defaultWatchFor,
       seekCareIf: 'An animal was involved, or signs of infection develop.',
     ),
@@ -234,13 +215,6 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
         ),
         const _Question(text: 'Is the abrasion larger than your palm?'),
         ..._sharedTailQuestions,
-      ],
-      steps: [
-        'Rinse the scrape gently under clean running water.',
-        'Remove any loose, visible debris carefully.',
-        'Apply antiseptic ointment if available.',
-        'Cover with a sterile, non-stick dressing.',
-        'Change the dressing daily until healed.',
       ],
       watchFor: _defaultWatchFor,
       seekCareIf:
@@ -268,13 +242,6 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
         ),
         ..._sharedTailQuestions,
       ],
-      steps: [
-        'Wash your hands, then gently wash the area with soap and water.',
-        'Do not push on the wound to make it bleed "to clean it out."',
-        'Apply gentle pressure with clean gauze if it\'s bleeding.',
-        'Cover with a clean bandage.',
-        'Watch closely for signs of infection over the next few days.',
-      ],
       watchFor: _defaultWatchFor,
       seekCareIf:
           'The object was dirty/rusty, the puncture is deep, or '
@@ -296,13 +263,6 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
         ),
         const _Question(text: 'Are there blisters or broken skin?'),
         ..._sharedTailQuestions,
-      ],
-      steps: [
-        'Cool the burn under cool (not ice-cold) running water for 10-20 minutes.',
-        'Do not apply ice directly to the burn.',
-        'Remove jewelry or tight items near the burned area.',
-        'Cover loosely with a clean, non-stick dressing.',
-        'Do not pop any blisters that form.',
       ],
       watchFor: _defaultWatchFor,
       seekCareIf:
@@ -334,13 +294,6 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
         ),
         ..._sharedTailQuestions,
       ],
-      steps: [
-        'Rest the bruised area and avoid further impact.',
-        'Apply a cold compress (wrapped, not directly on skin) for 15-20 minutes.',
-        'Elevate the area above heart level if possible.',
-        'After 48 hours, a warm compress can help with healing.',
-        'Take note of the bruise\'s size and color over the next few days.',
-      ],
       watchFor: [
         'Increasing swelling or pain',
         'Numbness or difficulty moving the area',
@@ -367,13 +320,6 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
         ),
         const _Question(text: 'Is it hard to move the swollen area normally?'),
         ..._sharedTailQuestions,
-      ],
-      steps: [
-        'Rest the swollen area.',
-        'Apply a cold compress (wrapped, not directly on skin) for 15-20 minutes.',
-        'Elevate the area above heart level if possible.',
-        'Avoid heat or vigorous activity on the area for the first day.',
-        'Monitor how the swelling changes over the next 24-48 hours.',
       ],
       watchFor: [
         'Swelling that keeps increasing',
@@ -411,13 +357,6 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
         ),
         ..._sharedTailQuestions,
       ],
-      steps: [
-        'Avoid scratching the affected area.',
-        'Wash the area gently with mild soap and cool water.',
-        'Apply a fragrance-free moisturizer or soothing lotion if available.',
-        'Avoid known irritants or allergens if you can identify one.',
-        'Keep track of when the rash started and anything new you were exposed to.',
-      ],
       watchFor: [
         'Rash spreading quickly',
         'Difficulty breathing or facial/throat swelling',
@@ -439,15 +378,6 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
               'swollen?',
         ),
         ..._sharedTailQuestions,
-      ],
-      steps: [
-        'Keep the affected area clean.',
-        'Apply gentle first aid appropriate to what you\'re seeing '
-            '(cleaning, cold compress, or rest as needed).',
-        'Avoid putting strain on the injured area.',
-        'Monitor the area for changes over the next day.',
-        'If unsure what you\'re dealing with, treat cautiously and watch '
-            'closely.',
       ],
       watchFor: _defaultWatchFor,
       seekCareIf:
@@ -478,6 +408,8 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
   StreamSubscription<double>? _amplitudeSubscription;
 
   bool _isSaving = false;
+  // "Remind me": the user asked for a healing check-in for this entry.
+  bool _remindMe = false;
   bool _savedToJournal = false;
   String? _savedJournalEntryId;
   bool _hasUnsavedFollowUps = false;
@@ -536,8 +468,70 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
     return fallback;
   }
 
-  List<String> _steps(_Category category) =>
-      _translation(category)?.steps ?? category.steps;
+  // The Before / During / After guide for [category] in the current language
+  // (English if a Tagalog version is somehow missing).
+  List<GuideStep> _guide(_Category category) =>
+      (_locale == HealthKitLocale.tl ? firstAidGuidesTl[category.id] : null) ??
+      firstAidGuides[category.id] ??
+      const [];
+
+  List<Widget> _buildGuide(ThemeData theme, _Category category) {
+    final guide = _guide(category);
+    final widgets = <Widget>[];
+    var number = 0;
+    for (final phase in GuidePhase.values) {
+      final steps = guide.where((s) => s.phase == phase).toList();
+      if (steps.isEmpty) continue;
+      widgets.add(
+        Padding(
+          padding: const EdgeInsets.only(top: 6, bottom: 6),
+          child: Text(
+            _ui('phase_${phase.name}'),
+            style: theme.textTheme.titleSmall?.copyWith(
+              color: theme.colorScheme.primary,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      );
+      for (final step in steps) {
+        number++;
+        widgets.add(
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$number. ',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(step.text, style: theme.textTheme.bodyMedium),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${_ui('whyLabel')} ${step.why}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontStyle: FontStyle.italic,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+    }
+    return widgets;
+  }
 
   List<String> _watchFor(_Category category) =>
       _translation(category)?.watchFor ?? category.watchFor;
@@ -678,6 +672,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
       _redFlagMessages.clear();
       _followUpMessages.clear();
       _savedToJournal = false;
+      _remindMe = false;
       _savedJournalEntryId = null;
       _hasUnsavedFollowUps = false;
     });
@@ -733,7 +728,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
     final woundContext = category == null
         ? null
         : 'Category: ${category.title}\n'
-              'First aid steps given: ${category.steps.join(' ')}\n'
+              'First aid steps given: ${(firstAidGuides[category.id] ?? const <GuideStep>[]).map(guideStepToJournalText).join(' ')}\n'
               'Warning signs: ${category.watchFor.join(', ')}';
 
     String response;
@@ -884,7 +879,10 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
     setState(() => _isSaving = true);
 
     try {
-      final stepsText = category.steps
+      final guideSteps = (firstAidGuides[category.id] ?? const <GuideStep>[])
+          .map(guideStepToJournalText)
+          .toList();
+      final stepsText = guideSteps
           .asMap()
           .entries
           .map((e) => '${e.key + 1}. ${e.value}')
@@ -903,7 +901,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
         'userConcern': _userConcern,
         'questionsAndAnswers': _qaHistory,
         'redFlags': _redFlagMessages,
-        'firstAidSteps': category.steps,
+        'firstAidSteps': guideSteps,
         'watchFor': category.watchFor,
         'seekCareIf': category.seekCareIf,
         'hasRedFlag': _resultHasRedFlag,
@@ -913,7 +911,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
         'imageUrls': const <String>[],
         'imageCount': 0,
         'severity': null,
-        'remindMe': false,
+        'remindMe': _remindMe,
       };
 
       if (_savedJournalEntryId == null) {
@@ -926,7 +924,8 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
             .timeout(const Duration(seconds: 10));
 
         final healingDays = healingDurationDays[category.title];
-        if (healingDays != null && mounted) {
+        final noBenchmark = _remindMe && healingDays == null;
+        if (_remindMe && healingDays != null && mounted) {
           await NotificationService().ensureHealingReminderPermission(context);
           await NotificationService().scheduleHealingCheckIn(
             entryId: docRef.id,
@@ -943,7 +942,14 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
             _isSaving = false;
           });
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Session saved to Health Journal.')),
+            SnackBar(
+              content: Text(
+                noBenchmark
+                    ? 'Session saved to Health Journal. '
+                          '${NotificationStrings.of(context).noBenchmark}'
+                    : 'Session saved to Health Journal.',
+              ),
+            ),
           );
         }
       } else {
@@ -1269,25 +1275,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          ..._steps(category).asMap().entries.map(
-            (e) => Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '${e.key + 1}. ',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  Expanded(
-                    child: Text(e.value, style: theme.textTheme.bodyMedium),
-                  ),
-                ],
-              ),
-            ),
-          ),
+          ..._buildGuide(theme, category),
           const SizedBox(height: 12),
           Text(
             _ui('watchFor'),
@@ -1332,6 +1320,11 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
             ),
           ),
           const SizedBox(height: 16),
+          if (!_savedToJournal)
+            RemindMeCheckbox(
+              value: _remindMe,
+              onChanged: (v) => setState(() => _remindMe = v),
+            ),
           if (_savedToJournal && !_hasUnsavedFollowUps)
             Container(
               width: double.infinity,

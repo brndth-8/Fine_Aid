@@ -310,11 +310,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
   Widget _buildDoneStep() {
     final theme = Theme.of(context);
-    // Center + a content-sized Column (not a bare Column with
-    // mainAxisAlignment.center — that has no effect unless the Column
-    // itself is stretched to fill the available height first) so this
-    // stays centered both ways regardless of screen size, text scale, or
-    // safe-area insets.
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 24),

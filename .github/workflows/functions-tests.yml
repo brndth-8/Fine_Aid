@@ -1,0 +1,68 @@
+# Runs the Firebase emulator tests (Cloud Functions logic + Firestore rules).
+#
+# Safe by design: it only talks to the local Firebase emulators under the
+# throw-away project id "demo-fineaid". It has no secrets, no Firebase login,
+# and it never deploys anything or touches the real project.
+#
+# Why this exists: the Firestore emulator needs Java, which doesn't start on
+# some Windows 11 builds; a Linux runner has no such problem.
+name: Functions and rules tests
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "functions/**"
+      - "firestore.rules"
+      - "firestore.indexes.json"
+      - "firebase.json"
+      - ".github/workflows/functions-tests.yml"
+  pull_request:
+    paths:
+      - "functions/**"
+      - "firestore.rules"
+      - "firestore.indexes.json"
+      - "firebase.json"
+      - ".github/workflows/functions-tests.yml"
+  workflow_dispatch: # lets you run it by hand from the Actions tab
+
+permissions:
+  contents: read
+
+jobs:
+  emulator-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+
+      # The Firestore emulator is a Java program; firebase-tools needs 21+.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      # Same major version used locally when the tests were written.
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools@15
+
+      # The emulator jar is ~100 MB; keep it between runs.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ runner.os }}-${{ hashFiles('firebase.json') }}
+          restore-keys: firebase-emulators-${{ runner.os }}-
+
+      - name: Install function dependencies
+        working-directory: functions
+        run: npm ci
+
+      - name: Run emulator tests
+        working-directory: functions
+        run: npm test

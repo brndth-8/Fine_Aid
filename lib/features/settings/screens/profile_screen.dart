@@ -28,16 +28,12 @@ class ProfileScreen extends StatelessWidget {
                     alignment: Alignment.topLeft,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: TextButton.icon(
+                      child: IconButton(
                         onPressed: () => Navigator.pop(context),
                         icon: const Icon(
                           Icons.arrow_back_ios,
                           color: Colors.white,
-                          size: 16,
-                        ),
-                        label: const Text(
-                          'Back',
-                          style: TextStyle(color: Colors.white),
+                          size: 18,
                         ),
                       ),
                     ),

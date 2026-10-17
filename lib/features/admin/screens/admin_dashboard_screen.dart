@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../services/firebase/auth_service.dart';
+import '../../settings/screens/settings_screen.dart' show confirmLogout;
 import '../theme/admin_theme.dart';
 import 'admin_change_password_screen.dart';
 import 'admin_login_screen.dart';
+import 'widgets/admin_idle_guard.dart';
+import 'widgets/admin_shared_widgets.dart' show logAdminAction;
 import 'sections/admin_main_dashboard.dart';
 import 'sections/admin_user_management.dart';
 import 'sections/admin_content_management.dart';
@@ -51,12 +54,40 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return AuthService().adminMustChangePassword(uid);
   }
 
-  Future<void> _logout(BuildContext context) async {
+  bool _isConfirmingLogout = false;
+
+  /// Admin-initiated logout only: asks first (same dialog as the user app),
+  /// then runs the existing [_logout] unchanged. Forced logouts elsewhere
+  /// (AdminGate, rejected login) intentionally don't go through this.
+  Future<void> _confirmAndLogout(BuildContext context) async {
+    if (_isConfirmingLogout) return;
+    _isConfirmingLogout = true;
+    final confirmed = await confirmLogout(context);
+    _isConfirmingLogout = false;
+    if (!confirmed || !context.mounted) return;
+    await _logout(context);
+  }
+
+  /// Idle timeout: records the sign-out first (the audit callable needs the
+  /// still-valid session, and is capped so a slow network can't delay the
+  /// sign-out), then runs the same [_logout] with an explanatory notice.
+  Future<void> _signOutForInactivity() async {
+    if (!mounted) return;
+    await logAdminAction(
+      'Signed out automatically after inactivity',
+      type: 'LOGIN',
+      reason: 'idle_timeout',
+    ).timeout(const Duration(seconds: 5), onTimeout: () {});
+    if (!mounted) return;
+    await _logout(context, notice: 'You were signed out due to inactivity.');
+  }
+
+  Future<void> _logout(BuildContext context, {String? notice}) async {
     final navigator = Navigator.of(context);
     try {
       await AuthService().signOut();
       navigator.pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const AdminLoginScreen()),
+        MaterialPageRoute(builder: (_) => AdminLoginScreen(notice: notice)),
         (_) => false,
       );
     } catch (e) {
@@ -83,13 +114,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         }
 
         final theme = Theme.of(context);
-        return Scaffold(
-          backgroundColor: const Color(0xFFF8F8F8),
-          body: Row(
-            children: [
-              _buildSidebar(theme),
-              Expanded(child: _buildMainContent(theme)),
-            ],
+        return AdminIdleGuard(
+          onIdleTimeout: _signOutForInactivity,
+          child: Scaffold(
+            backgroundColor: const Color(0xFFF8F8F8),
+            body: Row(
+              children: [
+                _buildSidebar(theme),
+                Expanded(child: _buildMainContent(theme)),
+              ],
+            ),
           ),
         );
       },
@@ -231,7 +265,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     color: Colors.white.withValues(alpha: 0.85),
                     size: 18,
                   ),
-                  onPressed: () => _logout(context),
+                  onPressed: () => _confirmAndLogout(context),
                 ),
                 onTap: () =>
                     setState(() => _currentSection = AdminSection.accounts),
@@ -322,7 +356,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       case AdminSection.auditLogs:
         return const AdminAuditLogs();
       case AdminSection.systemSecurity:
-        return AdminSystemSecurity(onLogout: _logout);
+        return AdminSystemSecurity(onLogout: _confirmAndLogout);
       case AdminSection.accounts:
         return const AdminAccounts();
     }

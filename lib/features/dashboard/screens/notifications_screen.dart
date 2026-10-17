@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../../../services/notification_inbox_store.dart';
 import '../../../services/firebase/notification_service.dart';
+import '../../../i18n/notification_strings.dart';
 import '../../../core/network_error.dart';
 import '../../journal/screens/entry_detail_screen.dart';
 import '../../chatbot/screens/chatbot_screen.dart';
@@ -33,6 +34,12 @@ _TypeInfo _typeInfo(AppNotificationType type) {
 /// "Today, 9:00 AM" / "Yesterday, 9:00 AM" / "Sep 12, 9:00 AM" — readable
 /// text instead of a raw ISO timestamp, used everywhere a notification's
 /// time is shown.
+/// Whether an admin announcement sent at [sentAt] belongs in the list of an
+/// account created at [accountCreated]: only announcements sent on or after
+/// the account was created. With no known creation time, everything shows.
+bool isAnnouncementForAccount(DateTime sentAt, DateTime? accountCreated) =>
+    accountCreated == null || !sentAt.isBefore(accountCreated);
+
 String friendlyNotificationTime(DateTime dt) {
   final now = DateTime.now();
   final today = DateTime(now.year, now.month, now.day);
@@ -117,7 +124,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   void _listenSystem() {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final user = FirebaseAuth.instance.currentUser;
+    final uid = user?.uid;
+    if (uid == null) return; // guests get no announcements
+    final accountCreated = user!.metadata.creationTime;
     _systemSub = FirebaseFirestore.instance
         .collection('systemNotifications')
         .orderBy('sentAt', descending: true)
@@ -130,6 +140,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               final data = doc.data();
               final sentAt = (data['sentAt'] as Timestamp?)?.toDate();
               if (sentAt == null) continue;
+              // A new account starts with an empty list: announcements sent
+              // before it was created aren't shown.
+              if (!isAnnouncementForAccount(sentAt, accountCreated)) continue;
               final readBy =
                   (data['readBy'] as List?)?.cast<String>() ?? const [];
               await NotificationInboxStore.instance.upsertFromRemote(
@@ -139,7 +152,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   title: data['title'] as String? ?? 'Fine Aid Update',
                   body: data['body'] as String? ?? '',
                   createdAt: sentAt,
-                  isRead: uid != null && readBy.contains(uid),
+                  isRead: readBy.contains(uid),
                   actionUrl: data['actionUrl'] as String?,
                   actionLabel: data['actionLabel'] as String?,
                 ),
@@ -302,31 +315,73 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 ),
               ),
             Expanded(
-              child: ListenableBuilder(
-                listenable: NotificationInboxStore.instance,
-                builder: (context, _) {
-                  final items = NotificationInboxStore.instance.visibleItems;
-                  if (items.isEmpty) {
-                    return Center(
-                      child: Text(
-                        'No notifications yet',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                    );
-                  }
-                  return ListView.builder(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
+              child: FirebaseAuth.instance.currentUser == null
+                  ? _guestPrompt(theme)
+                  : ListenableBuilder(
+                      listenable: NotificationInboxStore.instance,
+                      builder: (context, _) {
+                        final items =
+                            NotificationInboxStore.instance.visibleItems;
+                        if (items.isEmpty) {
+                          return Center(
+                            child: Text(
+                              'No notifications yet',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          );
+                        }
+                        return ListView.builder(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
+                          itemCount: items.length,
+                          itemBuilder: (context, index) =>
+                              _notificationTile(theme, items[index]),
+                        );
+                      },
                     ),
-                    itemCount: items.length,
-                    itemBuilder: (context, index) =>
-                        _notificationTile(theme, items[index]),
-                  );
-                },
-              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Guests get no notifications — they're asked to log in or sign up.
+  Widget _guestPrompt(ThemeData theme) {
+    final text = NotificationStrings.of(context);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.notifications_off_outlined,
+              size: 48,
+              color: theme.colorScheme.primary,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              text.guestTitle,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              text.guestBody,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              // Back to the login / sign-up screen, same as Settings > Sign in.
+              onPressed: () =>
+                  Navigator.of(context).popUntil((route) => route.isFirst),
+              child: Text(text.guestSignIn),
             ),
           ],
         ),
@@ -473,15 +528,16 @@ class _NotificationDetailSheetState extends State<_NotificationDetailSheet> {
     final entryId = widget.item.entryId;
     if (entryId == null || _isResponding) return;
     setState(() => _isResponding = true);
+    final text = NotificationStrings.of(context);
     await NotificationService().remindHealingCheckInTomorrow(
       entryId: entryId,
       classification: widget.item.woundTypeLabel ?? 'this issue',
     );
     if (!mounted) return;
     Navigator.pop(context);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Okay — we\'ll check in again tomorrow.')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(text.notYetSnack)));
   }
 
   void _openEntry() {
@@ -613,7 +669,7 @@ class _NotificationDetailSheetState extends State<_NotificationDetailSheet> {
                 style: ElevatedButton.styleFrom(
                   minimumSize: const Size.fromHeight(46),
                 ),
-                child: const Text('Yes, I\'m feeling better'),
+                child: Text(NotificationStrings.of(context).dialogBetter),
               ),
               const SizedBox(height: 8),
               OutlinedButton(
@@ -621,7 +677,7 @@ class _NotificationDetailSheetState extends State<_NotificationDetailSheet> {
                 style: OutlinedButton.styleFrom(
                   minimumSize: const Size.fromHeight(46),
                 ),
-                child: const Text('Not yet'),
+                child: Text(NotificationStrings.of(context).dialogNotYet),
               ),
               const SizedBox(height: 8),
               OutlinedButton(
@@ -629,7 +685,7 @@ class _NotificationDetailSheetState extends State<_NotificationDetailSheet> {
                 style: OutlinedButton.styleFrom(
                   minimumSize: const Size.fromHeight(46),
                 ),
-                child: const Text('It\'s getting worse'),
+                child: Text(NotificationStrings.of(context).dialogWorse),
               ),
               const SizedBox(height: 8),
               TextButton(

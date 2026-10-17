@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../../i18n/terms_strings.dart';
 
 class TermsScreen extends StatefulWidget {
   final bool readOnly;
@@ -69,9 +70,7 @@ class _TermsScreenState extends State<TermsScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not save your acceptance. Please try again.'),
-        ),
+        SnackBar(content: Text(TermsStrings.of(context).saveError)),
       );
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -142,6 +141,7 @@ class _TermsScreenState extends State<TermsScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final s = TermsStrings.of(context);
 
     return Scaffold(
       body: SafeArea(
@@ -149,6 +149,16 @@ class _TermsScreenState extends State<TermsScreen> {
           padding: const EdgeInsets.all(24),
           child: Column(
             children: [
+              // The single back control (only when opened read-only from
+              // Settings; during sign-up there is nothing to go back to).
+              if (widget.readOnly)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: IconButton(
+                    icon: const Icon(Icons.arrow_back_ios, size: 18),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ),
               const SizedBox(height: 16),
               Center(
                 child: Image.asset(
@@ -160,7 +170,7 @@ class _TermsScreenState extends State<TermsScreen> {
 
               const SizedBox(height: 24),
               Text(
-                'Terms & Conditions',
+                s.title,
                 style: theme.textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
@@ -185,67 +195,15 @@ class _TermsScreenState extends State<TermsScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _sectionHeader(theme, 'Medical Disclaimer'),
-                          _paragraph(
-                            theme,
-                            'This application uses Artificial Intelligence (AI) to provide '
-                            'initial First Aid guidance only. It is not a diagnostic tool and '
-                            'does not provide a definitive medical opinion. Please read these '
-                            'carefully before using our mobile application and services.',
-                          ),
-                          _sectionHeader(theme, '1. Acceptance of Terms'),
-                          _paragraph(
-                            theme,
-                            'By downloading, installing, or using this App, you agree to be '
-                            'bound by these Terms.',
-                          ),
-                          _sectionHeader(
-                            theme,
-                            '2. No Medical Advice Disclaimer',
-                          ),
-                          _bulletList(theme, const [
-                            'Information Only: All content provided within the App is '
-                                'for informational purposes only.',
-                            'No Doctor-Patient Relationship: Use of this App does not '
-                                'create a doctor-patient relationship.',
-                            'Consult Professionals: The App is not a substitute for '
-                                'professional medical advice or diagnosis. Always seek the '
-                                'advice of your physician or other qualified healthcare '
-                                'provider with any questions you may have regarding a '
-                                'medical condition.',
-                          ]),
-                          _sectionHeader(theme, '3. Emergency Disclaimer'),
-                          _bulletList(theme, const [
-                            'Do Not Use for Emergencies: This App is NOT to be used for '
-                                'medical emergencies.',
-                            'Emergency Action: If you are experiencing a medical '
-                                'emergency, call emergency services or go to the nearest '
-                                'hospital emergency room immediately.',
-                          ]),
-                          _sectionHeader(theme, '4. Privacy and Data Security'),
-                          _bulletList(theme, const [
-                            'Privacy Policy: Your use of the App is also governed by our '
-                                'Privacy Policy.',
-                            'Data Compliance: We handle data in accordance with '
-                                'applicable laws, including the Data Privacy Act of 2012 '
-                                '(Republic Act No. 10173) and other relevant health '
-                                'privacy regulations.',
-                          ]),
-                          _sectionHeader(
-                            theme,
-                            '5. Permitted Use and Restrictions',
-                          ),
-                          _paragraph(theme, 'You agree not to:'),
-                          _bulletList(theme, const [
-                            'Use the App for any illegal purpose.',
-                            'Input false, misleading, or inaccurate health data.',
-                            'Attempt to hack, reverse-engineer, or disrupt the App\'s '
-                                'servers and networks.',
-                          ]),
+                          for (final section in s.sections) ...[
+                            _sectionHeader(theme, section.header),
+                            if (section.paragraph != null)
+                              _paragraph(theme, section.paragraph!),
+                            if (section.bullets.isNotEmpty)
+                              _bulletList(theme, section.bullets),
+                          ],
                           Text(
-                            'By continuing, you agree to use this application as a guide '
-                            'only and assume all responsibility for any actions taken '
-                            'based on its content.',
+                            s.closing,
                             style: theme.textTheme.bodyMedium?.copyWith(
                               height: 1.5,
                             ),
@@ -262,7 +220,7 @@ class _TermsScreenState extends State<TermsScreen> {
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Text(
-                    'Please scroll to the end to continue.',
+                    s.scrollHint,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: Colors.grey.shade600,
                       fontStyle: FontStyle.italic,
@@ -271,15 +229,7 @@ class _TermsScreenState extends State<TermsScreen> {
                   ),
                 ),
               const SizedBox(height: 8),
-              if (widget.readOnly)
-                OutlinedButton(
-                  onPressed: () => Navigator.pop(context),
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size.fromHeight(50),
-                  ),
-                  child: const Text('Back'),
-                )
-              else
+              if (!widget.readOnly)
                 ElevatedButton(
                   onPressed: (_isLoading || !_hasScrolledToEnd)
                       ? null
@@ -296,7 +246,7 @@ class _TermsScreenState extends State<TermsScreen> {
                             color: Colors.white,
                           ),
                         )
-                      : const Text('I Agree & Continue'),
+                      : Text(s.agree),
                 ),
             ],
           ),

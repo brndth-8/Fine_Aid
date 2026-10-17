@@ -2,8 +2,11 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:intl/intl.dart';
 import '../../../../services/firebase/auth_service.dart';
+import '../widgets/admin_pagination.dart';
 import '../widgets/admin_shared_widgets.dart';
 
 class AdminUserManagement extends StatefulWidget {
@@ -14,11 +17,135 @@ class AdminUserManagement extends StatefulWidget {
 }
 
 class _AdminUserManagementState extends State<AdminUserManagement> {
-  late final Stream<QuerySnapshot<Map<String, dynamic>>> _usersStream =
-      FirebaseFirestore.instance
-          .collection('users')
-          .orderBy('createdAt', descending: true)
-          .snapshots();
+  late final AdminPageController _pager = AdminPageController(
+    FirebaseFirestore.instance
+        .collection('users')
+        .orderBy('createdAt', descending: true),
+  );
+
+  @override
+  void dispose() {
+    _pager.dispose();
+    super.dispose();
+  }
+
+  // Users with a deactivate/cancel/activate request in flight, so a second
+  // tap can't start a duplicate one.
+  final Set<String> _busyUsers = {};
+
+  /// Must match DEACTIVATION_GRACE_DAYS in functions/index.js (the server
+  /// decides the real date; this only words the confirmation).
+  static const int _graceDays = 7;
+
+  String _longDate(DateTime d) => DateFormat('MMMM d, y').format(d);
+
+  void _snack(String message, {SnackBarAction? action}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message), action: action));
+  }
+
+  Future<void> _confirmDeactivate(String uid, String username) async {
+    if (_busyUsers.contains(uid)) return;
+    setState(() => _busyUsers.add(uid));
+    try {
+      final approx = DateTime.now().add(const Duration(days: _graceDays));
+      final confirmed = await adminConfirm(
+        context,
+        title: 'Deactivate account?',
+        message:
+            '$username will be notified in the app now and will lose access in '
+            '$_graceDays days (around ${_longDate(approx)}). '
+            'Their data will not be deleted.',
+        confirmLabel: 'Deactivate',
+        destructive: true,
+      );
+      if (!confirmed) return;
+      await _scheduleDeactivation(uid, username);
+    } finally {
+      if (mounted) setState(() => _busyUsers.remove(uid));
+    }
+  }
+
+  /// Notice first, schedule second — done together server-side, so if the
+  /// notice can't be sent nothing is scheduled and the admin can retry.
+  Future<void> _scheduleDeactivation(String uid, String username) async {
+    try {
+      final result = await FirebaseFunctions.instance
+          .httpsCallable('scheduleAccountDeactivation')
+          .call<Map<Object?, Object?>>({'uid': uid});
+      final when = DateTime.fromMillisecondsSinceEpoch(
+        (result.data['deactivateAt'] as num).toInt(),
+      );
+      if (result.data['alreadyScheduled'] == true) {
+        _snack('$username is already scheduled for ${_longDate(when)}.');
+        return;
+      }
+      // The audit entry is written by the function, in the same transaction
+      // as the notice and the schedule.
+      _snack(
+        '$username was notified. Deactivation is scheduled for '
+        '${_longDate(when)}.',
+      );
+    } on FirebaseFunctionsException catch (e) {
+      _snack(
+        'Could not schedule the deactivation: ${e.message ?? e.code}. '
+        'Nothing was changed.',
+        action: SnackBarAction(
+          label: 'Retry',
+          onPressed: () => _scheduleDeactivation(uid, username),
+        ),
+      );
+    } catch (_) {
+      _snack(
+        'Could not reach the server. Nothing was changed.',
+        action: SnackBarAction(
+          label: 'Retry',
+          onPressed: () => _scheduleDeactivation(uid, username),
+        ),
+      );
+    }
+  }
+
+  Future<void> _cancelDeactivation(String uid, String username) async {
+    if (_busyUsers.contains(uid)) return;
+    setState(() => _busyUsers.add(uid));
+    try {
+      await FirebaseFunctions.instance
+          .httpsCallable('cancelAccountDeactivation')
+          .call<Map<Object?, Object?>>({'uid': uid});
+      _snack(
+        'Deactivation cancelled. $username was told their account stays active.',
+      );
+    } on FirebaseFunctionsException catch (e) {
+      _snack('Could not cancel: ${e.message ?? e.code}');
+    } catch (_) {
+      _snack('Could not reach the server. Nothing was changed.');
+    } finally {
+      if (mounted) setState(() => _busyUsers.remove(uid));
+    }
+  }
+
+  Future<void> _activate(String uid, String username) async {
+    if (_busyUsers.contains(uid)) return;
+    setState(() => _busyUsers.add(uid));
+    try {
+      // Deactivation disables the user's sign-in account, so it has to be
+      // re-enabled there too, not just on the profile. The function does both
+      // and writes the audit entry.
+      await FirebaseFunctions.instance
+          .httpsCallable('reactivateAccount')
+          .call<Map<Object?, Object?>>({'uid': uid});
+      _snack('$username can sign in again.');
+    } on FirebaseFunctionsException catch (e) {
+      _snack('Could not activate $username: ${e.message ?? e.code}');
+    } catch (_) {
+      _snack('Could not reach the server. Nothing was changed.');
+    } finally {
+      if (mounted) setState(() => _busyUsers.remove(uid));
+    }
+  }
 
   Future<void> _editUser(
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
@@ -290,21 +417,16 @@ class _AdminUserManagementState extends State<AdminUserManagement> {
           ),
         ),
         Expanded(
-          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: _usersStream,
-            builder: (context, snapshot) {
-              final fallback = adminSnapshotFallback(snapshot);
-              if (fallback != null) return fallback;
-
-              final docs = snapshot.data!.docs;
-
+          child: AdminPagedList(
+            controller: _pager,
+            builder: (context, docs) {
               return SingleChildScrollView(
                 padding: const EdgeInsets.all(24),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
-                      'All users (${docs.length} total)',
+                      'All users (${_pager.total ?? docs.length} total)',
                       style: theme.textTheme.labelMedium?.copyWith(
                         color: Colors.black,
                       ),
@@ -336,8 +458,8 @@ class _AdminUserManagementState extends State<AdminUserManagement> {
                                 _tableHeader(context, 'User', flex: 2),
                                 _tableHeader(context, 'Email', flex: 3),
                                 _tableHeader(context, 'Joined'),
-                                _tableHeader(context, 'Status'),
-                                _tableHeader(context, 'Actions'),
+                                _tableHeader(context, 'Status', flex: 2),
+                                _tableHeader(context, 'Actions', flex: 2),
                               ],
                             ),
                           ),
@@ -351,7 +473,18 @@ class _AdminUserManagementState extends State<AdminUserManagement> {
                             final joined = ts != null
                                 ? '${ts.toDate().day}/${ts.toDate().month}/${ts.toDate().year}'
                                 : '';
-                            final isDeactivated = data['deactivated'] == true;
+                            // Deactivated outright, or past its scheduled date
+                            // (the app already blocks sign-in at that point;
+                            // the hourly job just catches the flag up).
+                            final deactivateAt =
+                                (data['deactivateAt'] as Timestamp?)?.toDate();
+                            final isDeactivated =
+                                data['deactivated'] == true ||
+                                (deactivateAt != null &&
+                                    !deactivateAt.isAfter(DateTime.now()));
+                            final isScheduled =
+                                !isDeactivated && deactivateAt != null;
+                            final busy = _busyUsers.contains(doc.id);
 
                             return Column(
                               children: [
@@ -408,33 +541,43 @@ class _AdminUserManagementState extends State<AdminUserManagement> {
                                         ),
                                       ),
                                       Expanded(
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 3,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: isDeactivated
-                                                ? Colors.grey.shade100
-                                                : Colors.green.shade50,
-                                            borderRadius: BorderRadius.circular(
-                                              20,
+                                        flex: 2,
+                                        child: Align(
+                                          alignment: Alignment.centerLeft,
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 3,
                                             ),
-                                          ),
-                                          child: Text(
-                                            isDeactivated
-                                                ? 'Inactive'
-                                                : 'Active',
-                                            style: theme.textTheme.labelSmall
-                                                ?.copyWith(
-                                                  color: isDeactivated
-                                                      ? Colors.grey.shade700
-                                                      : Colors.green.shade800,
-                                                ),
+                                            decoration: BoxDecoration(
+                                              color: isDeactivated
+                                                  ? Colors.grey.shade100
+                                                  : isScheduled
+                                                  ? Colors.orange.shade50
+                                                  : Colors.green.shade50,
+                                              borderRadius:
+                                                  BorderRadius.circular(20),
+                                            ),
+                                            child: Text(
+                                              isDeactivated
+                                                  ? 'Inactive'
+                                                  : isScheduled
+                                                  ? 'Deactivates ${DateFormat('MMM d').format(deactivateAt)}'
+                                                  : 'Active',
+                                              style: theme.textTheme.labelSmall
+                                                  ?.copyWith(
+                                                    color: isDeactivated
+                                                        ? Colors.grey.shade700
+                                                        : isScheduled
+                                                        ? Colors.orange.shade800
+                                                        : Colors.green.shade800,
+                                                  ),
+                                            ),
                                           ),
                                         ),
                                       ),
                                       Expanded(
+                                        flex: 2,
                                         child: Row(
                                           children: [
                                             TextButton(
@@ -449,30 +592,39 @@ class _AdminUserManagementState extends State<AdminUserManagement> {
                                               ),
                                             ),
                                             TextButton(
-                                              onPressed: () {
-                                                FirebaseFirestore.instance
-                                                    .collection('users')
-                                                    .doc(doc.id)
-                                                    .update({
-                                                      'deactivated':
-                                                          !isDeactivated,
-                                                    });
-                                                logAdminAction(
-                                                  isDeactivated
-                                                      ? 'Activated user $username'
-                                                      : 'Deactivated user $username',
-                                                  type: 'UPDATE',
-                                                );
-                                              },
+                                              onPressed: busy
+                                                  ? null
+                                                  : () => isDeactivated
+                                                        ? _activate(
+                                                            doc.id,
+                                                            username,
+                                                          )
+                                                        : isScheduled
+                                                        ? _cancelDeactivation(
+                                                            doc.id,
+                                                            username,
+                                                          )
+                                                        : _confirmDeactivate(
+                                                            doc.id,
+                                                            username,
+                                                          ),
                                               child: Text(
-                                                isDeactivated
+                                                busy
+                                                    ? 'Working…'
+                                                    : isDeactivated
                                                     ? 'Activate'
+                                                    : isScheduled
+                                                    ? 'Cancel'
                                                     : 'Deactivate',
                                                 style: theme.textTheme.bodySmall
                                                     ?.copyWith(
                                                       color: isDeactivated
                                                           ? Colors
                                                                 .green
+                                                                .shade800
+                                                          : isScheduled
+                                                          ? Colors
+                                                                .orange
                                                                 .shade800
                                                           : Colors.red.shade700,
                                                     ),
@@ -488,6 +640,7 @@ class _AdminUserManagementState extends State<AdminUserManagement> {
                               ],
                             );
                           }),
+                          AdminPager(controller: _pager),
                         ],
                       ),
                     ),

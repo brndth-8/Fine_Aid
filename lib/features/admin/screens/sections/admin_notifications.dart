@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:intl/intl.dart';
 import '../widgets/admin_shared_widgets.dart';
 
@@ -24,11 +25,64 @@ class _AdminNotificationsState extends State<AdminNotifications> {
           .limit(5)
           .snapshots();
 
+  // Pending ones plus the history of cancelled / failed ones: a cancelled
+  // notification is kept (never deleted) and shown here with its status.
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _scheduledStream =
       FirebaseFirestore.instance
           .collection('systemNotifications')
-          .where('status', isEqualTo: 'scheduled')
+          .where(
+            'status',
+            whereIn: ['scheduled', 'sending', 'cancelled', 'failed'],
+          )
           .snapshots();
+
+  /// Notifications with a cancel request in flight (stops double taps).
+  final Set<String> _cancelling = {};
+
+  /// Cancelling goes through a Cloud Function that checks the status inside a
+  /// transaction, so a notification that has just been sent can't be
+  /// cancelled, and a cancelled one is never sent.
+  Future<void> _cancelNotification(String id, String title) async {
+    if (_cancelling.contains(id)) return;
+    final ok = await adminConfirm(
+      context,
+      title: 'Cancel this scheduled notification?',
+      message:
+          '"$title" will not be sent. It stays in the list as cancelled, '
+          "and you can schedule a new one if you change your mind.",
+      confirmLabel: 'Cancel notification',
+      cancelLabel: 'Keep it',
+      destructive: true,
+    );
+    if (!ok || !mounted) return;
+    setState(() => _cancelling.add(id));
+    try {
+      await FirebaseFunctions.instance
+          .httpsCallable('cancelScheduledNotification')
+          .call<Map<Object?, Object?>>({'notificationId': id});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Notification cancelled.')),
+        );
+      }
+    } on FirebaseFunctionsException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not cancel: ${e.message ?? e.code}')),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not reach the server. Nothing was changed.'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _cancelling.remove(id));
+    }
+  }
 
   @override
   void dispose() {
@@ -68,10 +122,8 @@ class _AdminNotificationsState extends State<AdminNotifications> {
   // Writes with a future `scheduledFor` and no `sentAt` yet, so it's
   // invisible to the "sentAt"-ordered queries the user app and the Recent
   // Sends list both use. The sendScheduledSystemNotifications Cloud
-  // Function (functions/index.js) picks these up once due, stamps
-  // `sentAt`, and sends the push — that function isn't deployed yet (same
-  // build-but-don't-deploy status as the OTP functions), so a scheduled
-  // send won't actually go out until it is.
+  // Function (functions/index.js, runs every 5 minutes) claims these once
+  // due, sends the push and stamps `sentAt`.
   Future<void> _schedule() async {
     if (_titleController.text.trim().isEmpty) return;
 
@@ -390,7 +442,7 @@ class _AdminNotificationsState extends State<AdminNotifications> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Scheduled (pending)',
+                              'Scheduled',
                               style: theme.textTheme.titleMedium?.copyWith(
                                 color: Colors.black,
                               ),
@@ -405,8 +457,19 @@ class _AdminNotificationsState extends State<AdminNotifications> {
                                     style: theme.textTheme.bodySmall,
                                   );
                                 }
+                                // Pending (scheduled / sending) first, then the
+                                // cancelled and failed history; by time within.
+                                int rank(Map<String, dynamic> d) =>
+                                    d['status'] == 'scheduled' ||
+                                        d['status'] == 'sending'
+                                    ? 0
+                                    : 1;
                                 final docs = snap.data!.docs.toList()
                                   ..sort((a, b) {
+                                    final byRank = rank(
+                                      a.data(),
+                                    ).compareTo(rank(b.data()));
+                                    if (byRank != 0) return byRank;
                                     final aTs =
                                         a.data()['scheduledFor'] as Timestamp?;
                                     final bTs =
@@ -424,25 +487,85 @@ class _AdminNotificationsState extends State<AdminNotifications> {
                                             'MMM d, h:mm a',
                                           ).format(scheduledFor.toDate())
                                         : '';
+                                    final status =
+                                        data['status'] as String? ??
+                                        'scheduled';
+                                    final title =
+                                        data['title'] as String? ?? '';
+                                    final (label, color) = switch (status) {
+                                      'cancelled' => ('Cancelled', Colors.grey),
+                                      'failed' => ('Failed', Colors.red),
+                                      'sending' => ('Sending…', Colors.blue),
+                                      _ => ('Scheduled', Colors.green),
+                                    };
                                     return Padding(
                                       padding: const EdgeInsets.symmetric(
                                         vertical: 6,
                                       ),
                                       child: Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.spaceBetween,
                                         children: [
                                           Expanded(
                                             child: Text(
-                                              data['title'] ?? '',
-                                              style: theme.textTheme.bodySmall,
+                                              title,
+                                              style: theme.textTheme.bodySmall
+                                                  ?.copyWith(
+                                                    decoration:
+                                                        status == 'cancelled'
+                                                        ? TextDecoration
+                                                              .lineThrough
+                                                        : null,
+                                                  ),
                                             ),
                                           ),
+                                          const SizedBox(width: 8),
                                           Text(
                                             timeText,
                                             style: theme.textTheme.bodySmall
                                                 ?.copyWith(color: Colors.grey),
                                           ),
+                                          const SizedBox(width: 8),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: color.withValues(
+                                                alpha: 0.1,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(20),
+                                            ),
+                                            child: Text(
+                                              label,
+                                              style: theme.textTheme.labelSmall
+                                                  ?.copyWith(
+                                                    color: color,
+                                                    fontWeight:
+                                                        FontWeight.normal,
+                                                  ),
+                                            ),
+                                          ),
+                                          // Only pending ones can be cancelled.
+                                          if (status == 'scheduled')
+                                            TextButton(
+                                              onPressed:
+                                                  _cancelling.contains(doc.id)
+                                                  ? null
+                                                  : () => _cancelNotification(
+                                                      doc.id,
+                                                      title,
+                                                    ),
+                                              child: Text(
+                                                'Cancel',
+                                                style: theme.textTheme.bodySmall
+                                                    ?.copyWith(
+                                                      color: theme
+                                                          .colorScheme
+                                                          .error,
+                                                    ),
+                                              ),
+                                            ),
                                         ],
                                       ),
                                     );

@@ -30,8 +30,6 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_web_plugins:
-    sdk: flutter
 
 
   # The following adds the Cupertino Icons font to your application.
@@ -73,10 +71,10 @@ dev_dependencies:
 flutter_launcher_icons:
   android: true
   ios: false
-  image_path: "assets/images/FineAid_Logo_Icon.jpg"
+  image_path: "assets/images/FINE_AID_Logo_Icon.png"
   min_sdk_android: 21
   adaptive_icon_background: "#FFFFFF"
-  adaptive_icon_foreground: "assets/images/FineAid_Logo_Icon.jpg"
+  adaptive_icon_foreground: "assets/images/FINE_AID_Logo_Icon.png"
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 
@@ -90,8 +88,11 @@ flutter:
   assets:
     - assets/images/FINE_AID_Background.png
     - assets/images/FINE_AID_Logo.png
-    - assets/images/admin_landing_background.png
     - assets/images/FINE_AID_Logo_Icon.png
+    - assets/images/FineAid_Background.png
+    - assets/images/Fine_Aid_BG.png
+    - assets/images/welcome_banner.png
+    - assets/images/login_background.png
     - assets/images/FINEAID_ADMIN_LANDING_PAGE.png
     - assets/images/FineAid_Logo_Icon.jpg
     - assets/images/help_hero.png
@@ -100,10 +101,9 @@ flutter:
     - assets/images/help_journal.png
     - assets/images/help_references.png
     - assets/images/books/
+    - assets/images/first_aid/
     - assets/pdfs/
     - assets/config/otc_filter_config.json
-    # Website (lib/main_web.dart) photos — see assets/web/README.md
-    - assets/web/
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg

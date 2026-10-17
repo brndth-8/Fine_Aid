@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../../i18n/help_strings.dart';
+import 'reference_detail_screen.dart';
 
 enum HelpTopic { gettingStarted, privacy, journal, references }
 
@@ -10,7 +12,7 @@ class HelpTopicScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final content = _contentFor(topic);
+    final content = _contentFor(context, topic);
 
     return Scaffold(
       body: SafeArea(
@@ -28,7 +30,10 @@ class HelpTopicScreen extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 8),
-              Text('How can we help?', style: theme.textTheme.headlineSmall),
+              Text(
+                HelpStrings.of(context).heading,
+                style: theme.textTheme.headlineSmall,
+              ),
               const SizedBox(height: 16),
               Expanded(
                 child: SingleChildScrollView(
@@ -71,13 +76,6 @@ class HelpTopicScreen extends StatelessWidget {
                                 .toList(),
                           ),
                         ],
-                        const SizedBox(height: 20),
-                        Center(
-                          child: OutlinedButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text('Back'),
-                          ),
-                        ),
                       ],
                     ),
                   ),
@@ -91,7 +89,8 @@ class HelpTopicScreen extends StatelessWidget {
   }
 
   Widget _infoCard(ThemeData theme, _InfoCard card) {
-    return Container(
+    final onTap = card.onTap;
+    final content = Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         border: Border.all(color: theme.colorScheme.primary),
@@ -109,81 +108,70 @@ class HelpTopicScreen extends StatelessWidget {
               fontWeight: FontWeight.bold,
             ),
           ),
+          // Tap cue for a card that opens a page.
+          if (onTap != null)
+            Icon(
+              Icons.chevron_right,
+              color: theme.colorScheme.primary,
+              size: 20,
+            ),
         ],
+      ),
+    );
+    if (onTap == null) return content;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: content,
       ),
     );
   }
 
-  _HelpContent _contentFor(HelpTopic topic) {
+  _HelpContent _contentFor(BuildContext context, HelpTopic topic) {
+    final strings = HelpStrings.of(context);
     switch (topic) {
       case HelpTopic.gettingStarted:
-        return _HelpContent(
-          title: 'Getting Started',
-          paragraphs: const [
-            'Fine Aid helps you assess minor wounds and skin issues using AI, '
-                'keep a recovery journal, and access trusted first aid references — '
-                'all in one place.',
-            'Start by exploring the Dashboard: browse the First Aid Textbook Guide, '
-                'use the AI Vision Camera to scan an injury, or open your Health '
-                'Journal to log how you\'re feeling.',
-            'Create an account to save your journal entries, personalize your '
-                'profile, and get healing reminders. Guest mode lets you explore '
-                'without saving any data.',
-          ],
-          cards: const [],
-        );
+        return _fromText(strings.gettingStarted, const []);
       case HelpTopic.privacy:
-        return _HelpContent(
-          title: 'Privacy Issues',
-          paragraphs: const [
-            'Your personal information, including your username and contact '
-                'details, is stored securely and is never shared without your '
-                'explicit consent.',
-            'Images attached to your Health Journal entries is not viewable '
-                'to the admin module for review purposes, to help improve the '
-                'accuracy and safety of guidance provided.',
-            'In Guest Mode, none of your entries or images are saved - they '
-                'exist only temporarily during your session.',
-          ],
-          cards: const [],
-        );
+        return _fromText(strings.privacy, const []);
       case HelpTopic.journal:
-        return _HelpContent(
-          title: 'How to use Journal?',
-          paragraphs: const [
-            'The Health Journal helps you track wounds and skin issues over '
-                'time. Tap "Add Entry" to create a new log: add a photo, give it '
-                'a title, describe how you\'re feeling, and classify the issue '
-                '(Injury, Burns, Skin Issues, or Animal Bite/Scratch).',
-            'Turn on "Remind Me" to get a notification once you\'ve reached the '
-                'standard healing time for that classification — Fine Aid will '
-                'check in and ask if you\'re feeling better.',
-            'Tap any entry to view its full details, ask for more help, or '
-                'export your log to share with a healthcare provider.',
-          ],
-          cards: const [],
-        );
+        return _fromText(strings.journal, const []);
       case HelpTopic.references:
-        return _HelpContent(
-          title: 'References',
-          paragraphs: const [
-            'Sources include: WHO, American Red Cross, MIMS, recognized local '
-                'organizations. Every piece of information is cross-referenced.',
-            'All clinical guidelines and advice are meticulously reviewed and '
-                'credited by a panel of board-certified specialists.',
-          ],
-          cards: [
-            _InfoCard(
-              icon: Icons.menu_book_outlined,
-              label: 'Verified Medical Sources',
+        // Each reference card opens its own (for now empty) page, titled
+        // with the card's name.
+        return _fromText(
+          strings.references,
+          const [Icons.menu_book_outlined, Icons.medical_services_outlined],
+          onTap: (label) => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ReferenceDetailScreen(title: label),
             ),
-            _InfoCard(
-              icon: Icons.medical_services_outlined,
-              label: 'Doctor-Reviewed Content',
-            ),
-          ],
+          ),
         );
     }
+  }
+
+  // Pairs each translated card label with its (language-independent) icon.
+  _HelpContent _fromText(
+    HelpTopicText text,
+    List<IconData> icons, {
+    void Function(String label)? onTap,
+  }) {
+    return _HelpContent(
+      title: text.title,
+      paragraphs: text.paragraphs,
+      cards: [
+        for (var i = 0; i < text.cardLabels.length; i++)
+          _InfoCard(
+            icon: icons[i],
+            label: text.cardLabels[i],
+            onTap: onTap == null ? null : () => onTap(text.cardLabels[i]),
+          ),
+      ],
+    );
   }
 }
 
@@ -202,6 +190,7 @@ class _HelpContent {
 class _InfoCard {
   final IconData icon;
   final String label;
+  final VoidCallback? onTap;
 
-  _InfoCard({required this.icon, required this.label});
+  _InfoCard({required this.icon, required this.label, this.onTap});
 }

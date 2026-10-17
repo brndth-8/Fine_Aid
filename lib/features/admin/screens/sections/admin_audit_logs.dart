@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../widgets/admin_name_lookup.dart';
+import '../widgets/admin_pagination.dart';
 import '../widgets/admin_shared_widgets.dart';
 
 class AdminAuditLogs extends StatefulWidget {
@@ -14,15 +16,46 @@ class _AdminAuditLogsState extends State<AdminAuditLogs> {
       .collection('auditLogs')
       .orderBy('timestamp', descending: true);
 
-  late final Stream<QuerySnapshot<Map<String, dynamic>>> _logsStream =
-      _logsQuery.snapshots();
+  late final AdminPageController _pager = AdminPageController(_logsQuery);
+
+  // Audit entries are written by admins, so the actor is an `admins` doc.
+  final _names = AdminNameLookup(
+    collection: 'admins',
+    nameOf: (data) =>
+        (data['displayName'] as String?)?.trim().isNotEmpty == true
+        ? data['displayName'] as String
+        : data['email'] as String?,
+  );
 
   bool _exporting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _pager.addListener(_loadNamesForPage);
+  }
+
+  @override
+  void dispose() {
+    _pager.removeListener(_loadNamesForPage);
+    _pager.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadNamesForPage() async {
+    final changed = await _names.ensure(
+      _pager.docs.map((d) => auditActorUid(d.data())),
+    );
+    if (changed && mounted) setState(() {});
+  }
+
+  String _actor(Map<String, dynamic> data) => auditActorLabel(data, _names);
 
   Future<void> _exportLogs() async {
     setState(() => _exporting = true);
     try {
       final snapshot = await _logsQuery.get();
+      await _names.ensure(snapshot.docs.map((d) => auditActorUid(d.data())));
       await exportAdminCsv(
         filename: 'fine_aid_audit_logs.csv',
         headers: const ['Timestamp', 'Action', 'User', 'Type'],
@@ -32,7 +65,7 @@ class _AdminAuditLogsState extends State<AdminAuditLogs> {
           return [
             ts?.toDate().toIso8601String() ?? '',
             data['action'] ?? '',
-            shortId(data['userId'], fallback: 'System'),
+            _actor(data),
             data['type'] ?? 'UPDATE',
           ];
         }).toList(),
@@ -57,7 +90,7 @@ class _AdminAuditLogsState extends State<AdminAuditLogs> {
         AdminHeader(
           title: 'Audit logs',
           subtitle:
-              'Complete record of all admin activities — from account changes to notifications — for accountability and security.',
+              'Complete record of all admin activities â€” from account changes to notifications â€” for accountability and security.',
           action: OutlinedButton.icon(
             onPressed: _exporting ? null : _exportLogs,
             icon: _exporting
@@ -67,18 +100,13 @@ class _AdminAuditLogsState extends State<AdminAuditLogs> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.download_outlined, size: 16),
-            label: Text(_exporting ? 'Exporting…' : 'Export logs'),
+            label: Text(_exporting ? 'Exportingâ€¦' : 'Export logs'),
           ),
         ),
         Expanded(
-          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: _logsStream,
-            builder: (context, snapshot) {
-              final fallback = adminSnapshotFallback(snapshot);
-              if (fallback != null) return fallback;
-
-              final docs = snapshot.data!.docs;
-
+          child: AdminPagedList(
+            controller: _pager,
+            builder: (context, docs) {
               return SingleChildScrollView(
                 padding: const EdgeInsets.all(24),
                 child: Container(
@@ -155,10 +183,7 @@ class _AdminAuditLogsState extends State<AdminAuditLogs> {
                                   ),
                                   Expanded(
                                     child: Text(
-                                      shortId(
-                                        data['userId'],
-                                        fallback: 'System',
-                                      ),
+                                      _actor(data),
                                       style: theme.textTheme.bodySmall,
                                     ),
                                   ),
@@ -186,6 +211,7 @@ class _AdminAuditLogsState extends State<AdminAuditLogs> {
                           ],
                         );
                       }),
+                      AdminPager(controller: _pager),
                     ],
                   ),
                 ),

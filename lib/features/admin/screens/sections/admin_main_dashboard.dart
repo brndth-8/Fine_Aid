@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../widgets/admin_charts.dart';
+import '../widgets/admin_performance_card.dart';
 import '../widgets/admin_shared_widgets.dart';
 
 class AdminMainDashboard extends StatefulWidget {
@@ -16,29 +18,59 @@ class AdminMainDashboard extends StatefulWidget {
 }
 
 class _AdminMainDashboardState extends State<AdminMainDashboard> {
-  late final Stream<QuerySnapshot> _usersStream = FirebaseFirestore.instance
-      .collection('users')
-      .snapshots();
+  // Server-side count() aggregates: the cards used to stream every document
+  // of these collections just to read `.length`.
+  late final Future<int?> _usersCount = _count(
+    FirebaseFirestore.instance.collection('users'),
+  );
 
-  late final Stream<QuerySnapshot> _journalEntriesStream = FirebaseFirestore
-      .instance
-      .collectionGroup('journalEntries')
-      .snapshots();
+  late final Future<int?> _journalEntriesCount = _count(
+    FirebaseFirestore.instance.collectionGroup('journalEntries'),
+  );
 
-  late final Stream<QuerySnapshot> _pendingEscalationsStream = FirebaseFirestore
-      .instance
-      .collectionGroup('journalEntries')
-      .where('feelingBetter', isEqualTo: false)
-      .snapshots();
+  late final Future<int?> _pendingEscalationsCount = _count(
+    FirebaseFirestore.instance
+        .collectionGroup('journalEntries')
+        .where('feelingBetter', isEqualTo: false),
+  );
 
   // Counts journal entries the AI Camera flow actually saved (it tags them
   // 'source': 'ai_camera' — see assessment_result_screen.dart). There's no
   // separate "scan attempted" event logged anywhere, so a saved assessment
   // is the closest real signal available for "AI scans".
-  late final Stream<QuerySnapshot> _aiScansStream = FirebaseFirestore.instance
-      .collectionGroup('journalEntries')
-      .where('source', isEqualTo: 'ai_camera')
-      .snapshots();
+  late final Future<int?> _aiScansCount = _count(
+    FirebaseFirestore.instance
+        .collectionGroup('journalEntries')
+        .where('source', isEqualTo: 'ai_camera'),
+  );
+
+  late final Future<int?> _usersThisMonth = _count(
+    FirebaseFirestore.instance
+        .collection('users')
+        .where(
+          'createdAt',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(
+            DateTime(DateTime.now().year, DateTime.now().month),
+          ),
+        ),
+  );
+
+  Future<int?> _count(Query<Map<String, dynamic>> query) async {
+    try {
+      return (await query.count().get()).count;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Card value while loading ("…") or after a failed count ("—").
+  String _countText(AsyncSnapshot<int?> snap) {
+    if (snap.connectionState != ConnectionState.done) return '…';
+    return snap.data?.toString() ?? '—';
+  }
+
+  bool _countFailed(AsyncSnapshot<int?> snap) =>
+      snap.connectionState == ConnectionState.done && snap.data == null;
 
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _activityStream =
       FirebaseFirestore.instance
@@ -77,55 +109,65 @@ class _AdminMainDashboardState extends State<AdminMainDashboard> {
                 Row(
                   children: [
                     Expanded(
-                      child: StreamBuilder<QuerySnapshot>(
-                        stream: _usersStream,
-                        builder: (context, snap) => AdminStatCard(
-                          label: 'Registered users',
-                          value: snap.hasError
-                              ? '—'
-                              : '${snap.data?.docs.length ?? 0}',
-                          change: snap.hasError ? 'Failed to load' : 'Growing',
-                          changeColor: snap.hasError ? Colors.red : null,
-                          icon: Icons.people_outline,
+                      child: FutureBuilder<int?>(
+                        future: _usersCount,
+                        builder: (context, snap) => FutureBuilder<int?>(
+                          future: _usersThisMonth,
+                          builder: (context, monthSnap) {
+                            final month = monthSnap.data;
+                            return AdminStatCard(
+                              label: 'Registered users',
+                              value: _countText(snap),
+                              change: _countFailed(snap)
+                                  ? 'Failed to load'
+                                  : month == null
+                                  ? null
+                                  : month == 0
+                                  ? 'No new users this month'
+                                  : '+$month this month',
+                              changeColor: _countFailed(snap)
+                                  ? Colors.red
+                                  : month == 0
+                                  ? Colors.grey
+                                  : null,
+                              icon: Icons.people_outline,
+                            );
+                          },
                         ),
                       ),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
-                      child: StreamBuilder<QuerySnapshot>(
-                        stream: _aiScansStream,
+                      child: FutureBuilder<int?>(
+                        future: _aiScansCount,
                         builder: (context, snap) => AdminStatCard(
                           label: 'Total AI scans',
-                          value: snap.hasError
-                              ? '—'
-                              : '${snap.data?.docs.length ?? 0}',
-                          change: snap.hasError ? 'Failed to load' : null,
-                          changeColor: snap.hasError ? Colors.red : null,
+                          value: _countText(snap),
+                          change: _countFailed(snap) ? 'Failed to load' : null,
+                          changeColor: _countFailed(snap) ? Colors.red : null,
                           icon: Icons.camera_alt_outlined,
                         ),
                       ),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
-                      child: StreamBuilder<QuerySnapshot>(
-                        stream: _journalEntriesStream,
+                      child: FutureBuilder<int?>(
+                        future: _journalEntriesCount,
                         builder: (context, snap) => AdminStatCard(
                           label: 'Journal entries',
-                          value: snap.hasError
-                              ? '—'
-                              : '${snap.data?.docs.length ?? 0}',
-                          change: snap.hasError ? 'Failed to load' : null,
-                          changeColor: snap.hasError ? Colors.red : null,
+                          value: _countText(snap),
+                          change: _countFailed(snap) ? 'Failed to load' : null,
+                          changeColor: _countFailed(snap) ? Colors.red : null,
                           icon: Icons.book_outlined,
                         ),
                       ),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
-                      child: StreamBuilder<QuerySnapshot>(
-                        stream: _pendingEscalationsStream,
+                      child: FutureBuilder<int?>(
+                        future: _pendingEscalationsCount,
                         builder: (context, snap) {
-                          if (snap.hasError) {
+                          if (_countFailed(snap)) {
                             return const AdminStatCard(
                               label: 'Pending escalations',
                               value: '—',
@@ -134,11 +176,17 @@ class _AdminMainDashboardState extends State<AdminMainDashboard> {
                               icon: Icons.warning_amber_outlined,
                             );
                           }
-                          final count = snap.data?.docs.length ?? 0;
+                          final count = snap.data ?? 0;
+                          final loaded =
+                              snap.connectionState == ConnectionState.done;
                           return AdminStatCard(
                             label: 'Pending escalations',
-                            value: '$count',
-                            change: count > 0 ? 'Needs attention' : 'All clear',
+                            value: _countText(snap),
+                            change: !loaded
+                                ? null
+                                : count > 0
+                                ? 'Needs attention'
+                                : 'All clear',
                             changeColor: count > 0 ? Colors.red : Colors.green,
                             icon: Icons.warning_amber_outlined,
                           );
@@ -148,12 +196,26 @@ class _AdminMainDashboardState extends State<AdminMainDashboard> {
                   ],
                 ),
                 const SizedBox(height: 24),
+                const AdminTrendCard(
+                  title: 'Activity over time',
+                  caption: 'New users, journal entries and AI scans.',
+                ),
+                const SizedBox(height: 24),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(flex: 3, child: _buildActivityFeed(theme)),
                     const SizedBox(width: 16),
-                    Expanded(flex: 2, child: _buildSystemStatus(theme)),
+                    Expanded(
+                      flex: 2,
+                      child: Column(
+                        children: [
+                          _buildSystemStatus(theme),
+                          const SizedBox(height: 16),
+                          const AdminPerformanceCard(),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ],
@@ -234,15 +296,10 @@ class _AdminMainDashboardState extends State<AdminMainDashboard> {
     );
   }
 
+  /// Only reports what this page can actually observe. The rows used to be a
+  /// hardcoded list (API server, AI engine, CDN … with "Degraded" invented
+  /// for one), which showed health that nothing was measuring.
   Widget _buildSystemStatus(ThemeData theme) {
-    final services = [
-      ('API server', true),
-      ('AI engine', true),
-      ('Database', true),
-      ('Email notifications', true),
-      ('CDN / storage', false),
-    ];
-
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -255,34 +312,52 @@ class _AdminMainDashboardState extends State<AdminMainDashboard> {
         children: [
           Text('System status', style: theme.textTheme.titleMedium),
           const SizedBox(height: 12),
-          ...services.map(
-            (s) => Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(s.$1, style: theme.textTheme.bodySmall),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 3,
-                    ),
-                    decoration: BoxDecoration(
-                      color: s.$2
-                          ? Colors.green.shade50
-                          : Colors.orange.shade50,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      s.$2 ? 'Online' : 'Degraded',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: s.$2 ? Colors.green : Colors.orange,
+          FutureBuilder<int?>(
+            future: _usersCount,
+            builder: (context, snap) {
+              final loading = snap.connectionState != ConnectionState.done;
+              final ok = snap.data != null;
+              final color = loading
+                  ? Colors.grey
+                  : ok
+                  ? Colors.green
+                  : Colors.red;
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Database', style: theme.textTheme.bodySmall),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: color.shade50,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        loading
+                            ? 'Checking…'
+                            : ok
+                            ? 'Online'
+                            : 'Unreachable',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: color.shade700,
+                        ),
                       ),
                     ),
-                  ),
-                ],
-              ),
-            ),
+                  ],
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Based on whether this page could read the database just now. '
+            'Other services are not monitored here.',
+            style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey),
           ),
         ],
       ),

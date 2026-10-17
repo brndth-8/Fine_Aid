@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../widgets/admin_activity_report.dart';
+import '../widgets/admin_charts.dart';
 import '../widgets/admin_shared_widgets.dart';
 
 class AdminReportsAnalytics extends StatefulWidget {
@@ -10,42 +12,67 @@ class AdminReportsAnalytics extends StatefulWidget {
 }
 
 class _AdminReportsAnalyticsState extends State<AdminReportsAnalytics> {
-  late final Stream<QuerySnapshot> _usersStream = FirebaseFirestore.instance
-      .collection('users')
-      .snapshots();
+  // The three stat cards use server-side count() aggregates instead of
+  // streaming every document just to read `.length`.
+  late final Future<int?> _usersCount = _count(
+    FirebaseFirestore.instance.collection('users'),
+  );
 
-  late final Stream<QuerySnapshot> _autoReferralsStream = FirebaseFirestore
-      .instance
-      .collectionGroup('journalEntries')
-      .where('feelingBetter', isEqualTo: false)
-      .snapshots();
+  late final Future<int?> _autoReferralsCount = _count(
+    FirebaseFirestore.instance
+        .collectionGroup('journalEntries')
+        .where('feelingBetter', isEqualTo: false),
+  );
 
+  // Same 'source': 'ai_camera' marker used on the dashboard's AI scans card.
+  late final Future<int?> _aiScansCount = _count(
+    FirebaseFirestore.instance
+        .collectionGroup('journalEntries')
+        .where('source', isEqualTo: 'ai_camera'),
+  );
+
+  // Still streamed in full: the injury breakdown tallies `classification`
+  // client-side. Counting it server-side would need a new collection-group
+  // index on `classification`, which is pending approval.
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _journalEntriesStream =
       FirebaseFirestore.instance.collectionGroup('journalEntries').snapshots();
 
-  // Same 'source': 'ai_camera' marker used on the dashboard's AI scans card.
-  late final Stream<QuerySnapshot> _aiScansStream = FirebaseFirestore.instance
-      .collectionGroup('journalEntries')
-      .where('source', isEqualTo: 'ai_camera')
-      .snapshots();
+  late final Future<int?> _usersThisMonth = _count(
+    FirebaseFirestore.instance
+        .collection('users')
+        .where(
+          'createdAt',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(
+            DateTime(DateTime.now().year, DateTime.now().month),
+          ),
+        ),
+  );
+
+  Future<int?> _count(Query<Map<String, dynamic>> query) async {
+    try {
+      return (await query.count().get()).count;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _countText(AsyncSnapshot<int?> snap) {
+    if (snap.connectionState != ConnectionState.done) return '…';
+    return snap.data?.toString() ?? '—';
+  }
+
+  bool _countFailed(AsyncSnapshot<int?> snap) =>
+      snap.connectionState == ConnectionState.done && snap.data == null;
 
   String _reportType = 'App usage summary';
-  String _outputFormat = 'CSV';
   bool _generating = false;
 
+  // Only CSV is offered: the PDF and Excel options used to be listed but
+  // silently produced a CSV anyway, so they were removed rather than kept as
+  // choices that don't work.
   Future<void> _generateReport() async {
     setState(() => _generating = true);
     try {
-      if (_outputFormat != 'CSV' && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'PDF/Excel export isn\'t available yet — exporting as CSV instead.',
-            ),
-          ),
-        );
-      }
-
       switch (_reportType) {
         case 'User activity':
           final snapshot = await FirebaseFirestore.instance
@@ -163,47 +190,53 @@ class _AdminReportsAnalyticsState extends State<AdminReportsAnalytics> {
                 Row(
                   children: [
                     Expanded(
-                      child: StreamBuilder<QuerySnapshot>(
-                        stream: _usersStream,
-                        builder: (context, snap) => AdminAnalyticsCard(
-                          label: 'Total users',
-                          value: snap.hasError
-                              ? '—'
-                              : '${snap.data?.docs.length ?? 0}',
-                          change: snap.hasError
-                              ? 'Failed to load'
-                              : '↑ Growing',
-                          changeColor: snap.hasError
-                              ? Colors.red
-                              : Colors.green,
+                      child: FutureBuilder<int?>(
+                        future: _usersCount,
+                        builder: (context, snap) => FutureBuilder<int?>(
+                          future: _usersThisMonth,
+                          builder: (context, monthSnap) {
+                            final month = monthSnap.data;
+                            return AdminAnalyticsCard(
+                              label: 'Total users',
+                              value: _countText(snap),
+                              change: _countFailed(snap)
+                                  ? 'Failed to load'
+                                  : month == null
+                                  ? null
+                                  : month == 0
+                                  ? 'No new users this month'
+                                  : '↑ +$month this month',
+                              changeColor: _countFailed(snap)
+                                  ? Colors.red
+                                  : month == 0
+                                  ? Colors.grey
+                                  : Colors.green,
+                            );
+                          },
                         ),
                       ),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
-                      child: StreamBuilder<QuerySnapshot>(
-                        stream: _aiScansStream,
+                      child: FutureBuilder<int?>(
+                        future: _aiScansCount,
                         builder: (context, snap) => AdminAnalyticsCard(
                           label: 'Total AI scans',
-                          value: snap.hasError
-                              ? '—'
-                              : '${snap.data?.docs.length ?? 0}',
-                          change: snap.hasError ? 'Failed to load' : null,
-                          changeColor: snap.hasError ? Colors.red : null,
+                          value: _countText(snap),
+                          change: _countFailed(snap) ? 'Failed to load' : null,
+                          changeColor: _countFailed(snap) ? Colors.red : null,
                         ),
                       ),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
-                      child: StreamBuilder<QuerySnapshot>(
-                        stream: _autoReferralsStream,
+                      child: FutureBuilder<int?>(
+                        future: _autoReferralsCount,
                         builder: (context, snap) => AdminAnalyticsCard(
                           label: 'Auto-referrals',
-                          value: snap.hasError
-                              ? '—'
-                              : '${snap.data?.docs.length ?? 0}',
-                          change: snap.hasError ? 'Failed to load' : null,
-                          changeColor: snap.hasError ? Colors.red : null,
+                          value: _countText(snap),
+                          change: _countFailed(snap) ? 'Failed to load' : null,
+                          changeColor: _countFailed(snap) ? Colors.red : null,
                         ),
                       ),
                     ),
@@ -219,6 +252,11 @@ class _AdminReportsAnalyticsState extends State<AdminReportsAnalytics> {
                   ],
                 ),
                 const SizedBox(height: 20),
+                const AdminTrendCard(
+                  title: 'Activity over time',
+                  caption: 'New users, journal entries and AI scans.',
+                ),
+                const SizedBox(height: 20),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -230,6 +268,8 @@ class _AdminReportsAnalyticsState extends State<AdminReportsAnalytics> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 20),
+                const AdminActivityReport(),
               ],
             ),
           ),
@@ -353,20 +393,10 @@ class _AdminReportsAnalyticsState extends State<AdminReportsAnalytics> {
             ].map((r) => DropdownMenuItem(value: r, child: Text(r))).toList(),
             onChanged: (v) => setState(() => _reportType = v!),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           Text(
-            'Output format',
-            style: theme.textTheme.labelMedium?.copyWith(color: Colors.black),
-          ),
-          const SizedBox(height: 6),
-          DropdownButtonFormField<String>(
-            initialValue: _outputFormat,
-            items: [
-              'CSV',
-              'PDF report',
-              'Excel',
-            ].map((f) => DropdownMenuItem(value: f, child: Text(f))).toList(),
-            onChanged: (v) => setState(() => _outputFormat = v!),
+            'Downloads as a CSV file.',
+            style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey),
           ),
           const SizedBox(height: 16),
           Row(

@@ -117,6 +117,12 @@ class AppNotification {
   }
 }
 
+/// Entry IDs whose check-in was answered from the notification itself (while
+/// the app was closed). That runs in a separate background process that
+/// can't update this in-memory inbox, so it leaves the IDs here and the inbox
+/// clears their pending reminders the next time it loads.
+const String kAnsweredEntriesPrefsKey = 'notif_answered_entries_v1';
+
 /// On-device notification inbox, entirely local (SharedPreferences, JSON-
 /// encoded) — works for guests (no account needed) and offline (no
 /// network involved at all), and is the source the Notifications screen
@@ -126,10 +132,22 @@ class NotificationInboxStore extends ChangeNotifier {
   NotificationInboxStore._();
   static final NotificationInboxStore instance = NotificationInboxStore._();
 
-  static const String _prefsKey = 'notification_inbox_v1';
+  // Stored per account (the key carries the user ID) so one person's
+  // notifications can never show up for another user of the same device. The
+  // older single shared key ('notification_inbox_v1') is no longer read.
+  static const String _prefsKeyBase = 'notification_inbox_v2_';
+  static const String _dismissedPrefsKeyBase =
+      'notification_inbox_dismissed_v2_';
   static const int _maxItems = 100;
   static const Duration _autoClearReadAfter = Duration(days: 30);
-  static const String _dismissedPrefsKey = 'notification_inbox_dismissed_v1';
+
+  // The signed-in account this inbox belongs to; null (guest / signed out)
+  // means an always-empty inbox that ignores additions.
+  String? _uid;
+  String? get boundUserId => _uid;
+  String? get _prefsKey => _uid == null ? null : '$_prefsKeyBase$_uid';
+  String? get _dismissedPrefsKey =>
+      _uid == null ? null : '$_dismissedPrefsKeyBase$_uid';
 
   List<AppNotification> _items = [];
   Set<String> _dismissedIds = {};
@@ -143,11 +161,55 @@ class NotificationInboxStore extends ChangeNotifier {
 
   int get unreadCount => visibleItems.where((n) => !n.isRead).length;
 
-  Future<void> _ensureLoaded() async {
-    if (_loaded) return;
+  /// Points the inbox at [uid]'s notifications (or at nothing for a guest /
+  /// signed-out device). The previous account's items are dropped from
+  /// memory at once, so they can't flash on screen for the next user.
+  Future<void> bindToUser(String? uid) async {
+    if (_loaded && _uid == uid) return;
+    _uid = uid;
+    _items = [];
+    _dismissedIds = {};
+    _loaded = false;
+    notifyListeners();
+    await _ensureLoaded();
+    await applyAnswered();
+    notifyListeners();
+  }
+
+  /// Drops the pending reminders of entries that were answered from the
+  /// notification itself (see [kAnsweredEntriesPrefsKey]).
+  Future<void> applyAnswered() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getStringList(_prefsKey) ?? const [];
+      await prefs.reload();
+      final ids = prefs.getStringList(kAnsweredEntriesPrefsKey) ?? const [];
+      if (ids.isEmpty) return;
+      await prefs.remove(kAnsweredEntriesPrefsKey);
+      if (_uid == null) return;
+      await _ensureLoaded();
+      final before = _items.length;
+      _items.removeWhere((n) => ids.contains(n.entryId) && !n.isVisible);
+      if (_items.length != before) {
+        await _persist();
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('NotificationInboxStore applyAnswered error: $e');
+    }
+  }
+
+  Future<void> _ensureLoaded() async {
+    if (_loaded) return;
+    final key = _prefsKey;
+    if (key == null) {
+      _items = [];
+      _dismissedIds = {};
+      _loaded = true;
+      return;
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getStringList(key) ?? const [];
       _items = raw
           .map((s) {
             try {
@@ -160,7 +222,7 @@ class NotificationInboxStore extends ChangeNotifier {
           })
           .whereType<AppNotification>()
           .toList();
-      _dismissedIds = (prefs.getStringList(_dismissedPrefsKey) ?? const [])
+      _dismissedIds = (prefs.getStringList(_dismissedPrefsKey!) ?? const [])
           .toSet();
     } catch (e) {
       debugPrint('NotificationInboxStore load error: $e');
@@ -172,10 +234,12 @@ class NotificationInboxStore extends ChangeNotifier {
   }
 
   Future<void> _persist() async {
+    final key = _prefsKey;
+    if (key == null) return;
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setStringList(
-        _prefsKey,
+        key,
         _items.map((n) => jsonEncode(n.toJson())).toList(),
       );
     } catch (e) {
@@ -185,10 +249,12 @@ class NotificationInboxStore extends ChangeNotifier {
 
   Future<void> load() async {
     await _ensureLoaded();
+    await applyAnswered();
     notifyListeners();
   }
 
   Future<void> add(AppNotification notification) async {
+    if (_uid == null) return; // guests / signed out: nothing is kept
     await _ensureLoaded();
     _items.removeWhere((n) => n.id == notification.id);
     _items.add(notification);
@@ -247,9 +313,11 @@ class NotificationInboxStore extends ChangeNotifier {
   }
 
   Future<void> _persistDismissed() async {
+    final key = _dismissedPrefsKey;
+    if (key == null) return;
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setStringList(_dismissedPrefsKey, _dismissedIds.toList());
+      await prefs.setStringList(key, _dismissedIds.toList());
     } catch (e) {
       debugPrint('NotificationInboxStore persistDismissed error: $e');
     }
@@ -264,6 +332,7 @@ class NotificationInboxStore extends ChangeNotifier {
   /// (avoids a stale remote snapshot flipping something back to unread),
   /// and never re-adds an item the user explicitly deleted locally.
   Future<void> upsertFromRemote(AppNotification remote) async {
+    if (_uid == null) return;
     await _ensureLoaded();
     if (_dismissedIds.contains(remote.id)) return;
 

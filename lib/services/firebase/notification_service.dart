@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show DartPluginRegistrant;
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -10,30 +12,75 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 import '../../core/navigation/app_navigator.dart';
-import '../../core/display_formatters.dart';
-import '../healing_reminder_settings.dart';
+import '../../data/healing_durations.dart';
+import '../../firebase_options.dart';
+import '../../i18n/notification_strings.dart';
 import '../notification_inbox_store.dart';
 import '../../features/journal/screens/entry_detail_screen.dart';
+import '../../features/journal/screens/journal_list_screen.dart';
 
 const String _healingCheckInPayloadPrefix = 'healing_checkin:';
 const String _lastSeenAnnouncementPrefsKey = 'last_seen_system_announcement_ms';
 const String _askedNotificationPermissionPrefsKey =
     'asked_notification_permission';
+// The account the device's scheduled notifications currently belong to.
+const String _activeUidPrefsKey = 'notif_active_uid';
+// Set once the one-time cleanup of reminders scheduled by older app versions
+// (which weren't tied to an account) has run.
+const String _accountScopedPrefsKey = 'notif_account_scoped_v1';
 
-const String healingMilestoneTitle = 'Healing Milestone Reminder';
-const String healingMilestoneDefaultBody =
-    'You have reached your healing time frame. Are you feeling better?';
+/// The three quick-action buttons on the check-in notification.
+const String kActionFeelingBetter = 'feeling_better';
+const String kActionNotYet = 'not_yet';
+const String kActionWorse = 'getting_worse';
 
-/// The exact required notification body — the default sentence, or with
-/// the wound type folded in when available. [woundTypeLabel] must already
-/// be a display-ready label (see core/display_formatters.dart), never a
-/// raw code.
-String healingMilestoneBody(String? woundTypeLabel) {
-  if (woundTypeLabel == null || woundTypeLabel.trim().isEmpty) {
-    return healingMilestoneDefaultBody;
+/// A check-in notification's payload: which account it belongs to and which
+/// journal entry it is about — `healing_checkin:<uid>:<entryId>`.
+class HealingPayload {
+  final String uid;
+  final String entryId;
+  const HealingPayload(this.uid, this.entryId);
+}
+
+String buildHealingPayload(String uid, String entryId) =>
+    '$_healingCheckInPayloadPrefix$uid:$entryId';
+
+/// Reads a check-in payload. Returns null for anything else — including the
+/// older `healing_checkin:<entryId>` format that had no account in it, which
+/// can't be tied to a user and is therefore ignored.
+HealingPayload? parseHealingPayload(String? payload) {
+  if (payload == null || !payload.startsWith(_healingCheckInPayloadPrefix)) {
+    return null;
   }
-  return 'Your $woundTypeLabel has reached its healing time frame. Are '
-      'you feeling better?';
+  final rest = payload.substring(_healingCheckInPayloadPrefix.length);
+  final split = rest.indexOf(':');
+  if (split <= 0 || split == rest.length - 1) return null;
+  return HealingPayload(rest.substring(0, split), rest.substring(split + 1));
+}
+
+/// Runs when a notification action button that doesn't open the app (Yes /
+/// No) is tapped — possibly while the app is closed, in its own background
+/// process, so it has to start Firebase itself.
+@pragma('vm:entry-point')
+void notificationTapBackground(NotificationResponse response) {
+  unawaited(_handleBackgroundResponse(response));
+}
+
+Future<void> _handleBackgroundResponse(NotificationResponse response) async {
+  try {
+    DartPluginRegistrant.ensureInitialized();
+    if (Firebase.apps.isEmpty) {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+    }
+    await NotificationService.processNotificationResponse(
+      response,
+      inBackground: true,
+    );
+  } catch (e) {
+    debugPrint('Background notification response failed: $e');
+  }
 }
 
 class NotificationService {
@@ -47,30 +94,22 @@ class NotificationService {
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
   _announcementSubscription;
 
+  static const AndroidInitializationSettings _androidInit =
+      AndroidInitializationSettings('@mipmap/ic_launcher');
+  static const InitializationSettings _initSettings = InitializationSettings(
+    android: _androidInit,
+  );
+
   Future<void> initialize() async {
     await _messaging.requestPermission(alert: true, badge: true, sound: true);
-    // Lets a deployed sendSystemNotificationPush Cloud Function reach every
-    // install via FCM without needing a per-device token registry — the
-    // function just sends to this topic. Harmless to call even while that
-    // function isn't deployed yet. Timed out and swallowed so a slow or
-    // absent connection at first launch can never block app startup on
-    // this alone (see main() for the outer safety net too).
-    try {
-      await _messaging
-          .subscribeToTopic('all_users')
-          .timeout(const Duration(seconds: 5));
-    } catch (e) {
-      debugPrint('NotificationService: subscribeToTopic failed/timed out: $e');
-    }
+    // The "all_users" announcement topic is joined only while someone is
+    // signed in (see handleAuthChange) — a guest gets no announcements.
     tz_data.initializeTimeZones();
 
-    const androidSettings = AndroidInitializationSettings(
-      '@mipmap/ic_launcher',
-    );
-    const initSettings = InitializationSettings(android: androidSettings);
     await _localNotifications.initialize(
-      settings: initSettings,
+      settings: _initSettings,
       onDidReceiveNotificationResponse: _onNotificationResponse,
+      onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
     );
 
     const channel = AndroidNotificationChannel(
@@ -94,8 +133,8 @@ class NotificationService {
     // instead.
 
     // Deliver a response for the notification that launched the app (the
-    // user tapped an action while the app was fully closed) once the
-    // handler above is wired up, instead of it being silently dropped.
+    // user tapped it while the app was fully closed) once the handler above
+    // is wired up, instead of it being silently dropped.
     // Deliberately not awaited: this call itself waits for the navigator
     // to attach, which only happens once runApp() below has run — awaiting
     // it here would deadlock main() against its own prerequisite.
@@ -108,6 +147,8 @@ class NotificationService {
     }
 
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      // Announcements are for signed-in users only.
+      if (FirebaseAuth.instance.currentUser == null) return;
       _showLocalNotification(message);
     });
   }
@@ -133,6 +174,103 @@ class NotificationService {
   //It would be stored once we upgrade Blaze plan
   Future<String?> getToken() async {
     return await _messaging.getToken();
+  }
+
+  // Account isolation
+
+  Future<void> _authChain = Future.value();
+
+  /// Call whenever the signed-in account changes (including at startup).
+  /// Notifications belong to the account that created them, so when the
+  /// account changes — sign out, or a different user signs in — every
+  /// scheduled and displayed notification of the previous account is
+  /// cancelled and the inbox is switched to the new account's own. A guest
+  /// (user == null) has no notifications at all. On sign-in, only that
+  /// account's own reminders are scheduled again, from its journal.
+  Future<void> handleAuthChange(User? user) {
+    _authChain = _authChain
+        .then((_) => _applyAuthChange(user))
+        .catchError((Object e) => debugPrint('handleAuthChange failed: $e'));
+    return _authChain;
+  }
+
+  Future<void> _applyAuthChange(User? user) async {
+    final prefs = await SharedPreferences.getInstance();
+    final previous = prefs.getString(_activeUidPrefsKey);
+    final current = user?.uid;
+    final firstRunOfThisVersion =
+        !(prefs.getBool(_accountScopedPrefsKey) ?? false);
+
+    if (previous != current || firstRunOfThisVersion) {
+      // Also covers reminders scheduled by older versions, which carried no
+      // account — they are cancelled once; the signed-in user's own are
+      // re-created below from their journal.
+      await _localNotifications.cancelAll();
+    }
+    await NotificationInboxStore.instance.bindToUser(current);
+
+    // Admin announcements (FCM topic) are for signed-in users only.
+    try {
+      if (current != null) {
+        await _messaging
+            .subscribeToTopic('all_users')
+            .timeout(const Duration(seconds: 5));
+      } else if (previous != null || firstRunOfThisVersion) {
+        await _messaging
+            .unsubscribeFromTopic('all_users')
+            .timeout(const Duration(seconds: 5));
+      }
+    } catch (e) {
+      debugPrint('NotificationService: topic change failed/timed out: $e');
+    }
+
+    if (current == null) {
+      await prefs.remove(_activeUidPrefsKey);
+    } else {
+      await prefs.setString(_activeUidPrefsKey, current);
+    }
+    await prefs.setBool(_accountScopedPrefsKey, true);
+
+    if (current != null && (previous != current || firstRunOfThisVersion)) {
+      unawaited(resyncRemindersForUser(current));
+    }
+  }
+
+  /// Re-creates the check-in reminders of [uid]'s own journal entries that
+  /// asked for one ("Remind me") and haven't been answered. An entry whose
+  /// time has already passed gets its check-in at the next 9am.
+  Future<void> resyncRemindersForUser(String uid) async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('journalEntries')
+          .where('remindMe', isEqualTo: true)
+          .get()
+          .timeout(const Duration(seconds: 20));
+      for (final doc in snapshot.docs) {
+        // The account changed again while this was running — stop.
+        if (FirebaseAuth.instance.currentUser?.uid != uid) return;
+        final data = doc.data();
+        if (data['milestoneResponded'] == true) continue;
+        final classification = data['classification'] as String?;
+        final days = classification == null
+            ? null
+            : healingDurationDays[classification];
+        if (classification == null || days == null) continue;
+        final createdAt = (data['createdAt'] as Timestamp?)?.toDate();
+        await _scheduleCheckInSeries(
+          uid: uid,
+          entryId: doc.id,
+          classification: classification,
+          healingDays: days,
+          from: createdAt ?? DateTime.now(),
+          nextMorningIfOverdue: true,
+        );
+      }
+    } catch (e) {
+      debugPrint('resyncRemindersForUser failed: $e');
+    }
   }
 
   // Pops a local notification while the app is open whenever the admin
@@ -197,51 +335,91 @@ class NotificationService {
     _announcementSubscription = null;
   }
 
+  // Scheduling
+
   // Schedules a local, on-device reminder for the moment a journal entry's
   // typical healing timeframe elapses. This is entirely local (no network
   // call), so it fires and can be responded to even while offline; the
-  // resulting Firestore write in _onNotificationResponse queues via the
-  // app's existing offline persistence and syncs once connectivity returns.
+  // resulting Firestore write when the user answers queues via the app's
+  // existing offline persistence and syncs once connectivity returns.
   int _endReminderId(String entryId) => entryId.hashCode & 0x7fffffff;
   int _halfwayReminderId(String entryId) =>
       (entryId.hashCode ^ 0x5A5A5A5A) & 0x7fffffff;
+  int _resultReminderId(String entryId) =>
+      (entryId.hashCode ^ 0x3C3C3C3C) & 0x7fffffff;
 
   DateTime _atNineAm(DateTime date) =>
       DateTime(date.year, date.month, date.day, 9);
 
-  /// Schedules the required end-of-timeframe healing reminder, plus an
-  /// optional halfway-point nudge when there's a meaningful gap before it.
-  /// [classification] must already be a display-ready label (eg "Burn" —
-  /// assessment.category / First Aid Kit's category.title both already
-  /// are), never a raw code. No-ops entirely if the user has turned
-  /// healing reminders off in Settings.
+  DateTime _nextNineAm() {
+    final now = DateTime.now();
+    final today = _atNineAm(now);
+    return today.isAfter(now) ? today : today.add(const Duration(days: 1));
+  }
+
+  /// Schedules the end-of-timeframe check-in for the signed-in user's entry,
+  /// plus a halfway-point nudge when there's a meaningful gap before it.
+  /// Does nothing for a guest — guests get no notifications. The caller
+  /// decides whether the user asked for it ("Remind me").
   Future<void> scheduleHealingCheckIn({
     required String entryId,
     required String classification,
     required int healingDays,
   }) async {
-    if (!await HealingReminderSettings.instance.isEnabled()) return;
-
-    final now = DateTime.now();
-    final endDate = _atNineAm(now.add(Duration(days: healingDays)));
-    await _scheduleOneHealingReminder(
-      id: _endReminderId(entryId),
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    await _scheduleCheckInSeries(
+      uid: user.uid,
       entryId: entryId,
       classification: classification,
-      scheduledDate: endDate,
-      isHalfway: false,
+      healingDays: healingDays,
+      from: DateTime.now(),
     );
+  }
+
+  Future<void> _scheduleCheckInSeries({
+    required String uid,
+    required String entryId,
+    required String classification,
+    required int healingDays,
+    required DateTime from,
+    bool nextMorningIfOverdue = false,
+  }) async {
+    final now = DateTime.now();
+    final endDate = _atNineAm(from.add(Duration(days: healingDays)));
+    if (endDate.isAfter(now)) {
+      await _scheduleOneHealingReminder(
+        id: _endReminderId(entryId),
+        uid: uid,
+        entryId: entryId,
+        classification: classification,
+        scheduledDate: endDate,
+        isHalfway: false,
+      );
+    } else if (nextMorningIfOverdue) {
+      await _scheduleOneHealingReminder(
+        id: _endReminderId(entryId),
+        uid: uid,
+        entryId: entryId,
+        classification: classification,
+        scheduledDate: _nextNineAm(),
+        isHalfway: false,
+      );
+    }
 
     final halfwayDays = healingDays ~/ 2;
     if (halfwayDays >= 1 && halfwayDays < healingDays) {
-      final halfwayDate = _atNineAm(now.add(Duration(days: halfwayDays)));
-      await _scheduleOneHealingReminder(
-        id: _halfwayReminderId(entryId),
-        entryId: entryId,
-        classification: classification,
-        scheduledDate: halfwayDate,
-        isHalfway: true,
-      );
+      final halfwayDate = _atNineAm(from.add(Duration(days: halfwayDays)));
+      if (halfwayDate.isAfter(now)) {
+        await _scheduleOneHealingReminder(
+          id: _halfwayReminderId(entryId),
+          uid: uid,
+          entryId: entryId,
+          classification: classification,
+          scheduledDate: halfwayDate,
+          isHalfway: true,
+        );
+      }
     }
   }
 
@@ -263,14 +441,19 @@ class NotificationService {
 
   Future<void> _scheduleOneHealingReminder({
     required int id,
+    required String uid,
     required String entryId,
     required String classification,
     required DateTime scheduledDate,
     required bool isHalfway,
   }) async {
     final tzDate = tz.TZDateTime.from(scheduledDate, tz.UTC);
+    final text = await NotificationStrings.load();
 
-    const androidDetails = AndroidNotificationDetails(
+    // Three quick answers, tapped straight from the notification. They don't
+    // open the app (showsUserInterface: false) — the answer is saved in the
+    // background.
+    final androidDetails = AndroidNotificationDetails(
       'fine_aid_reminders',
       'Fine Aid Reminders',
       channelDescription: 'Healing milestone and journal reminders',
@@ -278,23 +461,26 @@ class NotificationService {
       priority: Priority.high,
       actions: [
         AndroidNotificationAction(
-          'feeling_better',
-          'Feeling Better',
-          showsUserInterface: true,
+          kActionFeelingBetter,
+          text.actionBetter,
+          showsUserInterface: false,
+          cancelNotification: true,
         ),
         AndroidNotificationAction(
-          'not_yet',
-          'Not Yet',
-          showsUserInterface: true,
+          kActionNotYet,
+          text.actionNotYet,
+          showsUserInterface: false,
+          cancelNotification: true,
         ),
         AndroidNotificationAction(
-          'getting_worse',
-          'It\'s Worse',
-          showsUserInterface: true,
+          kActionWorse,
+          text.actionWorse,
+          showsUserInterface: false,
+          cancelNotification: true,
         ),
       ],
     );
-    const details = NotificationDetails(android: androidDetails);
+    final details = NotificationDetails(android: androidDetails);
 
     // Use exact scheduling when the OS already permits it — inexact
     // delivery can drift by a long margin (sometimes hours) under Doze/
@@ -309,24 +495,18 @@ class NotificationService {
     final canScheduleExact =
         await androidImplementation?.canScheduleExactNotifications() ?? false;
 
-    final title = isHalfway
-        ? 'Healing Progress Check-In'
-        : healingMilestoneTitle;
-    final body = isHalfway
-        ? 'You\'re halfway through your $classification healing time '
-              'frame — how is it going?'
-        : healingMilestoneBody(classification);
-
+    // Neutral wording on purpose: a check-in question only, never a claim
+    // about the wound.
     await _localNotifications.zonedSchedule(
       id: id,
-      title: title,
-      body: body,
+      title: text.checkInTitle,
+      body: text.checkInBody,
       scheduledDate: tzDate,
       notificationDetails: details,
       androidScheduleMode: canScheduleExact
           ? AndroidScheduleMode.exactAllowWhileIdle
           : AndroidScheduleMode.inexactAllowWhileIdle,
-      payload: '$_healingCheckInPayloadPrefix$entryId',
+      payload: buildHealingPayload(uid, entryId),
     );
 
     // Logged the moment it's SCHEDULED, not delivered — flutter_local_
@@ -340,8 +520,8 @@ class NotificationService {
       AppNotification(
         id: 'healing_${entryId}_${isHalfway ? 'halfway' : 'end'}',
         type: AppNotificationType.healingMilestone,
-        title: title,
-        body: body,
+        title: text.checkInTitle,
+        body: text.checkInBody,
         createdAt: DateTime.now(),
         scheduledFor: scheduledDate,
         entryId: entryId,
@@ -350,56 +530,24 @@ class NotificationService {
     );
   }
 
+  /// Cancels the entry's scheduled check-ins (and drops their not-yet-due
+  /// inbox rows).
   Future<void> cancelHealingCheckIn(String entryId) async {
-    await _localNotifications.cancel(id: _endReminderId(entryId));
-    await _localNotifications.cancel(id: _halfwayReminderId(entryId));
+    await _cancelScheduled(entryId);
     await NotificationInboxStore.instance.removePendingForEntry(entryId);
   }
 
-  /// "Not yet" from either the push notification's action button or the
-  /// in-app check-in dialog — the entry stays active (no milestoneResponded
-  /// write) and gets one more nudge tomorrow at 9am.
-  Future<void> remindHealingCheckInTomorrow({
-    required String entryId,
-    required String classification,
-  }) => _scheduleNextDayReminder(entryId, classification);
-
-  Future<void> _scheduleNextDayReminder(
-    String entryId,
-    String classification,
-  ) async {
-    final date = _atNineAm(DateTime.now().add(const Duration(days: 1)));
-    await _scheduleOneHealingReminder(
-      id: _endReminderId(entryId),
-      entryId: entryId,
-      classification: classification,
-      scheduledDate: date,
-      isHalfway: false,
-    );
+  Future<void> _cancelScheduled(String entryId) async {
+    await _localNotifications.cancel(id: _endReminderId(entryId));
+    await _localNotifications.cancel(id: _halfwayReminderId(entryId));
   }
 
-  static Future<String> _classificationFor(String uid, String entryId) async {
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('journalEntries')
-          .doc(entryId)
-          .get()
-          .timeout(const Duration(seconds: 10));
-      final raw = doc.data()?['classification'] as String?;
-      return (raw == null || raw.isEmpty) ? woundTypeDisplayLabel('none') : raw;
-    } catch (_) {
-      return 'this issue';
-    }
-  }
+  // Answers and taps
 
-  /// Public entry point for recording a "Yes"/"It's getting worse"
-  /// check-in answer from anywhere in the app (the journal entry screen's
-  /// own dialog, or the Notifications inbox's detail view) — always
-  /// cancels the entry's remaining scheduled reminders too, since both
-  /// answers mean no more nudges are needed. No-ops silently if the user
-  /// isn't signed in (a guest can't have a saved entry to respond about).
+  /// Public entry point for recording a "Yes" / "No" check-in answer from
+  /// inside the app (the journal entry's own dialog, or the Notifications
+  /// inbox's detail view). Both answers stop the entry's remaining
+  /// reminders. No-ops silently if the user isn't signed in.
   Future<void> recordHealingMilestoneResponse({
     required String entryId,
     required bool feelingBetter,
@@ -439,152 +587,288 @@ class NotificationService {
   }
 
   @pragma('vm:entry-point')
-  static Future<void> _onNotificationResponse(
-    NotificationResponse response,
-  ) async {
-    final payload = response.payload;
-    if (payload == null || !payload.startsWith(_healingCheckInPayloadPrefix)) {
-      return;
-    }
-    final entryId = payload.substring(_healingCheckInPayloadPrefix.length);
+  static Future<void> _onNotificationResponse(NotificationResponse response) =>
+      processNotificationResponse(response, inBackground: false);
+
+  /// Handles a tap on a check-in notification or one of its buttons.
+  ///
+  /// - **Feeling Better / Not Yet / It's Worse button:** saved to the
+  ///   notification's own account only (ignored if a different account is
+  ///   signed in now). "Not Yet" nudges again tomorrow; the other two stop
+  ///   further reminders, and "It's Worse" also shows a recommendation to
+  ///   get checked by a professional.
+  /// - **Tap on the notification:** opens that journal entry, or the journal
+  ///   list with a short message if the entry no longer exists / isn't this
+  ///   account's.
+  static Future<void> processNotificationResponse(
+    NotificationResponse response, {
+    required bool inBackground,
+  }) async {
+    final payload = parseHealingPayload(response.payload);
+    if (payload == null) return;
     final actionId = response.actionId;
+    final user = await _currentUserWhenReady();
 
-    const validActions = {'feeling_better', 'not_yet', 'getting_worse'};
-    if (actionId == null || !validActions.contains(actionId)) {
-      // A plain tap on the notification body (no action button) has no
-      // check-in answer to record — just take the user to the entry so
-      // they can respond in-app instead.
-      await _navigateToJournalEntry(entryId);
+    if (actionId == kActionFeelingBetter ||
+        actionId == kActionNotYet ||
+        actionId == kActionWorse) {
+      if (user == null || user.uid != payload.uid) return;
+      await NotificationService()._answerCheckIn(
+        uid: user.uid,
+        entryId: payload.entryId,
+        action: actionId!,
+        inBackground: inBackground,
+      );
       return;
     }
 
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    // This just relays the user's own answer back to them — never a
-    // clinical judgment about whether the wound is actually improving or
-    // worsening, since this check-in is a preliminary prompt, not a
-    // diagnosis. "It's Worse" is the one case that explicitly recommends
-    // professional care, per the required wording.
-    String resultBody;
-    switch (actionId) {
-      case 'feeling_better':
-        await _updateMilestoneResponse(
-          user.uid,
-          entryId,
-          responded: true,
-          feelingBetter: true,
-        );
-        await NotificationService().cancelHealingCheckIn(entryId);
-        resultBody = 'You told us you\'re feeling better. Glad to hear it!';
-        break;
-      case 'getting_worse':
-        await _updateMilestoneResponse(
-          user.uid,
-          entryId,
-          responded: true,
-          feelingBetter: false,
-        );
-        await NotificationService().cancelHealingCheckIn(entryId);
-        resultBody = 'We recommend seeking professional consultation.';
-        break;
-      case 'not_yet':
-      default:
-        final classification = await _classificationFor(user.uid, entryId);
-        await NotificationService()._scheduleNextDayReminder(
-          entryId,
-          classification,
-        );
-        resultBody = 'No problem — we\'ll check in again tomorrow.';
-        break;
-    }
-
-    await NotificationService()._logNotification(
-      title: healingMilestoneTitle,
-      body: resultBody,
-      entryId: entryId,
-      type: AppNotificationType.healingMilestone,
-    );
-
-    await _navigateToJournalEntry(entryId);
+    // A plain tap: take the user to the entry (needs the app's UI).
+    if (inBackground) return;
+    await _openEntryFromTap(payload, user);
   }
 
-  /// Opens the specific journal entry a notification (or its action) was
-  /// about, fetching the entry's current data first since EntryDetailScreen
-  /// needs it up front. Best-effort: if the navigator isn't attached yet
-  /// (eg this ran before the widget tree finished its first build) or the
-  /// entry can't be read, this silently does nothing rather than crash —
-  /// the entry is still reachable normally from the Health Journal list.
-  static Future<void> _navigateToJournalEntry(String entryId) async {
+  Future<void> _answerCheckIn({
+    required String uid,
+    required String entryId,
+    required String action,
+    required bool inBackground,
+  }) async {
+    if (inBackground) {
+      // A separate background process: set up the plugin and timezones here.
+      await _localNotifications.initialize(settings: _initSettings);
+      tz_data.initializeTimeZones();
+    }
+
+    // "Not yet": the entry stays active (nothing is saved) and gets one more
+    // check-in tomorrow at 9am.
+    if (action == kActionNotYet) {
+      await _scheduleTomorrow(
+        uid: uid,
+        entryId: entryId,
+        classification: await _classificationFor(uid, entryId),
+      );
+      return;
+    }
+
+    final feelingBetter = action == kActionFeelingBetter;
+    await _updateMilestoneResponse(
+      uid,
+      entryId,
+      responded: true,
+      feelingBetter: feelingBetter,
+    );
+
+    if (inBackground) {
+      // Cancel the OS-level reminders directly, and leave a note for the app
+      // to clear the matching inbox rows next time it opens (see
+      // NotificationInboxStore.applyAnswered).
+      await _cancelScheduled(entryId);
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.reload();
+        final ids = prefs.getStringList(kAnsweredEntriesPrefsKey) ?? <String>[];
+        if (!ids.contains(entryId)) ids.add(entryId);
+        await prefs.setStringList(kAnsweredEntriesPrefsKey, ids);
+      } catch (_) {}
+    } else {
+      await cancelHealingCheckIn(entryId);
+    }
+
+    if (feelingBetter) return;
+
+    // "It's Worse": a recommendation (not a diagnosis). Tapping it opens the
+    // entry.
+    final text = await NotificationStrings.load();
+    const androidDetails = AndroidNotificationDetails(
+      'fine_aid_reminders',
+      'Fine Aid Reminders',
+      channelDescription: 'Healing milestone and journal reminders',
+      importance: Importance.high,
+      priority: Priority.high,
+    );
+    await _localNotifications.show(
+      id: _resultReminderId(entryId),
+      title: text.checkInTitle,
+      body: text.seeProfessional,
+      notificationDetails: const NotificationDetails(android: androidDetails),
+      payload: buildHealingPayload(uid, entryId),
+    );
+    await _logNotification(
+      uid: uid,
+      title: text.checkInTitle,
+      body: text.seeProfessional,
+      entryId: entryId,
+      type: AppNotificationType.healingMilestone,
+      toLocalInbox: !inBackground,
+    );
+  }
+
+  Future<void> _scheduleTomorrow({
+    required String uid,
+    required String entryId,
+    required String classification,
+  }) {
+    final date = _atNineAm(DateTime.now().add(const Duration(days: 1)));
+    return _scheduleOneHealingReminder(
+      id: _endReminderId(entryId),
+      uid: uid,
+      entryId: entryId,
+      classification: classification,
+      scheduledDate: date,
+      isHalfway: false,
+    );
+  }
+
+  /// "Not yet" from the in-app check-in or the Notifications inbox: the entry
+  /// stays active (no response is saved) and gets one more nudge tomorrow at
+  /// 9am. No-ops for a guest.
+  Future<void> remindHealingCheckInTomorrow({
+    required String entryId,
+    required String classification,
+  }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
+    await _scheduleTomorrow(
+      uid: user.uid,
+      entryId: entryId,
+      classification: classification,
+    );
+  }
 
+  static Future<String> _classificationFor(String uid, String entryId) async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('journalEntries')
+          .doc(entryId)
+          .get()
+          .timeout(const Duration(seconds: 10));
+      final raw = doc.data()?['classification'] as String?;
+      return (raw == null || raw.isEmpty) ? 'this issue' : raw;
+    } catch (_) {
+      return 'this issue';
+    }
+  }
+
+  /// The signed-in user, waiting briefly for Firebase to restore the
+  /// session when the app has only just started (eg launched by a tap).
+  static Future<User?> _currentUserWhenReady() async {
+    final current = FirebaseAuth.instance.currentUser;
+    if (current != null) return current;
+    try {
+      return await FirebaseAuth.instance.authStateChanges().first.timeout(
+        const Duration(seconds: 5),
+      );
+    } catch (_) {
+      return FirebaseAuth.instance.currentUser;
+    }
+  }
+
+  static Future<NavigatorState?> _waitForNavigator() async {
+    // A cold start (app was fully closed, this tap is what launched it)
+    // runs this before runApp() has built the widget tree, so the navigator
+    // isn't attached yet — briefly poll for it rather than giving up
+    // immediately, since this only runs once at startup.
+    NavigatorState? state = navigatorKey.currentState;
+    var attempts = 0;
+    while (state == null && attempts < 25) {
+      await Future.delayed(const Duration(milliseconds: 200));
+      state = navigatorKey.currentState;
+      attempts++;
+    }
+    return state;
+  }
+
+  /// Opens the specific journal entry a notification was about, fetching
+  /// its current data first since EntryDetailScreen needs it up front. If
+  /// the entry is gone, or the notification belongs to another account,
+  /// opens the journal list with a short message instead. Best-effort: if
+  /// nothing can be shown it does nothing rather than crash.
+  static Future<void> _openEntryFromTap(
+    HealingPayload payload,
+    User? user,
+  ) async {
+    if (user == null) return; // signed out: nothing of this account to show
+    final text = await NotificationStrings.load();
+
+    if (user.uid != payload.uid) {
+      await _openJournalListWithMessage(text.entryUnavailable);
+      return;
+    }
     try {
       final doc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
           .collection('journalEntries')
-          .doc(entryId)
+          .doc(payload.entryId)
           .get()
           .timeout(const Duration(seconds: 10));
-      if (!doc.exists) return;
-
-      // A cold start (app was fully closed, this tap is what launched it)
-      // runs this before runApp() has built the widget tree, so the
-      // navigator isn't attached yet — briefly poll for it rather than
-      // giving up immediately, since this only runs once at startup.
-      NavigatorState? state = navigatorKey.currentState;
-      var attempts = 0;
-      while (state == null && attempts < 20) {
-        await Future.delayed(const Duration(milliseconds: 200));
-        state = navigatorKey.currentState;
-        attempts++;
+      if (!doc.exists) {
+        await _openJournalListWithMessage(text.entryUnavailable);
+        return;
       }
+      final state = await _waitForNavigator();
       if (state == null) return;
-
       state.push(
         MaterialPageRoute(
           builder: (context) =>
-              EntryDetailScreen(entryId: entryId, data: doc.data()!),
+              EntryDetailScreen(entryId: payload.entryId, data: doc.data()!),
         ),
       );
     } catch (_) {
-      // Nothing else to do — see doc comment above.
+      await _openJournalListWithMessage(text.entryUnavailable);
     }
   }
 
-  /// Logs a just-delivered notification to the local inbox (always, so it
-  /// works offline and for guests) and, when signed in, to Firestore too
-  /// (so a logged-in user's read state can sync across devices — see
-  /// NotificationsScreen). [type] defaults to reminder for callers that
-  /// don't set it explicitly.
+  static Future<void> _openJournalListWithMessage(String message) async {
+    final state = await _waitForNavigator();
+    if (state == null) return;
+    state.push(
+      MaterialPageRoute(builder: (context) => const JournalListScreen()),
+    );
+    await Future.delayed(const Duration(milliseconds: 400));
+    final context = navigatorKey.currentContext;
+    if (context != null && context.mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    }
+  }
+
+  /// Logs a notification to the signed-in user's Firestore notifications
+  /// (so read state can sync across their devices — see NotificationsScreen)
+  /// and, when [toLocalInbox] is true, to the on-device inbox too. A guest
+  /// never gets either. [type] defaults to reminder.
   Future<void> _logNotification({
+    required String uid,
     required String title,
     required String body,
     String? entryId,
     AppNotificationType type = AppNotificationType.reminder,
     String? woundTypeLabel,
+    bool toLocalInbox = true,
   }) async {
-    final id =
-        '${type.name}_${entryId ?? DateTime.now().microsecondsSinceEpoch}';
-    await NotificationInboxStore.instance.add(
-      AppNotification(
-        id: id,
-        type: type,
-        title: title,
-        body: body,
-        createdAt: DateTime.now(),
-        entryId: entryId,
-        woundTypeLabel: woundTypeLabel,
-      ),
-    );
+    if (toLocalInbox) {
+      final id =
+          '${type.name}_${entryId ?? DateTime.now().microsecondsSinceEpoch}';
+      await NotificationInboxStore.instance.add(
+        AppNotification(
+          id: id,
+          type: type,
+          title: title,
+          body: body,
+          createdAt: DateTime.now(),
+          entryId: entryId,
+          woundTypeLabel: woundTypeLabel,
+        ),
+      );
+    }
 
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
     try {
       await FirebaseFirestore.instance
           .collection('users')
-          .doc(user.uid)
+          .doc(uid)
           .collection('notifications')
           .add({
             'title': title,

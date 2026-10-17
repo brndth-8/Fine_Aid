@@ -1,8 +1,14 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../services/api/gemini_service.dart';
+import '../../../services/firebase/storage_service.dart';
+import '../../../services/image_compressor.dart';
+import '../../camera/screens/ai_camera_screen.dart';
+import '../../../i18n/chat_upload_strings.dart';
 import '../../../services/firebase/first_aid_content_service.dart';
 import '../../../services/voice_input_service.dart';
 import '../../../services/otc_filter_service.dart';
@@ -25,6 +31,9 @@ class _ChatMessage {
   // it can be replayed as a chat bubble. `text` is always the transcript
   // either way.
   final String? audioPath;
+  // Set only for a photo the user attached — its local file path, shown as
+  // an image in the bubble.
+  final String? imagePath;
 
   _ChatMessage({
     required this.text,
@@ -33,6 +42,7 @@ class _ChatMessage {
     this.isUrgent = false,
     this.otcSuggestions = const [],
     this.audioPath,
+    this.imagePath,
   });
 }
 
@@ -58,6 +68,11 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
   final List<_ChatMessage> _messages = [];
   bool _isTyping = false;
   bool _showTagalog = false;
+
+  // A photo the user picked but hasn't sent yet (preview + remove), and
+  // whether it's being uploaded to Firebase Storage right now.
+  XFile? _attachment;
+  bool _isUploading = false;
 
   final VoiceInputService _voiceInput = VoiceInputService();
   bool _isRecording = false;
@@ -103,9 +118,104 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
 
   Future<void> _handleSend() async {
     final text = _inputController.text.trim();
-    if (text.isEmpty) return;
+    final attachment = _attachment;
+    if (text.isEmpty && attachment == null) return;
+
+    if (attachment != null) {
+      final uploaded = await _uploadAttachment(attachment);
+      // On failure keep the photo and the typed text so they can retry.
+      if (!uploaded) return;
+    }
     _inputController.clear();
-    await _sendMessage(text);
+    if (text.isNotEmpty) await _sendMessage(text);
+  }
+
+  /// Lets the user attach an image: take one with the in-app camera or pick
+  /// one from the gallery. Images only. Needs an account, since the photo
+  /// is saved to the user's own Firebase Storage folder.
+  Future<void> _pickAttachment() async {
+    final s = ChatUploadStrings.of(context);
+    if (FirebaseAuth.instance.currentUser == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(s.loginRequired)));
+      return;
+    }
+
+    final source = await showModalBottomSheet<String>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: Text(s.takePhoto),
+              onTap: () => Navigator.pop(sheetContext, 'camera'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: Text(s.chooseFromGallery),
+              onTap: () => Navigator.pop(sheetContext, 'gallery'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null || !mounted) return;
+
+    String? path;
+    if (source == 'camera') {
+      path = await Navigator.push<String>(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const AiCameraScreen(captureOnly: true),
+        ),
+      );
+    } else {
+      final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+      if (picked != null) path = await compressImageFile(picked.path);
+    }
+    if (path != null && mounted) setState(() => _attachment = XFile(path!));
+  }
+
+  /// Uploads the attached photo to Firebase Storage (the user's own journal
+  /// image folder) and shows it in the chat. Returns false if it fails.
+  Future<bool> _uploadAttachment(XFile attachment) async {
+    final s = ChatUploadStrings.of(context);
+    setState(() => _isUploading = true);
+    try {
+      await StorageService()
+          .uploadJournalImage(
+            attachment.path,
+            'help_${widget.journalEntryId ?? 'general'}',
+          )
+          .timeout(const Duration(seconds: 60));
+      if (!mounted) return false;
+      final hasText = _inputController.text.trim().isNotEmpty;
+      setState(() {
+        _messages.add(
+          _ChatMessage(text: '', isUser: true, imagePath: attachment.path),
+        );
+        // With a typed question the AI's answer follows; a photo on its own
+        // just gets a confirmation that it was saved.
+        if (!hasText) {
+          _messages.add(_ChatMessage(text: s.savedMessage, isUser: false));
+        }
+        _attachment = null;
+      });
+      _scrollToBottom();
+      return true;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(s.uploadFailed)));
+      }
+      return false;
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
+    }
   }
 
   String _formatElapsed(Duration d) {
@@ -524,7 +634,10 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     }
 
     final hasText = _inputController.text.trim().isNotEmpty;
-    return Container(
+    final upload = ChatUploadStrings.of(context);
+    final canSend = hasText || _attachment != null;
+    final attachment = _attachment;
+    final bar = Container(
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(30),
@@ -546,17 +659,82 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
             ),
           ),
           IconButton(
+            icon: Icon(
+              Icons.add_photo_alternate_outlined,
+              color: theme.colorScheme.primary,
+            ),
+            tooltip: upload.addFile,
+            onPressed: (_isTyping || _isUploading) ? null : _pickAttachment,
+          ),
+          IconButton(
             icon: Icon(Icons.mic, color: theme.colorScheme.primary),
             tooltip: 'Record a follow-up question',
-            onPressed: _isTyping ? null : _startVoiceRecording,
+            onPressed: (_isTyping || _isUploading)
+                ? null
+                : _startVoiceRecording,
           ),
           IconButton(
             icon: Icon(Icons.send, color: theme.colorScheme.primary),
             tooltip: 'Send',
-            onPressed: (_isTyping || !hasText) ? null : _handleSend,
+            onPressed: (_isTyping || _isUploading || !canSend)
+                ? null
+                : _handleSend,
           ),
         ],
       ),
+    );
+
+    if (attachment == null) return bar;
+
+    // Preview of the picked photo, with a remove button, above the input.
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Image.file(
+                  File(attachment.path),
+                  width: 56,
+                  height: 56,
+                  fit: BoxFit.cover,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  _isUploading ? upload.uploading : upload.photoReady,
+                  style: theme.textTheme.bodyMedium,
+                ),
+              ),
+              if (_isUploading)
+                const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              else
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  tooltip: upload.removePhoto,
+                  onPressed: () => setState(() => _attachment = null),
+                ),
+            ],
+          ),
+        ),
+        bar,
+      ],
     );
   }
 
@@ -590,38 +768,55 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
               ),
               const SizedBox(height: 6),
             ],
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (urgent) ...[
-                  Icon(
-                    Icons.warning_amber_rounded,
-                    size: 18,
-                    color: Colors.red.shade700,
-                  ),
-                  const SizedBox(width: 6),
-                ],
-                Flexible(
-                  child: Text(
-                    (!message.isUser && _showTagalog && message.tagalog != null)
-                        ? message.tagalog!
-                        : message.text,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: message.isUser
-                          ? Colors.white
-                          : urgent
-                          ? Colors.red.shade700
-                          : null,
-                      fontWeight: urgent ? FontWeight.bold : null,
-                      fontStyle: message.audioPath != null
-                          ? FontStyle.italic
-                          : null,
-                    ),
+            if (message.imagePath != null)
+              Padding(
+                padding: EdgeInsets.only(
+                  bottom: message.text.isNotEmpty ? 8 : 0,
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.file(
+                    File(message.imagePath!),
+                    width: 200,
+                    fit: BoxFit.cover,
                   ),
                 ),
-              ],
-            ),
+              ),
+            if (message.text.isNotEmpty)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (urgent) ...[
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      size: 18,
+                      color: Colors.red.shade700,
+                    ),
+                    const SizedBox(width: 6),
+                  ],
+                  Flexible(
+                    child: Text(
+                      (!message.isUser &&
+                              _showTagalog &&
+                              message.tagalog != null)
+                          ? message.tagalog!
+                          : message.text,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: message.isUser
+                            ? Colors.white
+                            : urgent
+                            ? Colors.red.shade700
+                            : null,
+                        fontWeight: urgent ? FontWeight.bold : null,
+                        fontStyle: message.audioPath != null
+                            ? FontStyle.italic
+                            : null,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             if (!message.isUser && message.otcSuggestions.isNotEmpty)
               OtcSuggestionsBlock(suggestions: message.otcSuggestions),
           ],

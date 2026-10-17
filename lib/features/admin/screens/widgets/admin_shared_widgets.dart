@@ -1,22 +1,44 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:share_plus/share_plus.dart';
 
 /// Best-effort admin activity log write. Never throws — a logging failure
 /// should not block the admin action that triggered it.
-Future<void> logAdminAction(String action, {String type = 'UPDATE'}) async {
-  try {
-    await FirebaseFirestore.instance.collection('auditLogs').add({
-      'action': action,
-      'type': type,
-      'userId': FirebaseAuth.instance.currentUser?.uid,
-      'timestamp': FieldValue.serverTimestamp(),
-    });
-  } catch (_) {
-    // Best-effort only.
+///
+/// Firestore rules deny client writes to `auditLogs`, so this goes through
+/// the `writeAuditLog` Cloud Function, which fills in the acting admin and
+/// the timestamp from the verified sign-in (neither can be supplied here).
+/// Keep [targetName] and [reason] short and free of personal or health
+/// content; never pass passwords, tokens or message text.
+Future<void> logAdminAction(
+  String action, {
+  String type = 'UPDATE',
+  String? targetType,
+  String? targetId,
+  String? targetName,
+  bool success = true,
+  String? reason,
+}) async {
+  final payload = {
+    'action': action,
+    'type': type,
+    'targetType': targetType,
+    'targetId': targetId,
+    'targetName': targetName,
+    'result': success ? 'success' : 'failure',
+    'reason': reason,
+  };
+  for (var attempt = 0; attempt < 2; attempt++) {
+    try {
+      await FirebaseFunctions.instance
+          .httpsCallable('writeAuditLog')
+          .call<Object?>(payload);
+      return;
+    } catch (_) {
+      // Retry once, then give up: best-effort only.
+    }
   }
 }
 
@@ -42,7 +64,13 @@ Future<void> exportAdminCsv({
 }
 
 String _csvCell(Object? value) {
-  final text = (value ?? '').toString();
+  var text = (value ?? '').toString();
+  // Spreadsheet apps run a cell that starts with = + - @ as a formula, and
+  // exported text includes names an admin or user typed. A leading quote
+  // keeps it as plain text (CSV/formula-injection guard).
+  if (value is String && text.isNotEmpty && '=+-@\t\r'.contains(text[0])) {
+    text = "'$text";
+  }
   if (text.contains(',') || text.contains('"') || text.contains('\n')) {
     return '"${text.replaceAll('"', '""')}"';
   }
@@ -89,6 +117,58 @@ Widget? adminSnapshotFallback(AsyncSnapshot<Object?> snapshot) {
   }
   return null;
 }
+
+/// Confirmation dialog in the same style as the user app's own
+/// confirmations (`confirmLogout` in settings_screen.dart): rounded, outlined
+/// Cancel, filled confirm button (error color when [destructive]). Only the
+/// first tap counts, and Cancel, tapping outside or pressing back all return
+/// false, so none of them can confirm the action.
+Future<bool> adminConfirm(
+  BuildContext context, {
+  required String title,
+  required String message,
+  required String confirmLabel,
+  String cancelLabel = 'Cancel',
+  bool destructive = false,
+}) async {
+  final theme = Theme.of(context);
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) {
+      var answered = false;
+      void answer(bool value) {
+        if (answered) return;
+        answered = true;
+        Navigator.pop(dialogContext, value);
+      }
+
+      return AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          OutlinedButton(
+            onPressed: () => answer(false),
+            child: Text(cancelLabel),
+          ),
+          ElevatedButton(
+            onPressed: () => answer(true),
+            style: destructive
+                ? ElevatedButton.styleFrom(
+                    backgroundColor: theme.colorScheme.error,
+                    foregroundColor: theme.colorScheme.onError,
+                  )
+                : null,
+            child: Text(confirmLabel),
+          ),
+        ],
+      );
+    },
+  );
+  return confirmed == true;
+}
+
+String adminErrorMessage(Object? error) => _friendlyFirestoreError(error);
 
 String _friendlyFirestoreError(Object? error) {
   final text = error.toString();

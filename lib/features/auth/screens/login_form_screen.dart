@@ -177,131 +177,212 @@ class _LoginFormScreenState extends State<LoginFormScreen> {
     }
   }
 
+  // Rounded grey field with an icon at the start, as in the design.
+  InputDecoration _pillDecoration({
+    required String hint,
+    required IconData icon,
+    Widget? suffix,
+  }) => InputDecoration(
+    hintText: hint,
+    hintStyle: TextStyle(color: Colors.grey.shade600),
+    filled: true,
+    fillColor: const Color(0xFFCCCCCC),
+    prefixIcon: Icon(icon, color: Colors.grey.shade700),
+    suffixIcon: suffix,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(30),
+      borderSide: BorderSide.none,
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    const maroon = Color(0xFF8B0000);
+    final label = theme.textTheme.titleMedium?.copyWith(
+      fontWeight: FontWeight.bold,
+      color: Colors.black,
+    );
 
     return Scaffold(
+      backgroundColor: Colors.white,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Align(
-                  alignment: Alignment.topLeft,
-                  child: IconButton(
-                    icon: const Icon(Icons.arrow_back_ios, size: 18),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ),
-                Center(
-                  child: Image.asset(
-                    'assets/images/FINE_AID_Logo.png',
-                    width: 120,
-                    height: 120,
-                  ),
-                ),
-                const SizedBox(height: 48),
-
-                // Username
-                Text('Username', style: theme.textTheme.titleSmall),
-                const SizedBox(height: 6),
-                TextFormField(
-                  controller: _usernameController,
-                  decoration: const InputDecoration(hintText: 'Enter Username'),
-                  validator: (value) => (value == null || value.trim().isEmpty)
-                      ? 'Username is required'
-                      : null,
-                ),
-                const SizedBox(height: 16),
-
-                // Password
-                Text('Password', style: theme.textTheme.titleSmall),
-                const SizedBox(height: 6),
-                TextFormField(
-                  controller: _passwordController,
-                  obscureText: _obscurePassword,
-                  decoration: InputDecoration(
-                    hintText: 'Enter Password',
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscurePassword
-                            ? Icons.visibility_outlined
-                            : Icons.visibility_off_outlined,
-                      ),
-                      onPressed: () =>
-                          setState(() => _obscurePassword = !_obscurePassword),
-                    ),
-                  ),
-                  validator: (value) => (value == null || value.isEmpty)
-                      ? 'Password is required'
-                      : null,
-                ),
-                const SizedBox(height: 12),
-
-                Row(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Checkbox(
-                      value: _keepSignedIn,
-                      onChanged: (value) =>
-                          setState(() => _keepSignedIn = value ?? false),
+                    Align(
+                      alignment: Alignment.topLeft,
+                      child: IconButton(
+                        icon: const Icon(
+                          Icons.arrow_back_ios,
+                          size: 22,
+                          color: maroon,
+                        ),
+                        onPressed: () => Navigator.pop(context),
+                      ),
                     ),
-                    const Text('Keep me signed in'),
+                    const SizedBox(height: 16),
+                    Center(
+                      child: Image.asset(
+                        'assets/images/FINE_AID_Logo.png',
+                        width: 250,
+                      ),
+                    ),
+                    const SizedBox(height: 36),
+
+                    // Username
+                    Text('Username', style: label),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _usernameController,
+                      decoration: _pillDecoration(
+                        hint: 'Enter Username',
+                        icon: Icons.person_outline,
+                      ),
+                      validator: (value) =>
+                          (value == null || value.trim().isEmpty)
+                          ? 'Username is required'
+                          : null,
+                    ),
+                    const SizedBox(height: 18),
+
+                    // Password
+                    Text('Password', style: label),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _passwordController,
+                      obscureText: _obscurePassword,
+                      decoration: _pillDecoration(
+                        hint: 'Enter Password',
+                        icon: Icons.lock_outline,
+                        suffix: IconButton(
+                          icon: Icon(
+                            _obscurePassword
+                                ? Icons.visibility_outlined
+                                : Icons.visibility_off_outlined,
+                            color: Colors.grey.shade700,
+                          ),
+                          onPressed: () => setState(
+                            () => _obscurePassword = !_obscurePassword,
+                          ),
+                        ),
+                      ),
+                      validator: (value) => (value == null || value.isEmpty)
+                          ? 'Password is required'
+                          : null,
+                    ),
+                    const SizedBox(height: 10),
+
+                    Row(
+                      children: [
+                        Checkbox(
+                          value: _keepSignedIn,
+                          activeColor: maroon,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                          onChanged: (value) =>
+                              setState(() => _keepSignedIn = value ?? false),
+                        ),
+                        const Text('Keep me signed in'),
+                      ],
+                    ),
+                    const SizedBox(height: 36),
+
+                    // Login button
+                    ElevatedButton(
+                      onPressed: _isLoading ? null : _handleLogin,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: maroon,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size.fromHeight(54),
+                        shape: const StadiumBorder(),
+                      ),
+                      child: _isLoading
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : Text(
+                              'Log In',
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                    ),
+                    const SizedBox(height: 8),
+
+                    // Forgot password
+                    Center(
+                      child: TextButton(
+                        onPressed: () =>
+                            Navigator.pushNamed(context, '/forgot-password'),
+                        child: Text(
+                          'Forgot Password?',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            color: const Color(0xFF780000),
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+
+                    const Row(
+                      children: [
+                        Expanded(child: Divider(color: Colors.grey)),
+                        Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 12),
+                          child: Text(
+                            'or',
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                        ),
+                        Expanded(child: Divider(color: Colors.grey)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+
+                    // Register link
+                    Center(
+                      child: TextButton(
+                        onPressed: () =>
+                            Navigator.pushNamed(context, '/registration'),
+                        child: RichText(
+                          text: TextSpan(
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: Colors.black,
+                            ),
+                            children: [
+                              const TextSpan(text: "Don't have an account? "),
+                              TextSpan(
+                                text: 'Register here',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: const Color(0xFF780000),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
-                const SizedBox(height: 12),
-
-                // Login button
-                ElevatedButton(
-                  onPressed: _isLoading ? null : _handleLogin,
-                  style: ElevatedButton.styleFrom(
-                    minimumSize: const Size.fromHeight(50),
-                  ),
-                  child: _isLoading
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text('Login'),
-                ),
-                const SizedBox(height: 16),
-
-                // Forgot password
-                Center(
-                  child: TextButton(
-                    onPressed: () =>
-                        Navigator.pushNamed(context, '/forgot-password'),
-                    child: const Text('Forgot password?'),
-                  ),
-                ),
-
-                // Register link
-                Center(
-                  child: TextButton(
-                    onPressed: () =>
-                        Navigator.pushNamed(context, '/registration'),
-                    child: RichText(
-                      text: TextSpan(
-                        style: theme.textTheme.bodyMedium,
-                        children: const [
-                          TextSpan(text: "Don't have an account? "),
-                          TextSpan(
-                            text: 'Register here',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ),

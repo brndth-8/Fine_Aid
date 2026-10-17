@@ -1,18 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../services/firebase/auth_service.dart';
-
-class _OnboardingPageData {
-  final IconData icon;
-  final String title;
-  final String description;
-
-  const _OnboardingPageData({
-    required this.icon,
-    required this.title,
-    required this.description,
-  });
-}
+import '../../../i18n/onboarding_strings.dart';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
@@ -32,35 +21,13 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   late final Animation<double> _logoFade;
   late final Animation<Offset> _logoSlide;
 
-  final List<_OnboardingPageData> _pages = const [
-    _OnboardingPageData(
-      icon: Icons.camera_alt_outlined,
-      title: 'AI Wound Scanning',
-      description:
-          'Point your camera at a wound or skin issue and let our '
-          'AI analyze it to give you instant first aid guidance.',
-    ),
-    _OnboardingPageData(
-      icon: Icons.menu_book_outlined,
-      title: 'First Aid Textbook Guide',
-      description:
-          'Browse a trusted library of first aid references, '
-          'always available even when you are offline.',
-    ),
-    _OnboardingPageData(
-      icon: Icons.book_outlined,
-      title: 'Health Journal',
-      description:
-          'Track your healing progress over time, with reminders '
-          'and auto-referrals if a wound needs professional care.',
-    ),
-    _OnboardingPageData(
-      icon: Icons.notifications_outlined,
-      title: 'Stay Notified',
-      description:
-          'Get gentle reminders to check on your wounds and '
-          'updates on new first aid content.',
-    ),
+  // One icon per slide; the slide text (title + description) comes from
+  // OnboardingStrings so it can be shown in English or Tagalog.
+  static const List<IconData> _icons = [
+    Icons.camera_alt_outlined,
+    Icons.menu_book_outlined,
+    Icons.book_outlined,
+    Icons.notifications_outlined,
   ];
 
   @override
@@ -108,9 +75,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Something went wrong. Please try again.'),
-        ),
+        SnackBar(content: Text(OnboardingStrings.of(context).genericError)),
       );
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -118,7 +83,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   }
 
   void _nextPage() {
-    if (_currentPage < _pages.length - 1) {
+    if (_currentPage < _icons.length - 1) {
       _pageController.nextPage(
         duration: const Duration(milliseconds: 400),
         curve: Curves.easeInOutCubic,
@@ -138,7 +103,8 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isLastPage = _currentPage == _pages.length - 1;
+    final s = OnboardingStrings.of(context);
+    final isLastPage = _currentPage == _icons.length - 1;
 
     return Scaffold(
       body: SafeArea(
@@ -163,17 +129,17 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                 padding: const EdgeInsets.all(16),
                 child: TextButton(
                   onPressed: _isLoading ? null : _finishOnboarding,
-                  child: const Text('Skip'),
+                  child: Text(s.skip),
                 ),
               ),
             ),
             Expanded(
               child: PageView.builder(
                 controller: _pageController,
-                itemCount: _pages.length,
+                itemCount: _icons.length,
                 onPageChanged: (index) => setState(() => _currentPage = index),
                 itemBuilder: (context, index) {
-                  final page = _pages[index];
+                  final page = s.pages[index];
                   final delta = (_pageOffset - index).clamp(-1.0, 1.0);
                   final scale = 1 - (delta.abs() * 0.15);
                   final opacity = 1 - delta.abs();
@@ -201,7 +167,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                                   );
                                 },
                                 child: Icon(
-                                  page.icon,
+                                  _icons[index],
                                   size: 96,
                                   color: theme.colorScheme.primary,
                                 ),
@@ -229,7 +195,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
             ),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(_pages.length, (index) {
+              children: List.generate(_icons.length, (index) {
                 final isActive = index == _currentPage;
                 return AnimatedContainer(
                   duration: const Duration(milliseconds: 300),
@@ -270,7 +236,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                           transitionBuilder: (child, animation) =>
                               FadeTransition(opacity: animation, child: child),
                           child: Text(
-                            isLastPage ? 'Get Started' : 'Next',
+                            isLastPage ? s.getStarted : s.next,
                             key: ValueKey(isLastPage),
                           ),
                         ),

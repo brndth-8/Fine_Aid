@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
+import '../../i18n/voice_strings.dart';
 
 /// Playable audio row for a recorded follow-up question — play/pause,
 /// a progress bar, and elapsed/duration time. Shared by every follow-up
@@ -19,6 +20,10 @@ class VoiceMessageBubble extends StatefulWidget {
 }
 
 class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
+  // The clip that is playing now — starting another one stops it, so clips
+  // never play over each other.
+  static _VoiceMessageBubbleState? _active;
+
   final AudioPlayer _player = AudioPlayer();
   PlayerState _state = PlayerState.stopped;
   Duration _duration = Duration.zero;
@@ -31,6 +36,14 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
   @override
   void initState() {
     super.initState();
+    // Ask for audio focus when playing, so other apps' audio makes way.
+    _player
+        .setAudioContext(
+          AudioContextConfig(focus: AudioContextConfigFocus.gain).build(),
+        )
+        .catchError((Object e) {
+          debugPrint('[VoiceMessageBubble] audio context not set: $e');
+        });
     _stateSub = _player.onPlayerStateChanged.listen((s) {
       if (mounted) setState(() => _state = s);
     });
@@ -52,6 +65,7 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
 
   @override
   void dispose() {
+    if (_active == this) _active = null;
     _stateSub?.cancel();
     _durationSub?.cancel();
     _positionSub?.cancel();
@@ -66,8 +80,35 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
     } else if (_state == PlayerState.paused) {
       await _player.resume();
     } else {
-      await _player.play(DeviceFileSource(widget.audioPath));
+      final other = _active;
+      if (other != null && other != this && other.mounted) {
+        try {
+          await other._player.stop();
+        } catch (_) {}
+      }
+      _active = this;
+      await _play();
     }
+  }
+
+  /// Plays the clip; one retry after a failure, then a friendly message —
+  /// the app keeps working either way.
+  Future<void> _play() async {
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        await _player.play(DeviceFileSource(widget.audioPath));
+        return;
+      } catch (e) {
+        debugPrint('[VoiceMessageBubble] play failed (try $attempt): $e');
+        try {
+          await _player.stop();
+        } catch (_) {}
+      }
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(VoiceStrings.of(context).couldNotPlay)),
+    );
   }
 
   String _format(Duration d) {

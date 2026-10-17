@@ -269,6 +269,28 @@ class AuthService {
     }
   }
 
+  /// Whether the user's account is deactivated — either flagged outright, or
+  /// its scheduled deactivation date (set by an admin after a grace period)
+  /// has passed. Fails open: a read error or a missing profile (eg an admin
+  /// account, which has no `users` doc) never locks anyone out.
+  Future<bool> isAccountDeactivated(String uid) async {
+    try {
+      final doc = await _firestore
+          .collection('users')
+          .doc(uid)
+          .get()
+          .timeout(const Duration(seconds: 5));
+      final data = doc.data();
+      if (data == null) return false;
+      if (data['deactivated'] == true) return true;
+      final deactivateAt = data['deactivateAt'];
+      return deactivateAt is Timestamp &&
+          !deactivateAt.toDate().isAfter(DateTime.now());
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Whether the signed-in admin [uid] must change their password before
   /// reaching the dashboard (set by the seed_admin script for newly created
   /// accounts). Defaults to false — including on read errors — so a lookup

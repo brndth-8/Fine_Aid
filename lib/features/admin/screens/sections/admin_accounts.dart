@@ -97,7 +97,7 @@ class _AdminAccountsState extends State<AdminAccounts> {
     if (explicit != null && explicit.trim().isNotEmpty) return explicit;
     final email = data['email'] as String?;
     if (email != null && email.contains('@')) return email.split('@').first;
-    return uid;
+    return 'Unknown admin';
   }
 }
 

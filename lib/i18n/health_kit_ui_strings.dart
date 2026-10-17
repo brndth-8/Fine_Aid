@@ -24,6 +24,10 @@ class HealthKitStrings {
         'The steps below are basic first aid only — please also seek '
         'medical care.',
     'basicFirstAidSteps': 'Basic First Aid Steps',
+    'phase_before': 'Before: Get Ready',
+    'phase_during': 'During: The Steps',
+    'phase_after': 'After: Aftercare',
+    'whyLabel': 'Why:',
     'watchFor': 'Watch For',
     'seekCareIfPrefix': 'Seek professional care if: ',
     'resultDisclaimer':
@@ -66,6 +70,10 @@ class HealthKitStrings {
         'ng propesyonal. Ang mga hakbang sa ibaba ay pangunahing first '
         'aid lamang — mangyaring humingi rin ng medikal na tulong.',
     'basicFirstAidSteps': 'Pangunahing Hakbang sa First Aid',
+    'phase_before': 'Bago: Maghanda',
+    'phase_during': 'Habang Nag-aalaga: Ang mga Hakbang',
+    'phase_after': 'Pagkatapos: Pag-aalaga Pagkatapos',
+    'whyLabel': 'Bakit:',
     'watchFor': 'Bantayan',
     'seekCareIfPrefix': 'Humingi ng tulong medikal kung: ',
     'resultDisclaimer':

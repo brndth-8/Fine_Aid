@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:intl/intl.dart';
+import '../widgets/admin_pagination.dart';
 import '../widgets/admin_shared_widgets.dart';
 
 class AdminContentManagement extends StatefulWidget {
@@ -12,9 +15,24 @@ class AdminContentManagement extends StatefulWidget {
 class _AdminContentManagementState extends State<AdminContentManagement> {
   final _titleController = TextEditingController();
   final _contentController = TextEditingController();
+  // `source` already exists on imported articles (the chatbot cites it), so
+  // the form edits that same field; `sourceUrl` is new and optional.
+  final _sourceController = TextEditingController();
+  final _sourceUrlController = TextEditingController();
+  String? _sourceUrlError;
   String _category = 'Emergency';
   bool _offlineAvailable = true;
   String? _editingId;
+  bool _saving = false;
+
+  /// Articles with an unpublish/delete/restore in flight, so a double click
+  /// can't send the same change twice.
+  final Set<String> _busyIds = {};
+
+  // The "Live" status column/badge is hidden for now. The stored `status`
+  // field (still written on create below) and this code are intentionally
+  // kept — flip to true to bring the column back.
+  static const bool _showLiveStatus = false;
 
   final List<String> _categories = [
     'Emergency',
@@ -31,44 +49,223 @@ class _AdminContentManagementState extends State<AdminContentManagement> {
       ? _categories
       : [..._categories, _category];
 
-  late final Stream<QuerySnapshot<Map<String, dynamic>>> _contentStream =
-      FirebaseFirestore.instance
-          .collection('firstAidContent')
-          .orderBy('updatedAt', descending: true)
-          .snapshots();
+  late final AdminPageController _pager = AdminPageController(
+    FirebaseFirestore.instance
+        .collection('firstAidContent')
+        .orderBy('updatedAt', descending: true),
+  );
 
   @override
   void dispose() {
     _titleController.dispose();
     _contentController.dispose();
+    _sourceController.dispose();
+    _sourceUrlController.dispose();
+    _pager.dispose();
     super.dispose();
   }
 
+  /// Null when [value] is empty (the field is optional) or a usable web
+  /// address; otherwise the message to show under the field.
+  static String? validateSourceUrl(String value) {
+    final text = value.trim();
+    if (text.isEmpty) return null;
+    final uri = Uri.tryParse(text);
+    final ok =
+        uri != null &&
+        (uri.scheme == 'http' || uri.scheme == 'https') &&
+        uri.host.contains('.');
+    return ok
+        ? null
+        : 'Enter a full web address, e.g. https://www.redcross.org.ph';
+  }
+
   Future<void> _save() async {
-    if (_titleController.text.trim().isEmpty) return;
+    if (_saving) return;
+    if (_titleController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Name of Products is required.')),
+      );
+      return;
+    }
+    final urlError = validateSourceUrl(_sourceUrlController.text);
+    setState(() => _sourceUrlError = urlError);
+    if (urlError != null) return;
+
     final title = _titleController.text.trim();
-    final data = {
+    final source = _sourceController.text.trim();
+    final sourceUrl = _sourceUrlController.text.trim();
+    final editing = _editingId != null;
+    // When editing, clearing a source field removes it; when creating, an
+    // empty one is simply left out.
+    Object sourceValue(String v) => v.isEmpty ? FieldValue.delete() : v;
+    final data = <String, Object>{
       'title': title,
       'content': _contentController.text.trim(),
       'category': _category,
       'offlineAvailable': _offlineAvailable,
       'updatedAt': FieldValue.serverTimestamp(),
+      if (editing || source.isNotEmpty) 'source': sourceValue(source),
+      if (editing || sourceUrl.isNotEmpty) 'sourceUrl': sourceValue(sourceUrl),
     };
-    if (_editingId != null) {
+    setState(() => _saving = true);
+    try {
+      final collection = FirebaseFirestore.instance.collection(
+        'firstAidContent',
+      );
+      if (editing) {
+        await collection.doc(_editingId).update(data);
+        logAdminAction(
+          'Updated article "$title"',
+          targetType: 'content',
+          targetId: _editingId,
+          targetName: title,
+        );
+      } else {
+        data['createdAt'] = FieldValue.serverTimestamp();
+        data['status'] = 'Live';
+        final ref = await collection.add(data);
+        logAdminAction(
+          'Created article "$title"',
+          type: 'CREATE',
+          targetType: 'content',
+          targetId: ref.id,
+          targetName: title,
+        );
+      }
+      _titleController.clear();
+      _contentController.clear();
+      _sourceController.clear();
+      _sourceUrlController.clear();
+      if (mounted) setState(() => _editingId = null);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Couldn't save: ${adminErrorMessage(e)}")),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  /// Runs one status change on article [id] once at a time, with feedback.
+  Future<void> _change(
+    String id,
+    String title, {
+    required Map<String, Object?> update,
+    required String audit,
+    required String done,
+    String auditType = 'UPDATE',
+  }) async {
+    if (!_busyIds.add(id)) return;
+    setState(() {});
+    try {
       await FirebaseFirestore.instance
           .collection('firstAidContent')
-          .doc(_editingId)
-          .update(data);
-      logAdminAction('Updated article "$title"');
-    } else {
-      data['createdAt'] = FieldValue.serverTimestamp();
-      data['status'] = 'Live';
-      await FirebaseFirestore.instance.collection('firstAidContent').add(data);
-      logAdminAction('Created article "$title"', type: 'CREATE');
+          .doc(id)
+          .update({...update, 'updatedAt': FieldValue.serverTimestamp()});
+      logAdminAction(
+        audit,
+        type: auditType,
+        targetType: 'content',
+        targetId: id,
+        targetName: title,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(done)));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Couldn't update: ${adminErrorMessage(e)}")),
+        );
+      }
+    } finally {
+      _busyIds.remove(id);
+      if (mounted) setState(() {});
     }
-    _titleController.clear();
-    _contentController.clear();
-    setState(() => _editingId = null);
+  }
+
+  /// Unpublish is the normal way to take an article down: it is hidden from
+  /// users but stays here and can be re-published.
+  Future<void> _togglePublished(String id, String title, bool publish) async {
+    if (!publish) {
+      final ok = await adminConfirm(
+        context,
+        title: 'Unpublish "$title"?',
+        message:
+            'Users will no longer see this article. It stays in the library '
+            'and you can re-publish it at any time.',
+        confirmLabel: 'Unpublish',
+      );
+      if (!ok || !mounted) return;
+    }
+    await _change(
+      id,
+      title,
+      update: publish
+          ? {
+              'status': 'Live',
+              'unpublishedAt': FieldValue.delete(),
+              'unpublishedBy': FieldValue.delete(),
+            }
+          : {
+              'status': 'unpublished',
+              'unpublishedAt': FieldValue.serverTimestamp(),
+              'unpublishedBy': FirebaseAuth.instance.currentUser?.uid,
+            },
+      audit: publish
+          ? 'Published article "$title"'
+          : 'Unpublished article "$title"',
+      done: publish ? 'Article published.' : 'Article unpublished.',
+    );
+  }
+
+  /// Soft delete: nothing is erased. The article is unpublished (so users
+  /// can't see it), stamped deleted, and can be restored.
+  Future<void> _softDelete(String id, String title) async {
+    final ok = await adminConfirm(
+      context,
+      title: 'Delete "$title"?',
+      message:
+          'This article will be hidden from users and marked as deleted. '
+          "It isn't erased: you can restore it later.",
+      confirmLabel: 'Delete',
+      destructive: true,
+    );
+    if (!ok || !mounted) return;
+    await _change(
+      id,
+      title,
+      update: {
+        'status': 'unpublished',
+        'unpublishedAt': FieldValue.serverTimestamp(),
+        'unpublishedBy': FirebaseAuth.instance.currentUser?.uid,
+        'deletedAt': FieldValue.serverTimestamp(),
+        'deletedBy': FirebaseAuth.instance.currentUser?.uid,
+      },
+      audit: 'Deleted article "$title"',
+      auditType: 'DELETE',
+      done: 'Article deleted. You can restore it from its row.',
+    );
+  }
+
+  /// Brings a deleted article back as *unpublished*, so nothing reaches users
+  /// until an admin deliberately re-publishes it.
+  Future<void> _restore(String id, String title) {
+    return _change(
+      id,
+      title,
+      update: {
+        'deletedAt': FieldValue.delete(),
+        'deletedBy': FieldValue.delete(),
+      },
+      audit: 'Restored article "$title"',
+      done: 'Article restored (still unpublished).',
+    );
   }
 
   void _preview() {
@@ -77,7 +274,7 @@ class _AdminContentManagementState extends State<AdminContentManagement> {
       builder: (dialogContext) => AlertDialog(
         title: Text(
           _titleController.text.trim().isEmpty
-              ? '(Untitled)'
+              ? '(No product name)'
               : _titleController.text.trim(),
         ),
         content: SizedBox(
@@ -132,14 +329,9 @@ class _AdminContentManagementState extends State<AdminContentManagement> {
               // Content library table
               Expanded(
                 flex: 3,
-                child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                  stream: _contentStream,
-                  builder: (context, snapshot) {
-                    final fallback = adminSnapshotFallback(snapshot);
-                    if (fallback != null) return fallback;
-
-                    final docs = snapshot.data!.docs;
-
+                child: AdminPagedList(
+                  controller: _pager,
+                  builder: (context, docs) {
                     return SingleChildScrollView(
                       padding: const EdgeInsets.all(24),
                       child: Container(
@@ -158,11 +350,11 @@ class _AdminContentManagementState extends State<AdminContentManagement> {
                               color: Colors.grey.shade50,
                               child: Row(
                                 children: [
-                                  _th('Title', flex: 3),
+                                  _th('Name of Products', flex: 3),
                                   _th('Category'),
                                   _th('Updated'),
-                                  _th('Status'),
-                                  _th('Action'),
+                                  if (_showLiveStatus) _th('Status'),
+                                  _th('Action', flex: 3),
                                 ],
                               ),
                             ),
@@ -181,8 +373,15 @@ class _AdminContentManagementState extends State<AdminContentManagement> {
                               final data = doc.data();
                               final ts = data['updatedAt'] as Timestamp?;
                               final updated = ts != null
-                                  ? 'Mar ${ts.toDate().day}'
+                                  ? DateFormat('MMM d, y').format(ts.toDate())
                                   : '';
+                              final title = data['title'] as String? ?? '';
+                              final deleted = data['deletedAt'] != null;
+                              final unpublished =
+                                  data['status'] == 'unpublished';
+                              final busy = _busyIds.contains(doc.id);
+                              final source = (data['source'] as String?)
+                                  ?.trim();
                               return Column(
                                 children: [
                                   Padding(
@@ -194,10 +393,49 @@ class _AdminContentManagementState extends State<AdminContentManagement> {
                                       children: [
                                         Expanded(
                                           flex: 3,
-                                          child: Text(
-                                            data['title'] ?? '',
-                                            style: theme.textTheme.titleMedium
-                                                ?.copyWith(color: Colors.black),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  Flexible(
+                                                    child: Text(
+                                                      title,
+                                                      style: theme
+                                                          .textTheme
+                                                          .titleMedium
+                                                          ?.copyWith(
+                                                            color: Colors.black,
+                                                          ),
+                                                    ),
+                                                  ),
+                                                  if (deleted ||
+                                                      unpublished) ...[
+                                                    const SizedBox(width: 8),
+                                                    _statePill(
+                                                      deleted
+                                                          ? 'Deleted'
+                                                          : 'Unpublished',
+                                                      deleted
+                                                          ? Colors.red
+                                                          : Colors.orange,
+                                                    ),
+                                                  ],
+                                                ],
+                                              ),
+                                              if (source != null &&
+                                                  source.isNotEmpty)
+                                                Text(
+                                                  'Source: $source',
+                                                  style: theme
+                                                      .textTheme
+                                                      .bodySmall
+                                                      ?.copyWith(
+                                                        color: Colors.grey,
+                                                      ),
+                                                ),
+                                            ],
                                           ),
                                         ),
                                         Expanded(
@@ -227,59 +465,133 @@ class _AdminContentManagementState extends State<AdminContentManagement> {
                                                 ),
                                           ),
                                         ),
-                                        Expanded(
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 8,
-                                              vertical: 3,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: Colors.green.shade50,
-                                              borderRadius:
-                                                  BorderRadius.circular(20),
-                                            ),
-                                            child: Text(
-                                              'Live',
-                                              style: theme.textTheme.labelSmall
-                                                  ?.copyWith(
-                                                    fontWeight:
-                                                        FontWeight.normal,
-                                                    color: Colors.green,
+                                        if (_showLiveStatus)
+                                          Expanded(
+                                            child: Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 3,
                                                   ),
+                                              decoration: BoxDecoration(
+                                                color: Colors.green.shade50,
+                                                borderRadius:
+                                                    BorderRadius.circular(20),
+                                              ),
+                                              child: Text(
+                                                'Live',
+                                                style: theme
+                                                    .textTheme
+                                                    .labelSmall
+                                                    ?.copyWith(
+                                                      fontWeight:
+                                                          FontWeight.normal,
+                                                      color: Colors.green,
+                                                    ),
+                                              ),
                                             ),
                                           ),
-                                        ),
                                         Expanded(
-                                          child: TextButton(
-                                            onPressed: () {
-                                              _titleController.text =
-                                                  data['title'] ?? '';
-                                              _contentController.text =
-                                                  data['content'] ?? '';
-                                              setState(() {
-                                                _editingId = doc.id;
-                                                // Same fallback as the list
-                                                // column: bulk-imported
-                                                // articles store this under
-                                                // `subtopic`/`topic` instead
-                                                // of `category`.
-                                                final resolved =
-                                                    data['category']
-                                                        as String? ??
-                                                    data['subtopic']
-                                                        as String? ??
-                                                    data['topic'] as String?;
-                                                _category =
-                                                    (resolved == null ||
-                                                        resolved.isEmpty)
-                                                    ? 'Emergency'
-                                                    : resolved;
-                                              });
-                                            },
-                                            child: Text(
-                                              'Edit',
-                                              style: theme.textTheme.bodySmall,
-                                            ),
+                                          flex: 3,
+                                          child: Wrap(
+                                            children: [
+                                              if (deleted)
+                                                TextButton(
+                                                  onPressed: busy
+                                                      ? null
+                                                      : () => _restore(
+                                                          doc.id,
+                                                          title,
+                                                        ),
+                                                  child: Text(
+                                                    'Restore',
+                                                    style: theme
+                                                        .textTheme
+                                                        .bodySmall,
+                                                  ),
+                                                )
+                                              else ...[
+                                                TextButton(
+                                                  onPressed: () {
+                                                    _titleController.text =
+                                                        data['title'] ?? '';
+                                                    _contentController.text =
+                                                        data['content'] ?? '';
+                                                    _sourceController.text =
+                                                        data['source']
+                                                            as String? ??
+                                                        '';
+                                                    _sourceUrlController.text =
+                                                        data['sourceUrl']
+                                                            as String? ??
+                                                        '';
+                                                    setState(() {
+                                                      _sourceUrlError = null;
+                                                      _editingId = doc.id;
+                                                      // Same fallback as the list
+                                                      // column: bulk-imported
+                                                      // articles store this under
+                                                      // `subtopic`/`topic` instead
+                                                      // of `category`.
+                                                      final resolved =
+                                                          data['category']
+                                                              as String? ??
+                                                          data['subtopic']
+                                                              as String? ??
+                                                          data['topic']
+                                                              as String?;
+                                                      _category =
+                                                          (resolved == null ||
+                                                              resolved.isEmpty)
+                                                          ? 'Emergency'
+                                                          : resolved;
+                                                    });
+                                                  },
+                                                  child: Text(
+                                                    'Edit',
+                                                    style: theme
+                                                        .textTheme
+                                                        .bodySmall,
+                                                  ),
+                                                ),
+                                                TextButton(
+                                                  onPressed: busy
+                                                      ? null
+                                                      : () => _togglePublished(
+                                                          doc.id,
+                                                          title,
+                                                          unpublished,
+                                                        ),
+                                                  child: Text(
+                                                    unpublished
+                                                        ? 'Re-publish'
+                                                        : 'Unpublish',
+                                                    style: theme
+                                                        .textTheme
+                                                        .bodySmall,
+                                                  ),
+                                                ),
+                                                TextButton(
+                                                  onPressed: busy
+                                                      ? null
+                                                      : () => _softDelete(
+                                                          doc.id,
+                                                          title,
+                                                        ),
+                                                  child: Text(
+                                                    'Delete',
+                                                    style: theme
+                                                        .textTheme
+                                                        .bodySmall
+                                                        ?.copyWith(
+                                                          color: theme
+                                                              .colorScheme
+                                                              .error,
+                                                        ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
                                           ),
                                         ),
                                       ],
@@ -289,6 +601,7 @@ class _AdminContentManagementState extends State<AdminContentManagement> {
                                 ],
                               );
                             }),
+                            AdminPager(controller: _pager),
                           ],
                         ),
                       ),
@@ -319,7 +632,7 @@ class _AdminContentManagementState extends State<AdminContentManagement> {
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          'Title',
+                          'Name of Products',
                           style: theme.textTheme.labelMedium?.copyWith(
                             color: Colors.black,
                           ),
@@ -328,7 +641,7 @@ class _AdminContentManagementState extends State<AdminContentManagement> {
                         TextField(
                           controller: _titleController,
                           decoration: const InputDecoration(
-                            hintText: 'Enter title',
+                            hintText: 'Enter name of product',
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -408,13 +721,46 @@ class _AdminContentManagementState extends State<AdminContentManagement> {
                             hintText: 'Enter content',
                           ),
                         ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Source / Reference (optional)',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: Colors.black,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        TextField(
+                          controller: _sourceController,
+                          maxLength: 150,
+                          decoration: const InputDecoration(
+                            hintText:
+                                'e.g. Philippine Red Cross First Aid Manual',
+                            counterText: '',
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: _sourceUrlController,
+                          keyboardType: TextInputType.url,
+                          decoration: InputDecoration(
+                            hintText: 'https://… (optional link)',
+                            errorText: _sourceUrlError,
+                          ),
+                          onChanged: (_) {
+                            if (_sourceUrlError != null) {
+                              setState(() => _sourceUrlError = null);
+                            }
+                          },
+                        ),
                         const SizedBox(height: 16),
                         Row(
                           children: [
                             Expanded(
                               child: ElevatedButton(
-                                onPressed: _save,
-                                child: const Text('Save changes'),
+                                onPressed: _saving ? null : _save,
+                                child: Text(
+                                  _saving ? 'Saving…' : 'Save changes',
+                                ),
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -438,6 +784,24 @@ class _AdminContentManagementState extends State<AdminContentManagement> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _statePill(String label, MaterialColor color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.shade50,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.shade200),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: color.shade800,
+          fontWeight: FontWeight.normal,
+        ),
+      ),
     );
   }
 

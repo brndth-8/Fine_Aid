@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../../i18n/permission_strings.dart';
 
 class PermissionScreen extends StatefulWidget {
   const PermissionScreen({super.key});
@@ -41,11 +42,7 @@ class _PermissionScreenState extends State<PermissionScreen> {
 
         if (!granted && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Camera permission was not granted. You can enable it later in Settings.',
-              ),
-            ),
+            SnackBar(content: Text(PermissionStrings.of(context).notGranted)),
           );
         }
       }
@@ -57,9 +54,7 @@ class _PermissionScreenState extends State<PermissionScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Something went wrong. Please try again.'),
-        ),
+        SnackBar(content: Text(PermissionStrings.of(context).genericError)),
       );
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -69,6 +64,7 @@ class _PermissionScreenState extends State<PermissionScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final s = PermissionStrings.of(context);
 
     return Scaffold(
       body: SafeArea(
@@ -96,38 +92,20 @@ class _PermissionScreenState extends State<PermissionScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Camera Access Required',
+                      s.title,
                       style: theme.textTheme.headlineSmall,
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 16),
-                    Text(
-                      'To provide accurate first aid guidance, this application needs to '
-                      'use your camera for AI-powered scanning. Your camera will only be '
-                      'active when you are using the scanning feature.',
-                      style: theme.textTheme.bodyMedium,
-                    ),
+                    Text(s.intro, style: theme.textTheme.bodyMedium),
                     const SizedBox(height: 16),
-                    Text(
-                      'Why is this needed?',
-                      style: theme.textTheme.titleSmall,
-                    ),
+                    Text(s.whyTitle, style: theme.textTheme.titleSmall),
                     const SizedBox(height: 8),
-                    Text(
-                      'The camera allows the AI to analyze visible injuries and skin '
-                      'condition to provide real-time, data-driven insights to assist in '
-                      'your decision-making.',
-                      style: theme.textTheme.bodyMedium,
-                    ),
+                    Text(s.why, style: theme.textTheme.bodyMedium),
                     const SizedBox(height: 16),
-                    Text('Privacy & Safety', style: theme.textTheme.titleSmall),
+                    Text(s.privacyTitle, style: theme.textTheme.titleSmall),
                     const SizedBox(height: 8),
-                    Text(
-                      'In accordance with the Data Privacy Act and responsible AI '
-                      'frameworks, images are used only for assessment and are not shared '
-                      'without your explicit consent.',
-                      style: theme.textTheme.bodyMedium,
-                    ),
+                    Text(s.privacy, style: theme.textTheme.bodyMedium),
                     const SizedBox(height: 16),
                     CheckboxListTile(
                       value: _allowCamera,
@@ -135,9 +113,7 @@ class _PermissionScreenState extends State<PermissionScreen> {
                         _allowCamera = value ?? false;
                         if (_allowCamera) _skipForNow = false;
                       }),
-                      title: const Text(
-                        'I allow the app to access my camera for medical literacy and assessment purposes.',
-                      ),
+                      title: Text(s.allowCamera),
                       controlAffinity: ListTileControlAffinity.leading,
                     ),
                     CheckboxListTile(
@@ -146,7 +122,7 @@ class _PermissionScreenState extends State<PermissionScreen> {
                         _skipForNow = value ?? false;
                         if (_skipForNow) _allowCamera = false;
                       }),
-                      title: const Text('Skip for now'),
+                      title: Text(s.skipForNow),
                       controlAffinity: ListTileControlAffinity.leading,
                     ),
                   ],
@@ -169,7 +145,7 @@ class _PermissionScreenState extends State<PermissionScreen> {
                           color: Colors.white,
                         ),
                       )
-                    : const Text('Continue'),
+                    : Text(s.continueButton),
               ),
             ],
           ),

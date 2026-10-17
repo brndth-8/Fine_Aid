@@ -44,12 +44,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   // Bottom nav
   static const List<BottomNavItem> _navItems = [
-    BottomNavItem(icon: Icons.menu_book_outlined, label: 'Health\nJournal'),
+    BottomNavItem(icon: Icons.menu_book_outlined, label: 'Health Journal'),
     BottomNavItem(
-      icon: Icons.center_focus_strong_outlined,
-      label: 'AI Vision\nCamera',
+      icon: Icons.crop_free,
+      label: 'AI Vision Camera',
+      badge: 'AI',
     ),
-    BottomNavItem(icon: Icons.support_agent_outlined, label: 'Help &\nSupport'),
+    BottomNavItem(
+      icon: Icons.support_agent_outlined,
+      label: 'Help and Support',
+    ),
   ];
 
   // Tour keys
@@ -222,7 +226,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       description:
           'Adjust notifications, text size, and other app preferences '
           'from here.',
-      icon: Icons.menu,
+      icon: Icons.settings,
     ),
   ];
 
@@ -393,6 +397,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       );
                     },
                     child: IconButton(
+                      iconSize: 30,
                       icon: const Icon(Icons.notifications_outlined),
                       onPressed: () {
                         Navigator.push(
@@ -407,6 +412,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   // Profile icon
                   IconButton(
                     key: _profileKey,
+                    iconSize: 30,
                     icon: const Icon(Icons.account_circle_outlined),
                     onPressed: () {
                       if (isGuest) {
@@ -427,10 +433,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       }
                     },
                   ),
-                  // Hamburger menu
+                  // Settings
                   IconButton(
                     key: _settingsKey,
-                    icon: const Icon(Icons.menu),
+                    iconSize: 30,
+                    icon: const Icon(Icons.settings_outlined),
                     onPressed: () {
                       Navigator.push(
                         context,
@@ -456,9 +463,50 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     const SizedBox(height: 16),
 
                     // First Aid Textbook Guide
-                    Text(
-                      'First Aid Textbook Guide',
-                      style: theme.textTheme.titleMedium,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'First Aid Textbook Guide',
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black,
+                            ),
+                          ),
+                        ),
+                        InkWell(
+                          borderRadius: BorderRadius.circular(8),
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  _AllBooksScreen(books: _books),
+                            ),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 4,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  'View all',
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black,
+                                  ),
+                                ),
+                                const Icon(
+                                  Icons.chevron_right,
+                                  color: Colors.black,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 8),
                     _buildBookCarousel(theme),
@@ -473,7 +521,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     // Calendar Dashboard
                     Text(
                       'Calendar Dashboard',
-                      style: theme.textTheme.titleMedium,
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     _buildCalendar(theme),
@@ -529,11 +580,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (isGuest) {
       return Container(
         width: double.infinity,
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.primary,
-          borderRadius: BorderRadius.circular(20),
-        ),
+        padding: const EdgeInsets.fromLTRB(20, 20, 110, 20),
+        decoration: _bannerDecoration(theme),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -568,17 +616,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.primary,
-        borderRadius: BorderRadius.circular(20),
-      ),
+      padding: const EdgeInsets.fromLTRB(20, 20, 110, 20),
+      decoration: _bannerDecoration(theme),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             'Welcome!',
-            style: theme.textTheme.titleLarge?.copyWith(color: Colors.white),
+            style: theme.textTheme.headlineSmall?.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           const SizedBox(height: 8),
           Text(
@@ -592,18 +640,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  // The Welcome banner's background: the banner picture, kept to the right
+  // so the first-aid kit stays visible whatever the banner's height.
+  BoxDecoration _bannerDecoration(ThemeData theme) => BoxDecoration(
+    color: theme.colorScheme.primary,
+    borderRadius: BorderRadius.circular(20),
+    image: const DecorationImage(
+      image: AssetImage('assets/images/welcome_banner.png'),
+      fit: BoxFit.cover,
+      alignment: Alignment.centerRight,
+    ),
+  );
+
   Widget _buildBookCarousel(ThemeData theme) {
     return Container(
       key: _bookCarouselKey,
-      decoration: BoxDecoration(
-        color: Color.lerp(
-          theme.colorScheme.surfaceContainerHighest,
-          Colors.black,
-          0.15,
-        ),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      padding: const EdgeInsets.symmetric(vertical: 16),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Column(
         children: [
           SizedBox(
@@ -643,7 +695,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 height: 8,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: isActive ? Colors.grey.shade700 : Colors.grey.shade300,
+                  color: isActive
+                      ? theme.colorScheme.primary
+                      : Colors.grey.shade500,
                 ),
               );
             }),
@@ -747,10 +801,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4),
-        ],
+        borderRadius: BorderRadius.circular(24),
       ),
       child: Column(
         children: [
@@ -759,7 +810,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               IconButton(
-                icon: const Icon(Icons.chevron_left),
+                icon: const Icon(Icons.chevron_left, size: 30),
                 onPressed: () {
                   setState(() {
                     _displayedMonth = DateTime(
@@ -770,15 +821,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 },
               ),
               Text(
-                '${_monthName(_displayedMonth.month).toUpperCase()} '
+                '${_monthName(_displayedMonth.month)} '
                 '${_displayedMonth.year}',
-                style: theme.textTheme.titleMedium?.copyWith(
+                style: theme.textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.bold,
-                  letterSpacing: 1,
+                  color: Colors.black,
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.chevron_right),
+                icon: const Icon(Icons.chevron_right, size: 30),
                 onPressed: () {
                   setState(() {
                     _displayedMonth = DateTime(
@@ -802,11 +853,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     child: Text(
                       d,
                       textAlign: TextAlign.center,
-                      style: theme.textTheme.labelSmall?.copyWith(
+                      style: theme.textTheme.labelLarge?.copyWith(
                         fontWeight: FontWeight.bold,
-                        color: d == 'Su'
-                            ? Colors.red.shade400
-                            : theme.colorScheme.primary,
+                        // Weekends in maroon, the rest in black.
+                        color: (d == 'Su' || d == 'Sa')
+                            ? theme.colorScheme.primary
+                            : Colors.black,
                       ),
                     ),
                   ),
@@ -836,6 +888,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
               );
               final isToday = isCurrentMonth && day == now.day;
               final hasEntry = markedDates.contains(thisDate);
+              final isWeekend =
+                  thisDate.weekday == DateTime.saturday ||
+                  thisDate.weekday == DateTime.sunday;
 
               return GestureDetector(
                 onTap: hasEntry
@@ -866,8 +921,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       // Day number
                       Text(
                         '$day',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: isToday ? Colors.white : null,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: isToday
+                              ? Colors.white
+                              : (isWeekend ? theme.colorScheme.primary : null),
                           fontWeight: isToday ? FontWeight.bold : null,
                         ),
                       ),
@@ -944,16 +1001,16 @@ class _TextbookCard extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Card(
-      elevation: 4,
+      elevation: 0,
       color: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.all(10),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Expanded(
                 child: ClipRRect(
@@ -978,10 +1035,81 @@ class _TextbookCard extends StatelessWidget {
                 child: Text(
                   book.title,
                   maxLines: 2,
+                  textAlign: TextAlign.center,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.labelMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w500,
                   ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "View all": every textbook as a two-column grid; tapping one opens it.
+class _AllBooksScreen extends StatelessWidget {
+  final List<_BookItem> books;
+
+  const _AllBooksScreen({required this.books});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Scaffold(
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back_ios, size: 18),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Text(
+                  'First Aid Textbook Guide',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child: GridView.builder(
+                  padding: const EdgeInsets.all(8),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 12,
+                    childAspectRatio: 0.72,
+                  ),
+                  itemCount: books.length,
+                  itemBuilder: (context, index) {
+                    final book = books[index];
+                    return _TextbookCard(
+                      book: book,
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => TextbookViewerScreen(
+                            title: book.title,
+                            assetPdfPath: book.pdfPath,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ),
             ],

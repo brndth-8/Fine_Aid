@@ -8,6 +8,14 @@ import '../../../services/api/gemini_service.dart';
 import '../../../services/firebase/storage_service.dart';
 import '../../../services/firebase/first_aid_content_service.dart';
 import '../../../services/firebase/notification_service.dart';
+import '../../../core/widgets/remind_me_checkbox.dart';
+import '../../../core/widgets/evaluation_card.dart';
+import '../../../core/widgets/first_aid_step_image.dart';
+import '../../../data/first_aid_step_images.dart';
+import '../../../i18n/ai_scan_stats_strings.dart';
+import '../../../i18n/voice_strings.dart';
+import '../../../services/ai_scan_stats_service.dart';
+import '../../../i18n/notification_strings.dart';
 import '../../../services/connectivity_service.dart';
 import '../../../services/voice_input_service.dart';
 import '../../../services/health_profile_service.dart';
@@ -17,6 +25,10 @@ import '../../../data/health_profile_cautions.dart';
 import '../../../core/widgets/nearby_healthcare_sheet.dart';
 import '../../../core/widgets/voice_message_bubble.dart';
 import '../../../core/widgets/otc_suggestions_block.dart';
+import '../../../core/widgets/pain_scale_dialog.dart';
+import '../../../core/widgets/classification_info_button.dart';
+import '../../../data/pain_assessment.dart';
+import '../../../i18n/pain_strings.dart';
 import '../../../core/widgets/guest_gate_dialogs.dart';
 import '../../../core/widgets/guest_usage_badge.dart';
 import '../../../services/guest_usage_service.dart';
@@ -80,13 +92,16 @@ class AssessmentResultScreen extends StatefulWidget {
   State<AssessmentResultScreen> createState() => _AssessmentResultScreenState();
 }
 
-class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
+class _AssessmentResultScreenState extends State<AssessmentResultScreen>
+    with WidgetsBindingObserver {
   WoundAssessment? _assessment;
   bool _isAnalyzing = true;
   String? _error;
   bool _errorIsOffline = false;
   bool _savedToJournal = false;
   bool _isSaving = false;
+  // "Remind me": the user asked for a healing check-in for this entry.
+  bool _remindMe = false;
   bool _showTagalog = false;
   List<String>? _tagalogSteps;
   bool _isLoadingTagalog = false;
@@ -96,6 +111,14 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
   List<OtcSuggestion> _otcSuggestions = [];
   bool _isLoadingOtc = false;
   List<String> _healthCautions = [];
+
+  // The user's 1-10 pain rating, asked right after the AI scan and before
+  // the results are shown. Saved with the journal entry.
+  int? _painScore;
+  // Optional "Was this result correct?" answer (null = not answered). The
+  // question is only offered for a scan that counted as successful.
+  bool? _scanRating;
+  bool _canRate = false;
 
   final List<_FollowUpMessage> _followUpMessages = [];
   bool _isSendingFollowUp = false;
@@ -122,6 +145,7 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _analyzeImage();
     _loadHealthCautions();
   }
@@ -133,14 +157,120 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
     if (cautions.isNotEmpty) setState(() => _healthCautions = cautions);
   }
 
+  // A recording can't carry on while the app is in the background (the system
+  // takes the microphone away) — stop it cleanly and say so.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused && _isRecording) {
+      _cancelVoiceRecording();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(VoiceStrings.of(context).backgroundStopped)),
+        );
+      }
+    }
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _analyzingTimer?.cancel();
     _recordingTimer?.cancel();
     _amplitudeSubscription?.cancel();
     _voiceInput.dispose();
     _chatController.dispose();
     super.dispose();
+  }
+
+  /// Counts this scan for the AI-scan reliability numbers: a technical
+  /// failure (with its reason), a scan that found no wound, a result the
+  /// model had low confidence in (counted as failed), or a success. Never
+  /// stores the photo or anything about the person.
+  void _recordScanOutcome(WoundAssessment a) {
+    final stats = AiScanStatsService.instance;
+    if (a.error != null) {
+      stats.recordFailure(failureReasonFromError(a.error!));
+    } else if (!a.isWound) {
+      stats.recordNoWound();
+    } else if (a.confidence < kLowConfidenceThreshold) {
+      stats.recordFailure(ScanFailureReason.lowConfidence);
+    } else {
+      stats.recordSuccess();
+      _canRate = true;
+    }
+  }
+
+  void _rateScan(bool correct) {
+    final previous = _scanRating;
+    // Tapping the same answer again takes it back.
+    final next = previous == correct ? null : correct;
+    AiScanStatsService.instance.recordRating(previous: previous, current: next);
+    setState(() => _scanRating = next);
+  }
+
+  /// Small, optional "Was this result correct? Yes / No" row. Never blocks
+  /// anything.
+  Widget _buildResultFeedback(ThemeData theme) {
+    if (!_canRate) return const SizedBox.shrink();
+    final s = AiScanStatsStrings.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  s.feedbackQuestion,
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+              ChoiceChip(
+                label: Text(s.yes),
+                selected: _scanRating == true,
+                visualDensity: VisualDensity.compact,
+                onSelected: (_) => _rateScan(true),
+              ),
+              const SizedBox(width: 6),
+              ChoiceChip(
+                label: Text(s.no),
+                selected: _scanRating == false,
+                visualDensity: VisualDensity.compact,
+                onSelected: (_) => _rateScan(false),
+              ),
+            ],
+          ),
+          if (_scanRating != null)
+            Text(
+              s.feedbackThanks,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: Colors.grey.shade600,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  bool _painDialogOpen = false;
+
+  /// Shows the 0-5 pain pop-up over the loading screen. Returns the rating, or
+  /// null if the pop-up was closed because the scan failed or found no wound.
+  Future<int?> _askPainWhileAnalyzing() async {
+    // Wait one frame so the loading screen is up first.
+    await Future<void>.delayed(Duration.zero);
+    if (!mounted) return null;
+    _painDialogOpen = true;
+    try {
+      return await showPainScaleDialog(context);
+    } finally {
+      _painDialogOpen = false;
+    }
+  }
+
+  void _closePainDialogIfOpen() {
+    if (_painDialogOpen && mounted) Navigator.of(context).pop();
   }
 
   void _startAnalyzingTimer() {
@@ -159,12 +289,20 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
     // keeps a persistent multi-turn session, and we don't want an
     // unrelated earlier wound's conversation bleeding into this one.
     GeminiService().resetChat();
+    _painScore = null;
+    _scanRating = null;
+    _canRate = false;
 
     _startAnalyzingTimer();
+    // The pain rating is asked right away, over the loading screen, while the
+    // scan keeps running behind it.
+    final painAnswer = _askPainWhileAnalyzing();
 
     final online = await ConnectivityService().isOnline;
     if (!online) {
       _analyzingTimer?.cancel();
+      _closePainDialogIfOpen();
+      AiScanStatsService.instance.recordFailure(ScanFailureReason.offline);
       if (mounted) {
         setState(() {
           _error =
@@ -188,16 +326,26 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
         widget.imagePath,
         referenceContext: referenceContext,
       );
+      _recordScanOutcome(assessment);
       _analyzingTimer?.cancel();
       if (mounted) {
         // Let the bar visibly reach 100% before swapping in the results.
         setState(() => _analysisFinishing = true);
         await Future.delayed(const Duration(milliseconds: 450));
       }
+      // The result waits for the pain rating (0-5), which can't be skipped.
+      // It only counts when the scan actually found a wound.
+      int? pain;
+      if (mounted && assessment.error == null && assessment.isWound) {
+        pain = await painAnswer;
+      } else {
+        _closePainDialogIfOpen();
+      }
       if (mounted) {
         setState(() {
           _analysisFinishing = false;
           _assessment = assessment;
+          _painScore = pain;
           _tagalogSteps = null;
           _isAnalyzing = false;
         });
@@ -205,6 +353,10 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
       }
     } catch (e) {
       _analyzingTimer?.cancel();
+      _closePainDialogIfOpen();
+      AiScanStatsService.instance.recordFailure(
+        failureReasonFromError(e.toString()),
+      );
       if (mounted) {
         final offline =
             e.toString().toLowerCase().contains('socket') ||
@@ -295,6 +447,7 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
     final buffer = StringBuffer();
     buffer.writeln('Wound type: ${woundTypeDisplayLabel(a.woundType)}');
     buffer.writeln('Triage: ${triageDisplayLabel(a.triage)}');
+    if (_painScore != null) buffer.writeln('Pain score: $_painScore/$kPainMax');
     if (a.firstAidSteps.isNotEmpty) {
       buffer.writeln('\nFIRST AID STEPS:');
       for (var i = 0; i < a.firstAidSteps.length; i++) {
@@ -354,7 +507,12 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
             .map((m) => m.toJournalMap())
             .toList(),
         'severity': null,
-        'remindMe': false,
+        if (_painScore != null) ...{
+          'painScore': _painScore,
+          // Marks the 0-5 scale (older entries were rated 1-10).
+          'painScaleMax': kPainMax,
+        },
+        'remindMe': _remindMe,
         'imageCount': 1,
         'source': 'ai_camera',
       };
@@ -382,7 +540,8 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
             .timeout(const Duration(seconds: 10));
 
         final healingDays = healingDurationDays[assessment.category];
-        if (healingDays != null && mounted) {
+        final noBenchmark = _remindMe && healingDays == null;
+        if (_remindMe && healingDays != null && mounted) {
           await NotificationService().ensureHealingReminderPermission(context);
           await NotificationService().scheduleHealingCheckIn(
             entryId: docRef.id,
@@ -399,8 +558,13 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
             _isSaving = false;
           });
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Assessment saved to Health Journal.'),
+            SnackBar(
+              content: Text(
+                noBenchmark
+                    ? 'Assessment saved to Health Journal. '
+                          '${NotificationStrings.of(context).noBenchmark}'
+                    : 'Assessment saved to Health Journal.',
+              ),
             ),
           );
         }
@@ -617,12 +781,105 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
     }
   }
 
+  /// The reminder banner's text, or null when no banner is shown. Combines
+  /// the AI's own result with the user's pain score: whichever is more
+  /// serious wins (eg a minor-looking wound with pain 10 still shows urgent
+  /// care; a low pain score never lowers an AI emergency/urgent result).
+  String? _reminderTitle(WoundAssessment a) {
+    final fromAi = reminderFromAssessment(
+      a.triage,
+      a.needsProfessionalEvaluation,
+    );
+    final fromPain = reminderFromPain(_painScore);
+    if (fromAi.index >= fromPain.index) return _triageBannerTitle(a);
+    final p = PainStrings.of(context);
+    return fromPain == ReminderLevel.urgent
+        ? p.urgentTitle
+        : p.professionalTitle;
+  }
+
+  /// The pain result under the banner: the score and the message for that
+  /// rating (from PainStrings.ratings, one entry per rating). Severe and
+  /// worst pain also get a nearby-healthcare button.
+  Widget _buildPainCard(ThemeData theme) {
+    final score = _painScore;
+    if (!isValidPainScore(score)) return const SizedBox.shrink();
+    final p = PainStrings.of(context);
+    final content = p.rating(score!);
+    final level = painLevelFor(score);
+    final color = switch (level) {
+      PainLevel.mild => Colors.green,
+      PainLevel.moderate => Colors.amber.shade800,
+      PainLevel.severe => Colors.deepOrange,
+      PainLevel.worst => Colors.red,
+    };
+
+    final children = <Widget>[
+      Text(
+        p.scoreLabel(score),
+        style: theme.textTheme.titleSmall?.copyWith(
+          color: color,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      const SizedBox(height: 6),
+      // The message for this rating.
+      Text(
+        content.message,
+        style: theme.textTheme.bodyMedium?.copyWith(
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      if (level == PainLevel.severe || level == PainLevel.worst) ...[
+        const SizedBox(height: 10),
+        OutlinedButton.icon(
+          onPressed: () => showNearbyHealthcareSheet(context),
+          icon: const Icon(Icons.local_hospital_outlined, size: 18),
+          label: Text(p.findHealthcare),
+        ),
+      ],
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withValues(alpha: 0.5)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: children,
+        ),
+      ),
+    );
+  }
+
+  /// What an entry for this result would save — the Evaluation is built from
+  /// it exactly as it is for a saved journal entry.
+  Map<String, dynamic> _evaluationData(WoundAssessment a) => {
+    'classification': a.category,
+    'firstAidSteps': a.firstAidSteps,
+    'warningSigns': a.redFlags,
+    'triage': a.triage.name,
+    'visibleBleeding': a.visibleBleeding,
+    'apparentDepth': a.apparentDepth,
+    'needsProfessionalEvaluation': a.needsProfessionalEvaluation,
+    if (_painScore != null) ...{
+      'painScore': _painScore,
+      'painScaleMax': kPainMax,
+    },
+  };
+
   Widget _buildTriageBanner(ThemeData theme, WoundAssessment a) {
-    if (_triageBannerTitle(a) == null) return const SizedBox.shrink();
+    if (_reminderTitle(a) == null) return const SizedBox.shrink();
 
     final isEmergency = a.triage == TriageLevel.emergency;
     final color = isEmergency ? Colors.red : Colors.orange;
-    final title = _triageBannerTitle(a)!;
+    final title = _reminderTitle(a)!;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -686,6 +943,13 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildTriageBanner(theme, a),
+        _buildPainCard(theme),
+        // The Evaluation, right after the pain result (the same one that is
+        // saved with the entry and shown in its Overview).
+        if (a.isWound && _painScore != null) ...[
+          EvaluationCard(data: _evaluationData(a)),
+          const SizedBox(height: 12),
+        ],
         _buildHealthCautionBox(theme),
         if (a.firstAidSteps.isNotEmpty) ...[
           Row(
@@ -753,6 +1017,14 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
                     ),
                   ),
                   const SizedBox(width: 10),
+                  // Optional picture for this kind of step — draws nothing
+                  // (no gap, no icon) when there isn't one. The kind comes
+                  // from the English step, so it's the same in Tagalog.
+                  FirstAidStepImage(
+                    imageKey: entry.key < a.firstAidSteps.length
+                        ? firstAidStepImageKey(a.firstAidSteps[entry.key])
+                        : null,
+                  ),
                   Expanded(
                     child: Text(
                       entry.value,
@@ -919,6 +1191,7 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
               _error = null;
               _errorIsOffline = false;
               _assessment = null;
+              _painScore = null;
               _otcSuggestions = [];
             });
             _analyzeImage();
@@ -1114,8 +1387,23 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
       return;
     }
 
-    await _voiceInput.start();
+    final status = await _voiceInput.start();
     if (!mounted) return;
+    if (status == VoiceStartStatus.failed) {
+      await _voiceInput.cancel();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(VoiceStrings.of(context).couldNotStart)),
+      );
+      return;
+    }
+    if (status == VoiceStartStatus.recordingOnly) {
+      // Recording works but live transcription didn't start: keep going, and
+      // say so, rather than failing silently.
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(VoiceStrings.of(context).recordingOnly)),
+      );
+    }
     _amplitudeSubscription = _voiceInput.amplitudeStream().listen((level) {
       if (mounted) setState(() => _recordingLevel = level);
     });
@@ -1152,6 +1440,14 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
       _recordingElapsed = Duration.zero;
       _recordingLevel = 0;
     });
+
+    if (result.transcript.isEmpty && result.localeFallback) {
+      // Nothing was understood and the phone has no Tagalog voice: say why.
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(VoiceStrings.of(context).tagalogUnavailable)),
+      );
+      return;
+    }
 
     if (result.transcript.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1430,6 +1726,11 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
                 fontWeight: FontWeight.bold,
               ),
             ),
+            const SizedBox(width: 4),
+            ClassificationInfoButton(
+              classification: category,
+              color: theme.colorScheme.primary,
+            ),
           ],
         ),
       ),
@@ -1542,8 +1843,16 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen> {
                     if (!_isAnalyzing && _error == null)
                       _buildOtcSuggestions(theme),
 
+                    if (!_isAnalyzing && _error == null)
+                      _buildResultFeedback(theme),
+
                     // Save to Journal button
                     if (!_isAnalyzing && _error == null) ...[
+                      if (!_savedToJournal)
+                        RemindMeCheckbox(
+                          value: _remindMe,
+                          onChanged: (v) => setState(() => _remindMe = v),
+                        ),
                       if (_savedToJournal && !_hasUnsavedFollowUps)
                         Container(
                           width: double.infinity,

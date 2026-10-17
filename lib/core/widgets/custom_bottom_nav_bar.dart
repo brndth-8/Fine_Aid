@@ -5,18 +5,20 @@ class BottomNavItem {
   final IconData icon;
   final String label;
 
-  const BottomNavItem({required this.icon, required this.label});
+  /// Short text drawn on top of [icon] (eg "AI" inside the scan frame).
+  final String? badge;
+
+  const BottomNavItem({required this.icon, required this.label, this.badge});
 }
 
-/// The app's bottom navigation bar: a dark red bar with rounded top
-/// corners, holding 3 identical white-bordered circular icon buttons (each
-/// poking slightly above the bar), with a label under each.
+/// The app's bottom navigation bar: a white bar with rounded top corners and
+/// 3 destinations, each an icon with its label underneath. The middle one is
+/// the main action — a larger maroon circle with a grey ring that rises above
+/// the bar.
 ///
-/// The active item's circle turns solid white (its white border blending
-/// into the fill) with the icon flipping to the bar's red for contrast;
-/// inactive items stay dark red with a visible white ring. Tapping any
-/// button plays a short lift + bounce animation before [onItemTap] fires,
-/// so the tap feels responsive without delaying navigation.
+/// The active destination is drawn in maroon. Tapping any item plays a short
+/// lift + bounce animation before [onItemTap] fires, so the tap feels
+/// responsive without delaying navigation.
 class CustomBottomNavBar extends StatefulWidget {
   final List<BottomNavItem> items;
   final int? selectedIndex;
@@ -44,11 +46,13 @@ class CustomBottomNavBar extends StatefulWidget {
 class _CustomBottomNavBarState extends State<CustomBottomNavBar>
     with TickerProviderStateMixin {
   // Tune the look of the bar here.
-  static const double _barHeight = 78;
-  static const double _circleDiameter = 56;
-  static const double _circleRaise =
-      20; // how far the circles poke above the bar
-  static const Color _barColor = Color(0xFFA00000);
+  static const double _barHeight = 70;
+  static const double _centerDiameter = 60; // the maroon circle
+  static const double _centerRing = 5; // the grey ring around it
+  static const double _centerRaise = 38; // how far the circle rises above
+  static const Color _maroon = Color(0xFF780000);
+  static const Color _inactive = Color(0xFF4A4A4A);
+  static const Color _ring = Color(0xFFCCCCCC);
 
   late final List<AnimationController> _controllers;
   late final List<Animation<double>> _scaleAnims;
@@ -74,33 +78,32 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar>
         TweenSequenceItem(
           tween: Tween(
             begin: 1.0,
-            end: 0.8,
+            end: 0.85,
           ).chain(CurveTween(curve: Curves.easeOut)),
           weight: 30,
         ),
         TweenSequenceItem(
           tween: Tween(
-            begin: 0.8,
+            begin: 0.85,
             end: 1.0,
           ).chain(CurveTween(curve: Curves.easeOutBack)),
           weight: 70,
         ),
       ]).animate(controller);
     }).toList();
-    // A short upward slide/lift layered on top of the scale bounce, so a
-    // tap feels like it "moves" rather than just shrinking in place.
+    // A short upward slide/lift layered on top of the scale bounce.
     _liftAnims = _controllers.map((controller) {
       return TweenSequence<double>([
         TweenSequenceItem(
           tween: Tween(
             begin: 0.0,
-            end: -10.0,
+            end: -8.0,
           ).chain(CurveTween(curve: Curves.easeOut)),
           weight: 30,
         ),
         TweenSequenceItem(
           tween: Tween(
-            begin: -10.0,
+            begin: -8.0,
             end: 0.0,
           ).chain(CurveTween(curve: Curves.easeOutBack)),
           weight: 70,
@@ -138,34 +141,40 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar>
     final bottomInset = MediaQuery.of(context).padding.bottom;
 
     return SizedBox(
-      height: _barHeight + _circleRaise + bottomInset,
+      height: _barHeight + _centerRaise + bottomInset,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          // The red bar itself — fixed, always the same size.
+          // The white bar itself — fixed, always the same size.
           Positioned(
             left: 0,
             right: 0,
             bottom: 0,
             height: _barHeight + bottomInset,
             child: Container(
-              decoration: const BoxDecoration(
-                color: _barColor,
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(24),
-                  topRight: Radius.circular(24),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(28),
+                  topRight: Radius.circular(28),
                 ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.1),
+                    blurRadius: 10,
+                    offset: const Offset(0, -2),
+                  ),
+                ],
               ),
             ),
           ),
 
-          // The 3 circular buttons, evenly spaced, each poking slightly
-          // above the bar's top edge.
+          // The 3 destinations, evenly spaced; the middle one rises above.
           Positioned(
             left: 0,
             right: 0,
             bottom: bottomInset,
-            height: _barHeight + _circleRaise,
+            height: _barHeight + _centerRaise,
             child: Row(
               children: List.generate(
                 widget.items.length,
@@ -181,6 +190,44 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar>
   Widget _buildItem(int index) {
     final item = widget.items[index];
     final isSelected = widget.selectedIndex == index;
+    final isCenter = index == widget.items.length ~/ 2;
+    final color = isSelected ? _maroon : _inactive;
+
+    final Widget visual = isCenter
+        ? Container(
+            width: _centerDiameter + _centerRing * 2,
+            height: _centerDiameter + _centerRing * 2,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: _ring,
+            ),
+            alignment: Alignment.center,
+            child: Container(
+              width: _centerDiameter,
+              height: _centerDiameter,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: _maroon,
+              ),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Icon(item.icon, color: Colors.white, size: 44),
+                  if (item.badge != null)
+                    Text(
+                      item.badge!,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 19,
+                        height: 1,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          )
+        : Icon(item.icon, color: color, size: 34);
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -197,47 +244,25 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar>
                 child: child,
               ),
             ),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              width: _circleDiameter,
-              height: _circleDiameter,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: isSelected ? Colors.white : _barColor,
-                border: Border.all(color: Colors.white, width: 2.5),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(
-                      alpha: isSelected ? 0.3 : 0.2,
-                    ),
-                    blurRadius: isSelected ? 8 : 5,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 200),
-                transitionBuilder: (child, animation) =>
-                    FadeTransition(opacity: animation, child: child),
-                child: Icon(
-                  item.icon,
-                  key: ValueKey(isSelected),
-                  color: isSelected ? _barColor : Colors.white,
-                  size: 24,
-                ),
-              ),
-            ),
+            child: visual,
           ),
-          const SizedBox(height: 6),
-          AnimatedDefaultTextStyle(
-            duration: const Duration(milliseconds: 200),
-            style: Theme.of(context).textTheme.labelSmall!.copyWith(
-              color: Colors.white,
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-              height: 1.15,
+          const SizedBox(height: 4),
+          Flexible(
+            child: AnimatedDefaultTextStyle(
+              duration: const Duration(milliseconds: 200),
+              style: Theme.of(context).textTheme.labelMedium!.copyWith(
+                color: isCenter ? _inactive : color,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                height: 1.15,
+              ),
+              textAlign: TextAlign.center,
+              child: Text(
+                item.label,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-            textAlign: TextAlign.center,
-            child: Text(item.label, textAlign: TextAlign.center),
           ),
           const SizedBox(height: 8),
         ],

@@ -1,9 +1,3 @@
-/// Fine Aid public landing page — everything for the site at `/` lives in
-/// this one file. Jump between parts by searching for the `####` banners;
-/// each section inside SECTIONS starts with a `// 1. HERO`-style header.
-///
-/// Images: assets/web/ (see assets/web/README.md).
-/// Contact details + download link: site_config.dart.
 library;
 
 import 'dart:async';
@@ -15,13 +9,8 @@ import 'package:url_launcher/link.dart';
 
 import 'site_config.dart';
 
-// ######################################################################
-// PAGE — scaffold, sticky nav, mobile menu
-// ######################################################################
-
 enum LandingSection { about, download, experts, contact }
 
-/// Public single-page site served at `/`.
 class LandingPage extends StatefulWidget {
   const LandingPage({super.key});
 
@@ -167,8 +156,7 @@ class _NavBar extends StatelessWidget {
             ),
         ],
       ),
-      // Full width (not ContentWidth): logo hugs the left edge, links the
-      // right edge, at any screen size.
+
       child: Padding(
         padding: EdgeInsets.symmetric(horizontal: mobile ? 16 : 40),
         child: Row(
@@ -201,7 +189,6 @@ class _NavBar extends StatelessWidget {
   }
 }
 
-/// Uppercase nav link; a red underline grows in from the left on hover.
 class _NavLink extends StatefulWidget {
   const _NavLink(this.label, this.onTap);
 
@@ -225,7 +212,6 @@ class _NavLinkState extends State<_NavLink> {
         onExit: (_) => setState(() => _hover = false),
         child: GestureDetector(
           onTap: widget.onTap,
-          // Stack sizes to the text; the underline is positioned beneath it.
           child: Stack(
             clipBehavior: Clip.none,
             children: [
@@ -295,16 +281,9 @@ class _MobileMenu extends StatelessWidget {
   }
 }
 
-// ######################################################################
-// SECTIONS — hero, about, download, experts (intro / cards /
-// consultation), brand statement, footer
-// ######################################################################
-
-// Website images in assets/web/ (see assets/web/README.md). Any file that is
-// still missing is rendered as a soft gradient placeholder.
 class _Img {
   static const hero = 'assets/web/hero.jpg'; // wooden medical blocks
-  static const qr = 'assets/web/qr.png'; // app download QR code
+  static const qr = 'assets/web/qr-code.png'; // app download QR code
   static const phoneFrame = 'assets/web/phone-frame.png'; // About phone
   static const phoneAngled = 'assets/web/phone-frame-angled.png'; // Download
   static const group1 = 'assets/web/expert-1.jpg'; // Galderma, Makati
@@ -323,14 +302,12 @@ const _leadCopy =
     'First aid is more than just knowing how to put on a bandage.\n'
     'It is about having the capable confidence to step up.';
 
-/// Scales a size between phone (375px) and wide desktop (1440px) widths.
 double _fluid(BuildContext context, double phone, double desktop) {
   final w = MediaQuery.sizeOf(context).width;
   final t = ((w - 375) / (1440 - 375)).clamp(0.0, 1.0);
   return phone + (desktop - phone) * t;
 }
 
-/// Journal glyph from the design, tinted to [color].
 class _JournalIcon extends StatelessWidget {
   const _JournalIcon({required this.color, this.size = 48});
 
@@ -349,7 +326,6 @@ class _JournalIcon extends StatelessWidget {
   }
 }
 
-/// Camera inside a ring, as in the design.
 class _CameraIcon extends StatelessWidget {
   const _CameraIcon({required this.color, this.size = 56});
 
@@ -370,9 +346,6 @@ class _CameraIcon extends StatelessWidget {
   }
 }
 
-// ============================================================
-// 1. HERO
-// ============================================================
 class HeroSection extends StatelessWidget {
   const HeroSection({super.key, required this.minHeight, required this.onCta});
 
@@ -385,7 +358,6 @@ class HeroSection extends StatelessWidget {
 
     final headline = Column(
       children: [
-        // Always two lines as in the design: shrink to fit rather than wrap.
         FittedBox(
           fit: BoxFit.scaleDown,
           child: Text(
@@ -605,9 +577,6 @@ class _FeatureCardState extends State<_FeatureCard> {
   }
 }
 
-// ============================================================
-// 2. ABOUT
-// ============================================================
 class AboutSection extends StatelessWidget {
   const AboutSection({super.key});
 
@@ -701,8 +670,6 @@ class AboutSection extends StatelessWidget {
       );
     }
 
-    // Desktop: photo on the right half; gray text panel runs from behind the
-    // phone across the photo.
     const phoneWidth = 250.0;
     return Stack(
       children: [
@@ -755,9 +722,6 @@ class AboutSection extends StatelessWidget {
   }
 }
 
-// ============================================================
-// 3. DOWNLOAD
-// ============================================================
 class DownloadSection extends StatelessWidget {
   const DownloadSection({super.key, required this.onSeeMore});
 
@@ -785,12 +749,10 @@ class DownloadSection extends StatelessWidget {
             size: _fluid(context, 15, 19),
           ),
         ),
-        // Room for the pink crosses between the text and the button.
         const SizedBox(height: 96),
         PillButton(label: 'SEE MORE', onPressed: onSeeMore, rounded: false),
       ],
     );
-    // Pink crosses drawn around (never over) the copy.
     final decorated = CustomPaint(
       painter: const _CrossesPainter(),
       child: copy,
@@ -884,14 +846,10 @@ class _QrImage extends StatelessWidget {
   }
 }
 
-/// Angled phone showing the QR code. Tapping the QR or "SCAN" opens the
-/// download link — handy on phones, which can't scan their own screen.
 class _DownloadPhone extends StatelessWidget {
   const _DownloadPhone({required this.width});
 
   final double width;
-
-  // Screen opening inside phone-frame-angled.png, as fractions of the image.
   static const _l = 0.0322, _t = 0.052, _r = 0.6283, _b = 0.8092;
   static const _aspect = 1289 / 807;
 
@@ -993,13 +951,9 @@ class _DownloadPhone extends StatelessWidget {
   }
 }
 
-/// Rounded pink crosses from the design, positioned relative to the
-/// download copy (fractions of its box; values outside 0–1 sit outside it).
 class _CrossesPainter extends CustomPainter {
   const _CrossesPainter();
 
-  // (x, y, size in px) — placed in the margins and in the gap above the
-  // button, where the copy has no text.
   static const _spots = [
     (-0.04, -0.10, 40.0),
     (1.00, -0.04, 72.0),
@@ -1039,7 +993,6 @@ class _CrossesPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-/// Maroon scanner corner brackets around the QR.
 class _ScanBracketsPainter extends CustomPainter {
   const _ScanBracketsPainter();
 
@@ -1073,9 +1026,6 @@ class _ScanBracketsPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-// ============================================================
-// 4. EXPERTS — intro with slanted consultation photos
-// ============================================================
 class ExpertsIntroSection extends StatelessWidget {
   const ExpertsIntroSection({super.key});
 
@@ -1185,7 +1135,6 @@ class ExpertsIntroSection extends StatelessWidget {
   }
 }
 
-/// Parallelogram-ish clip: left edge slants from top-right to bottom-left.
 class _SlantClipper extends CustomClipper<Path> {
   const _SlantClipper();
 
@@ -1204,9 +1153,6 @@ class _SlantClipper extends CustomClipper<Path> {
   bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
 }
 
-// ============================================================
-// 5. MEET OUR EXPERTS
-// ============================================================
 class _Expert {
   const _Expert(this.name, this.role, this.photo);
   final String name;
@@ -1414,9 +1360,6 @@ class _ExpertCardState extends State<_ExpertCard> {
   }
 }
 
-// ============================================================
-// 6. CONSULTATION — "Get to know them?"
-// ============================================================
 const _consultationParagraphs = [
   'On March 10, 2026, our team conducted an expert review and consultation '
       'with Dr. Deanne Asdala, Medical Affairs Manager, and Mr. Samuel Evan '
@@ -1547,9 +1490,6 @@ class ConsultationSection extends StatelessWidget {
   }
 }
 
-// ============================================================
-// 7. BRAND STATEMENT
-// ============================================================
 class BrandStatementSection extends StatelessWidget {
   const BrandStatementSection({super.key});
 
@@ -1598,9 +1538,6 @@ class BrandStatementSection extends StatelessWidget {
   }
 }
 
-// ============================================================
-// 8. FOOTER
-// ============================================================
 class LandingFooter extends StatelessWidget {
   const LandingFooter({super.key, required this.onNavigate});
 
@@ -1802,9 +1739,6 @@ class _ContactRow extends StatelessWidget {
   }
 }
 
-/// Footer text link. With [uri] it renders a real `<a href>` on the web
-/// (reliable for mailto:/tel:, and supports right-click → copy link);
-/// otherwise [onTap] runs in-page navigation.
 class _FooterLink extends StatefulWidget {
   const _FooterLink(this.label, {this.onTap, this.uri})
     : assert((onTap == null) != (uri == null));
@@ -1853,7 +1787,6 @@ class _FooterLinkState extends State<_FooterLink> {
   }
 }
 
-/// Copies the contact email — a fallback for visitors with no email app set up.
 class _CopyEmailButton extends StatelessWidget {
   const _CopyEmailButton();
 
@@ -1880,14 +1813,9 @@ class _CopyEmailButton extends StatelessWidget {
   }
 }
 
-// ######################################################################
-// THEME — colors, breakpoints, text styles, shared widgets
-// ######################################################################
-
 class LandingColors {
   LandingColors._();
 
-  // Palette sampled from the design PDF.
   static const maroon = Color(0xFF5B0D0D); // headings, buttons
   static const accent = Color(0xFF8D2F2F); // subtitles
   static const deep = Color(0xFF790000); // quote
@@ -1905,7 +1833,6 @@ class LandingColors {
   static const muted = Color(0xFF8A8A8A);
 }
 
-/// Width breakpoints shared by every section.
 class Breakpoints {
   Breakpoints._();
 
@@ -1919,12 +1846,9 @@ class Breakpoints {
       MediaQuery.sizeOf(context).width < tablet;
 }
 
-/// Fonts from the design: League Spartan (display), Canva Sans → Hind
-/// (closest Google Font), Roboto (feature cards).
 class LandingText {
   LandingText._();
 
-  /// Big uppercase display lines (hero, ABOUT, DOWNLOAD).
   static TextStyle display(double size, {Color color = LandingColors.maroon}) =>
       GoogleFonts.leagueSpartan(
         fontSize: size,
@@ -1933,7 +1857,6 @@ class LandingText {
         color: color,
       );
 
-  /// Bold sentence-case headings (experts, consultation).
   static TextStyle heading(double size, {Color color = LandingColors.maroon}) =>
       GoogleFonts.hind(
         fontSize: size,
@@ -1954,7 +1877,6 @@ class LandingText {
       );
 }
 
-/// Centers content and caps it at the site's max width.
 class ContentWidth extends StatelessWidget {
   const ContentWidth({super.key, required this.child});
 
@@ -1975,8 +1897,6 @@ class ContentWidth extends StatelessWidget {
   }
 }
 
-/// Maroon call-to-action button: pill ("GET YOURS NOW") or rounded
-/// rectangle ("SEE MORE").
 class PillButton extends StatefulWidget {
   const PillButton({
     super.key,
@@ -2034,7 +1954,6 @@ class _PillButtonState extends State<PillButton> {
   }
 }
 
-/// Kept for the 404 page in web_app.dart.
 class RedButton extends StatelessWidget {
   const RedButton({super.key, required this.label, required this.onPressed});
 
@@ -2046,8 +1965,6 @@ class RedButton extends StatelessWidget {
       PillButton(label: label.toUpperCase(), onPressed: onPressed);
 }
 
-/// Shows an image asset, or [placeholder] until that asset is supplied.
-/// Expects tight constraints from its parent (Positioned.fill, SizedBox, …).
 class AssetOr extends StatelessWidget {
   const AssetOr(
     this.asset, {
@@ -2073,7 +1990,6 @@ class AssetOr extends StatelessWidget {
   }
 }
 
-/// Soft gradient + label used where a placeholder photo is still missing.
 class PhotoPlaceholder extends StatelessWidget {
   const PhotoPlaceholder({
     super.key,
@@ -2109,13 +2025,6 @@ class PhotoPlaceholder extends StatelessWidget {
   }
 }
 
-// ######################################################################
-// ANIMATION — scroll reveal
-// ######################################################################
-
-/// Reports when its child enters or leaves the viewport of the enclosing
-/// [Scrollable]. [threshold] is the fraction of the viewport height the
-/// child's top must scroll past before it counts as visible.
 class ViewportVisibility extends StatefulWidget {
   const ViewportVisibility({
     super.key,
@@ -2172,7 +2081,6 @@ class _ViewportVisibilityState extends State<ViewportVisibility> {
   Widget build(BuildContext context) => widget.child;
 }
 
-/// Fades and slides its child up the first time it scrolls into view.
 class Reveal extends StatefulWidget {
   const Reveal({super.key, required this.child, this.delay = Duration.zero});
 
@@ -2215,27 +2123,8 @@ class _RevealState extends State<Reveal> {
   }
 }
 
-// ######################################################################
-// ANIMATION — logo
-// ######################################################################
+enum LogoTrigger { load, scroll }
 
-/// When the logo's entrance animation plays.
-enum LogoTrigger {
-  /// Once, as the page first renders (nav bar).
-  load,
-
-  /// Every time the logo scrolls into view (brand statement, footer).
-  scroll,
-}
-
-/// Fine Aid logo with the brand motion spec:
-///  * entrance: scale 90% → 100% + fade, 0.6s ease-out
-///  * hover: scale to 105%, 0.25s
-///  * heartbeat: subtle double-pulse loop, 1.8s
-///
-/// PLACEHOLDER: LOGO — assets/images/FINE_AID_Logo.png. The logo is a single
-/// raster, so the heartbeat pulses the whole mark; with a vector logo, wrap
-/// only the red cross in the heartbeat [ScaleTransition].
 class AnimatedLogo extends StatefulWidget {
   const AnimatedLogo({
     super.key,
@@ -2359,19 +2248,12 @@ class _AnimatedLogoState extends State<AnimatedLogo>
   }
 }
 
-// ######################################################################
-// FEATURE CAROUSEL — app screenshots inside the phone frame (About)
-// ######################################################################
-
 class FeatureSlide {
   const FeatureSlide({required this.asset, required this.title});
-
-  /// Phone screenshot (≈9:19). A plain placeholder shows if it's missing.
   final String asset;
   final String title;
 }
 
-/// Add more slides by dropping screen-N.jpg into assets/web/ and listing it.
 const featureSlides = [
   FeatureSlide(asset: 'assets/web/screen-1.jpg', title: 'AI Vision Camera'),
   FeatureSlide(asset: 'assets/web/screen-2.jpg', title: 'First Aid Dashboard'),
@@ -2380,9 +2262,6 @@ const featureSlides = [
   FeatureSlide(asset: 'assets/web/screen-3.jpg', title: 'Journal Entry'),
 ];
 
-/// Auto-rotating screenshots inside the phone mockup. Advances every
-/// [interval]; pauses on hover (desktop) or tap (touch); swipe, the hover
-/// arrows, or the dots navigate.
 class PhoneCarousel extends StatefulWidget {
   const PhoneCarousel({
     super.key,
@@ -2400,7 +2279,6 @@ class PhoneCarousel extends StatefulWidget {
 }
 
 class _PhoneCarouselState extends State<PhoneCarousel> {
-  // Screen opening inside phone-frame.png, as fractions of the image.
   static const _l = 0.0395, _t = 0.0158, _r = 0.9588, _b = 0.9842;
   static const _aspect = 1204 / 583;
 
@@ -2620,7 +2498,6 @@ class _PhoneCarouselState extends State<PhoneCarousel> {
   }
 }
 
-/// Round arrow overlaid on the screen edge; fades in while hovered.
 class _Arrow extends StatelessWidget {
   const _Arrow({
     required this.visible,

@@ -4,8 +4,11 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import '../../../services/export_service.dart';
 import '../../../services/firebase/notification_service.dart';
+import '../../../i18n/notification_strings.dart';
+import '../../../core/widgets/evaluation_card.dart';
 import '../../../data/healing_durations.dart';
 import '../../../core/widgets/nearby_healthcare_sheet.dart';
+import '../../../core/widgets/classification_info_button.dart';
 import '../../chatbot/screens/chatbot_screen.dart';
 import 'journal_list_screen.dart';
 
@@ -64,30 +67,32 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
   }
 
   Future<void> _showMilestoneDialog() async {
-    final classification = widget.data['classification'] as String?;
+    final text = NotificationStrings.of(context);
 
-    // '_better' / '_notYet' / '_worse' — a plain string result keeps this
-    // a 3-way choice without a one-off enum just for this dialog.
+    // '_better' / '_notYet' / '_worse' — a plain string result keeps this a
+    // 3-way choice without a one-off enum just for this dialog. Neutral
+    // check-in question only; "It's getting worse" leads to a
+    // recommendation, not a diagnosis.
     final choice = await showDialog<String>(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(healingMilestoneTitle),
-        content: Text(healingMilestoneBody(classification)),
+        title: Text(text.checkInTitle),
+        content: Text(text.checkInBody),
         actionsAlignment: MainAxisAlignment.center,
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, '_notYet'),
-            child: const Text('Not yet'),
+            child: Text(text.dialogNotYet),
           ),
           OutlinedButton(
             onPressed: () => Navigator.pop(context, '_worse'),
-            child: const Text('It\'s getting worse'),
+            child: Text(text.dialogWorse),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, '_better'),
-            child: const Text('Yes, I\'m feeling better'),
+            child: Text(text.dialogBetter),
           ),
         ],
       ),
@@ -108,14 +113,13 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
       case '_notYet':
         await NotificationService().remindHealingCheckInTomorrow(
           entryId: widget.entryId,
-          classification: classification ?? 'this issue',
+          classification:
+              widget.data['classification'] as String? ?? 'this issue',
         );
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Okay — we\'ll check in again tomorrow.'),
-            ),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(text.notYetSnack)));
         }
         break;
     }
@@ -259,6 +263,8 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
     );
   }
 
+  /// The auto-generated Evaluation (ADPIE: Evaluation), built from fixed
+  /// templates filled with what this entry saved — never free AI text.
   Widget _buildHealingTimeline(ThemeData theme) {
     final standard = _standardDuration();
     final monitored = _monitoredDays() ?? 0;
@@ -490,6 +496,8 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
 
               const SizedBox(height: 16),
               _buildHealingTimeline(theme),
+              const SizedBox(height: 16),
+              EvaluationCard(data: data, monitoredDays: monitoredDays),
 
               const SizedBox(height: 20),
               Row(
@@ -501,6 +509,10 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
                       color: theme.colorScheme.primary,
                       fontWeight: FontWeight.bold,
                     ),
+                  ),
+                  ClassificationInfoButton(
+                    classification: classification,
+                    color: theme.colorScheme.primary,
                   ),
                 ],
               ),

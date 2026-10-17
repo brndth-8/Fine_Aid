@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'help_topic_screen.dart';
 import '../../../core/widgets/help_tour_launcher.dart';
+import '../../../i18n/help_strings.dart';
 
 class HelpScreen extends StatelessWidget {
   const HelpScreen({super.key});
@@ -8,6 +9,7 @@ class HelpScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final s = HelpStrings.of(context);
 
     return Scaffold(
       body: SafeArea(
@@ -25,7 +27,7 @@ class HelpScreen extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 8),
-              Text('How can we help?', style: theme.textTheme.headlineSmall),
+              Text(s.heading, style: theme.textTheme.headlineSmall),
               const SizedBox(height: 24),
               ClipRRect(
                 borderRadius: BorderRadius.circular(20),
@@ -48,7 +50,7 @@ class HelpScreen extends StatelessWidget {
                       context,
                       theme,
                       imagePath: 'assets/images/help_getting_started.png',
-                      label: 'Getting Started',
+                      label: s.gettingStartedTile,
                       topic: HelpTopic.gettingStarted,
                     ),
                   ),
@@ -58,7 +60,7 @@ class HelpScreen extends StatelessWidget {
                       context,
                       theme,
                       imagePath: 'assets/images/help_privacy.png',
-                      label: 'Privacy Issues',
+                      label: s.privacyTile,
                       topic: HelpTopic.privacy,
                     ),
                   ),
@@ -72,7 +74,7 @@ class HelpScreen extends StatelessWidget {
                       context,
                       theme,
                       imagePath: 'assets/images/help_journal.png',
-                      label: 'How to use Journal?',
+                      label: s.journalTile,
                       topic: HelpTopic.journal,
                     ),
                   ),
@@ -82,7 +84,7 @@ class HelpScreen extends StatelessWidget {
                       context,
                       theme,
                       imagePath: 'assets/images/help_references.png',
-                      label: 'References',
+                      label: s.referencesTile,
                       topic: HelpTopic.references,
                     ),
                   ),
@@ -95,7 +97,7 @@ class HelpScreen extends StatelessWidget {
                   Navigator.of(context).popUntil((route) => route.isFirst);
                 },
                 icon: const Icon(Icons.play_circle_outline),
-                label: const Text('Replay Help Tour'),
+                label: Text(s.replayTour),
                 style: OutlinedButton.styleFrom(
                   minimumSize: const Size.fromHeight(48),
                 ),

@@ -1,8 +1,65 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../services/firebase/auth_service.dart';
 import '../../../core/password_requirements.dart';
+import '../../../core/widgets/password_checklist.dart';
 import '../../../core/ph_phone_validator.dart';
+
+/// Phone digits the user types after the fixed "+63" prefix.
+const int kPhoneDigitCount = 10;
+
+/// Keeps the phone field to digits only (letters, spaces, +, -, ( ) etc. are
+/// dropped — including from pasted text), removes a leading 0 so a local-format
+/// number (09123456789) becomes 9123456789, removes a pasted "63"/"+63"
+/// country code, and caps the length at [kPhoneDigitCount].
+class PhPhoneDigitsFormatter extends TextInputFormatter {
+  const PhPhoneDigitsFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final text = newValue.text;
+    final cursor = newValue.selection.baseOffset.clamp(0, text.length);
+    final nonDigit = RegExp(r'[^0-9]');
+
+    var digits = text.replaceAll(nonDigit, '');
+    var digitsBeforeCursor = text.substring(0, cursor).replaceAll(nonDigit, '');
+
+    // A pasted "+639123456789" (country code) -> keep just the 10 digits.
+    if (digits.length > kPhoneDigitCount && digits.startsWith('63')) {
+      digits = digits.substring(2);
+      digitsBeforeCursor = digitsBeforeCursor.length >= 2
+          ? digitsBeforeCursor.substring(2)
+          : '';
+    }
+
+    // Leading zero(s): the "+63" prefix already replaces the trunk 0.
+    final stripped =
+        digits.length - digits.replaceFirst(RegExp(r'^0+'), '').length;
+    if (stripped > 0) {
+      digits = digits.substring(stripped);
+      final cut = stripped < digitsBeforeCursor.length
+          ? stripped
+          : digitsBeforeCursor.length;
+      digitsBeforeCursor = digitsBeforeCursor.substring(cut);
+    }
+
+    if (digits.length > kPhoneDigitCount) {
+      digits = digits.substring(0, kPhoneDigitCount);
+    }
+    final offset = digitsBeforeCursor.length > digits.length
+        ? digits.length
+        : digitsBeforeCursor.length;
+
+    return TextEditingValue(
+      text: digits,
+      selection: TextSelection.collapsed(offset: offset),
+    );
+  }
+}
 
 class RegistrationScreen extends StatefulWidget {
   const RegistrationScreen({super.key});
@@ -22,10 +79,48 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   final _confirmPasswordController = TextEditingController();
   final _authService = AuthService();
 
+  // One key + focus node per field so its error can appear as soon as the
+  // user leaves it (typing triggers it too, via autovalidateMode below) —
+  // but never before they've interacted with it.
+  final _usernameKey = GlobalKey<FormFieldState<String>>();
+  final _phoneKey = GlobalKey<FormFieldState<String>>();
+  final _emailKey = GlobalKey<FormFieldState<String>>();
+  final _passwordKey = GlobalKey<FormFieldState<String>>();
+  final _confirmKey = GlobalKey<FormFieldState<String>>();
+  final _usernameFocus = FocusNode();
+  final _phoneFocus = FocusNode();
+  final _emailFocus = FocusNode();
+  final _passwordFocus = FocusNode();
+  final _confirmFocus = FocusNode();
+  bool _emailTouched = false;
+
   bool _isLoading = false;
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
   _VerificationMethod _verificationMethod = _VerificationMethod.sms;
+
+  @override
+  void initState() {
+    super.initState();
+    _validateOnBlur(_usernameFocus, _usernameKey);
+    _validateOnBlur(_phoneFocus, _phoneKey);
+    _validateOnBlur(_emailFocus, _emailKey, onBlur: () => _emailTouched = true);
+    _validateOnBlur(_passwordFocus, _passwordKey);
+    _validateOnBlur(_confirmFocus, _confirmKey);
+  }
+
+  void _validateOnBlur(
+    FocusNode node,
+    GlobalKey<FormFieldState<String>> key, {
+    VoidCallback? onBlur,
+  }) {
+    node.addListener(() {
+      if (!node.hasFocus) {
+        onBlur?.call();
+        key.currentState?.validate();
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -34,6 +129,11 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
+    _usernameFocus.dispose();
+    _phoneFocus.dispose();
+    _emailFocus.dispose();
+    _passwordFocus.dispose();
+    _confirmFocus.dispose();
     super.dispose();
   }
 
@@ -50,11 +150,18 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     return null;
   }
 
+  // [value] is only the digits after the fixed "+63" prefix.
   String? _validatePhone(String? value) {
-    if (value == null || value.trim().isEmpty) {
+    final digits = value ?? '';
+    if (digits.isEmpty) {
       return 'Phone number is required';
     }
-    if (normalizePhMobileNumber(value) == null) {
+    if (digits.length != kPhoneDigitCount) {
+      return 'Phone number must be exactly 10 digits';
+    }
+    // Exactly 10 digits isn't enough: keep the app's existing checks (must
+    // be a mobile number on a real carrier prefix, not a fake pattern).
+    if (normalizePhMobileNumber('+63$digits') == null) {
       return phPhoneErrorMessage;
     }
     return null;
@@ -66,27 +173,41 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       // Only required when it's actually the verification channel —
       // otherwise it's just an optional recovery address.
       return _verificationMethod == _VerificationMethod.email
-          ? 'Email is required for email verification'
+          ? 'Email address is required'
           : null;
     }
     final emailRegex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
     if (!emailRegex.hasMatch(trimmed)) {
-      return 'Enter a valid email address';
+      return 'Please enter a valid email address';
     }
     return null;
   }
 
   String? _validateConfirmPassword(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Confirm password is required';
+    }
     if (value != _passwordController.text) {
       return 'Passwords do not match';
     }
     return null;
   }
 
+  /// True only when every field is filled and passes its own validator —
+  /// this is what enables the Sign Up button.
+  bool get _isFormValid =>
+      _validateUsername(_usernameController.text) == null &&
+      _validatePhone(_phoneController.text) == null &&
+      _validateEmail(_emailController.text) == null &&
+      validatePasswordStrength(_passwordController.text) == null &&
+      _validateConfirmPassword(_confirmPasswordController.text) == null;
+
   Future<void> _handleSignUp() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final normalizedPhone = normalizePhMobileNumber(_phoneController.text);
+    final normalizedPhone = normalizePhMobileNumber(
+      '+63${_phoneController.text}',
+    );
     if (normalizedPhone == null) {
       // The form validator already checks this, but guard here too since
       // this value is about to be persisted as the account's phone number.
@@ -174,6 +295,9 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
           child: Form(
             key: _formKey,
+            // Re-evaluate the Sign Up button (and the password checklist)
+            // on every keystroke in any field.
+            onChanged: () => setState(() {}),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -193,7 +317,10 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                 Text('Username', style: theme.textTheme.titleSmall),
                 const SizedBox(height: 6),
                 TextFormField(
+                  key: _usernameKey,
+                  focusNode: _usernameFocus,
                   controller: _usernameController,
+                  autovalidateMode: AutovalidateMode.onUserInteraction,
                   decoration: const InputDecoration(
                     hintText: 'Enter a username',
                     prefixIcon: Icon(Icons.person_outline),
@@ -224,9 +351,12 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                   selected: {_verificationMethod},
                   onSelectionChanged: (selection) {
                     setState(() => _verificationMethod = selection.first);
-                    // Re-run validation so the email field's
-                    // required-or-not state updates immediately.
-                    _formKey.currentState?.validate();
+                    // Re-run the email field's validation so its
+                    // required-or-not state updates immediately — but only
+                    // if the user has already interacted with it.
+                    if (_emailTouched || _emailController.text.isNotEmpty) {
+                      _emailKey.currentState?.validate();
+                    }
                   },
                 ),
                 const SizedBox(height: 16),
@@ -235,11 +365,31 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                 Text('Phone Number', style: theme.textTheme.titleSmall),
                 const SizedBox(height: 6),
                 TextFormField(
+                  key: _phoneKey,
+                  focusNode: _phoneFocus,
                   controller: _phoneController,
-                  keyboardType: TextInputType.phone,
+                  keyboardType: TextInputType.number,
+                  autovalidateMode: AutovalidateMode.onUserInteraction,
+                  maxLength: kPhoneDigitCount,
+                  inputFormatters: const [PhPhoneDigitsFormatter()],
                   decoration: const InputDecoration(
-                    hintText: '09923456789',
-                    prefixIcon: Icon(Icons.phone_outlined),
+                    hintText: '9123456789',
+                    counterText: '',
+                    // Fixed, non-editable country code shown before the
+                    // digits the user types.
+                    prefixIcon: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(width: 12),
+                        Icon(Icons.phone_outlined),
+                        SizedBox(width: 8),
+                        Text(
+                          '+63',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        SizedBox(width: 6),
+                      ],
+                    ),
                   ),
                   validator: _validatePhone,
                 ),
@@ -250,9 +400,12 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                 Text('Email', style: theme.textTheme.titleSmall),
                 const SizedBox(height: 6),
                 TextFormField(
+                  key: _emailKey,
+                  focusNode: _emailFocus,
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
                   autovalidateMode: AutovalidateMode.onUserInteraction,
+                  onChanged: (_) => _emailTouched = true,
                   decoration: const InputDecoration(
                     hintText: 'Email Address',
                     prefixIcon: Icon(Icons.email_outlined),
@@ -265,9 +418,18 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                 Text('Password', style: theme.textTheme.titleSmall),
                 const SizedBox(height: 6),
                 TextFormField(
+                  key: _passwordKey,
+                  focusNode: _passwordFocus,
                   controller: _passwordController,
                   obscureText: _obscurePassword,
                   autovalidateMode: AutovalidateMode.onUserInteraction,
+                  onChanged: (_) {
+                    // Keep "Passwords do not match" in step with a changed
+                    // password once the user has started confirming it.
+                    if (_confirmPasswordController.text.isNotEmpty) {
+                      _confirmKey.currentState?.validate();
+                    }
+                  },
                   decoration: InputDecoration(
                     hintText: 'Create password',
                     prefixIcon: const Icon(Icons.lock_outline),
@@ -283,12 +445,18 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                   ),
                   validator: validatePasswordStrength,
                 ),
+                const SizedBox(height: 8),
+
+                // Live checklist: each requirement turns green as it's met.
+                PasswordChecklist(password: _passwordController.text),
                 const SizedBox(height: 16),
 
                 // Confirm Password
                 Text('Confirm Password', style: theme.textTheme.titleSmall),
                 const SizedBox(height: 6),
                 TextFormField(
+                  key: _confirmKey,
+                  focusNode: _confirmFocus,
                   controller: _confirmPasswordController,
                   obscureText: _obscureConfirm,
                   autovalidateMode: AutovalidateMode.onUserInteraction,
@@ -310,10 +478,22 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                 const SizedBox(height: 32),
 
                 // Sign Up button
+                // Disabled (gray, not tappable) until every field is filled
+                // and valid.
                 ElevatedButton(
-                  onPressed: _isLoading ? null : _handleSignUp,
+                  onPressed: (_isFormValid && !_isLoading)
+                      ? _handleSignUp
+                      : null,
                   style: ElevatedButton.styleFrom(
                     minimumSize: const Size.fromHeight(50),
+                    // While loading keep the existing look; otherwise the
+                    // disabled state is gray.
+                    disabledBackgroundColor: _isLoading
+                        ? null
+                        : Colors.grey.shade300,
+                    disabledForegroundColor: _isLoading
+                        ? null
+                        : Colors.grey.shade600,
                   ),
                   child: _isLoading
                       ? const SizedBox(

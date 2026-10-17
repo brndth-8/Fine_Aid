@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 class LoginScreen extends StatelessWidget {
@@ -14,7 +15,7 @@ class LoginScreen extends StatelessWidget {
             children: [
               Positioned.fill(
                 child: Image.asset(
-                  'assets/images/FINE_AID_Background.png',
+                  'assets/images/Fine_Aid_BG.png',
                   fit: BoxFit.cover,
                   alignment: isWide ? Alignment.center : Alignment.bottomCenter,
                 ),
@@ -27,7 +28,8 @@ class LoginScreen extends StatelessWidget {
                 ),
 
               SafeArea(
-                child: Center(
+                child: Align(
+                  alignment: isWide ? Alignment.center : Alignment.topCenter,
                   child: SingleChildScrollView(
                     child: ConstrainedBox(
                       constraints: BoxConstraints(
@@ -37,7 +39,7 @@ class LoginScreen extends StatelessWidget {
                         padding: EdgeInsets.only(
                           left: 22,
                           right: 22,
-                          top: isWide ? 0 : 280,
+                          top: 0,
                           bottom: isWide ? 0 : 45,
                         ),
                         child: Column(
@@ -54,11 +56,25 @@ class LoginScreen extends StatelessWidget {
                                 ),
                                 child: Padding(
                                   padding: const EdgeInsets.all(32),
-                                  child: _buildButtons(context),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      _buildLogo(context, 240),
+                                      const SizedBox(height: 24),
+                                      _buildButtons(context),
+                                    ],
+                                  ),
                                 ),
                               )
-                            else
+                            else ...[
+                              SizedBox(height: constraints.maxHeight * 0.16),
+                              _buildLogo(
+                                context,
+                                math.min(300, constraints.maxWidth * 0.78),
+                              ),
+                              SizedBox(height: constraints.maxHeight * 0.14),
                               _buildButtons(context),
+                            ],
                           ],
                         ),
                       ),
@@ -70,6 +86,23 @@ class LoginScreen extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+
+  // The FineAid logo with its tagline.
+  Widget _buildLogo(BuildContext context, double width) {
+    return Column(
+      children: [
+        Image.asset('assets/images/FINE_AID_Logo.png', width: width),
+        const SizedBox(height: 4),
+        Text(
+          'Your Smart First-Aid Assistance',
+          textAlign: TextAlign.center,
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: const Color(0xFF780000)),
+        ),
+      ],
     );
   }
 
