@@ -6,8 +6,10 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:intl/intl.dart';
 import '../../../../services/firebase/auth_service.dart';
+import '../../../../services/firebase/email_reservation.dart';
 import '../widgets/admin_pagination.dart';
 import '../widgets/admin_shared_widgets.dart';
+import '../widgets/admin_user_info.dart';
 
 class AdminUserManagement extends StatefulWidget {
   const AdminUserManagement({super.key});
@@ -20,6 +22,9 @@ class _AdminUserManagementState extends State<AdminUserManagement> {
   late final AdminPageController _pager = AdminPageController(
     FirebaseFirestore.instance
         .collection('users')
+        // Only finished registrations — filtered here in the query so
+        // pages and the total count never include half-made accounts.
+        .where('registrationComplete', isEqualTo: true)
         .orderBy('createdAt', descending: true),
   );
 
@@ -147,66 +152,152 @@ class _AdminUserManagementState extends State<AdminUserManagement> {
     }
   }
 
+  /// Saves the contact details the admin edited. The email is the user's real
+  /// (recovery) address, stored trimmed and lower-case, and reserved in the
+  /// same transaction so two accounts can never share one. Throws
+  /// [EmailTakenException] if another account already uses it.
+  Future<void> _saveContact(
+    String uid,
+    Map<String, dynamic> data, {
+    required String email,
+    required String phone,
+  }) async {
+    final firestore = FirebaseFirestore.instance;
+    final newEmail = normalizeEmail(email);
+    final oldEmail = data['recoveryEmail'] as String? ?? '';
+    final emailChanged = newEmail != normalizeEmail(oldEmail);
+    await firestore.runTransaction((tx) async {
+      final applyEmail = emailChanged
+          ? await EmailReservation.prepare(
+              tx,
+              firestore,
+              uid: uid,
+              newEmail: newEmail,
+              oldEmail: oldEmail,
+            )
+          : () {};
+      tx.update(firestore.collection('users').doc(uid), {
+        'phoneNumber': phone.trim(),
+        if (emailChanged)
+          'recoveryEmail': newEmail.isEmpty ? FieldValue.delete() : newEmail,
+      });
+      applyEmail();
+    });
+  }
+
   Future<void> _editUser(
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
     Map<String, dynamic> data,
   ) async {
     final emailController = TextEditingController(
-      text: data['email'] as String? ?? '',
+      text: data['recoveryEmail'] as String? ?? '',
     );
     final phoneController = TextEditingController(
       text: data['phoneNumber'] as String? ?? '',
     );
     final formKey = GlobalKey<FormState>();
+    var saving = false;
+    String? error;
 
-    final saved = await showDialog<bool>(
+    await showDialog<void>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('Edit ${data['username'] ?? 'user'}'),
-        content: Form(
-          key: formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextFormField(
-                controller: emailController,
-                decoration: const InputDecoration(labelText: 'Email'),
-                validator: (v) => (v == null || !v.contains('@'))
-                    ? 'Enter a valid email'
-                    : null,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: phoneController,
-                decoration: const InputDecoration(labelText: 'Phone number'),
-              ),
-            ],
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: Text('Edit ${data['username'] ?? 'user'}'),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(
+                    labelText: 'Email (optional)',
+                  ),
+                  onChanged: (_) {
+                    if (error != null) setDialogState(() => error = null);
+                  },
+                  validator: (v) {
+                    final text = (v ?? '').trim();
+                    if (text.isEmpty) return null;
+                    return RegExp(
+                          r'^[^@\s/]+@[^@\s/]+\.[^@\s/]+$',
+                        ).hasMatch(text)
+                        ? null
+                        : 'Enter a valid email';
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: phoneController,
+                  decoration: const InputDecoration(labelText: 'Phone number'),
+                ),
+                if (error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    error!,
+                    style: const TextStyle(
+                      color: Colors.redAccent,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: saving
+                  ? null
+                  : () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: saving
+                  ? null
+                  : () async {
+                      if (!formKey.currentState!.validate()) return;
+                      setDialogState(() {
+                        saving = true;
+                        error = null;
+                      });
+                      try {
+                        await _saveContact(
+                          doc.id,
+                          data,
+                          email: emailController.text,
+                          phone: phoneController.text,
+                        );
+                        logAdminAction(
+                          'Edited user ${data['username'] ?? doc.id}',
+                          targetType: 'user',
+                          targetId: doc.id,
+                          targetName: data['username'] as String?,
+                        );
+                        if (dialogContext.mounted) {
+                          Navigator.of(dialogContext).pop();
+                        }
+                      } on EmailTakenException {
+                        setDialogState(() {
+                          saving = false;
+                          error = 'This email is already registered.';
+                        });
+                      } catch (e) {
+                        setDialogState(() {
+                          saving = false;
+                          error = "Couldn't save: ${adminErrorMessage(e)}";
+                        });
+                      }
+                    },
+              child: Text(saving ? 'Saving…' : 'Save'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              if (formKey.currentState!.validate()) {
-                Navigator.of(dialogContext).pop(true);
-              }
-            },
-            child: const Text('Save'),
-          ),
-        ],
       ),
     );
 
-    if (saved == true) {
-      await FirebaseFirestore.instance.collection('users').doc(doc.id).update({
-        'email': emailController.text.trim(),
-        'phoneNumber': phoneController.text.trim(),
-      });
-      logAdminAction('Edited user ${data['username'] ?? doc.id}');
-    }
     emailController.dispose();
     phoneController.dispose();
   }
@@ -254,7 +345,10 @@ class _AdminUserManagementState extends State<AdminUserManagement> {
       final secondaryFirestore = FirebaseFirestore.instanceFor(
         app: secondaryApp,
       );
-      await secondaryFirestore.collection('users').doc(uid).set({
+      // One batch: the profile and the username are saved together or not at
+      // all, and `registrationComplete` is what lists the user in the portal.
+      final batch = secondaryFirestore.batch();
+      batch.set(secondaryFirestore.collection('users').doc(uid), {
         'username': exactUsername,
         'email': generatedEmail,
         'phoneNumber': phoneNumber,
@@ -263,12 +357,14 @@ class _AdminUserManagementState extends State<AdminUserManagement> {
         'phoneVerified': false,
         'onboardingComplete': false,
         'createdByAdmin': true,
+        'registrationComplete': true,
       });
-      await secondaryFirestore.collection('usernames').doc(exactUsername).set({
+      batch.set(secondaryFirestore.collection('usernames').doc(exactUsername), {
         'email': generatedEmail,
         'uid': uid,
         'usernameExact': exactUsername,
       });
+      await batch.commit();
 
       await secondaryAuth.signOut();
     } finally {
@@ -455,9 +551,10 @@ class _AdminUserManagementState extends State<AdminUserManagement> {
                             ),
                             child: Row(
                               children: [
-                                _tableHeader(context, 'User', flex: 2),
+                                _tableHeader(context, 'Name', flex: 2),
                                 _tableHeader(context, 'Email', flex: 3),
-                                _tableHeader(context, 'Joined'),
+                                _tableHeader(context, 'Account type'),
+                                _tableHeader(context, 'Created'),
                                 _tableHeader(context, 'Status', flex: 2),
                                 _tableHeader(context, 'Actions', flex: 2),
                               ],
@@ -468,11 +565,26 @@ class _AdminUserManagementState extends State<AdminUserManagement> {
                             final data = doc.data();
                             final username =
                                 data['username'] as String? ?? 'Unknown';
-                            final email = data['email'] as String? ?? '';
+                            // The user's real (recovery) email. The `email`
+                            // field is only the generated sign-in address
+                            // (username@fineaid.app), which isn't useful here.
+                            final email =
+                                (data['recoveryEmail'] as String?)
+                                        ?.trim()
+                                        .isNotEmpty ==
+                                    true
+                                ? data['recoveryEmail'] as String
+                                : 'N/A';
+                            final fullName =
+                                '${data['firstName'] ?? ''} ${data['lastName'] ?? ''}'
+                                    .trim();
+                            final displayName = fullName.isEmpty
+                                ? username
+                                : fullName;
                             final ts = data['createdAt'] as Timestamp?;
                             final joined = ts != null
-                                ? '${ts.toDate().day}/${ts.toDate().month}/${ts.toDate().year}'
-                                : '';
+                                ? DateFormat('MMM d, y').format(ts.toDate())
+                                : 'N/A';
                             // Deactivated outright, or past its scheduled date
                             // (the app already blocks sign-in at that point;
                             // the hourly job just catches the flag up).
@@ -504,8 +616,9 @@ class _AdminUserManagementState extends State<AdminUserManagement> {
                                               backgroundColor:
                                                   theme.colorScheme.primary,
                                               child: Text(
-                                                username.isNotEmpty
-                                                    ? username[0].toUpperCase()
+                                                displayName.isNotEmpty
+                                                    ? displayName[0]
+                                                          .toUpperCase()
                                                     : '?',
                                                 style: theme.textTheme.bodySmall
                                                     ?.copyWith(
@@ -514,13 +627,34 @@ class _AdminUserManagementState extends State<AdminUserManagement> {
                                               ),
                                             ),
                                             const SizedBox(width: 8),
-                                            Text(
-                                              username,
-                                              style: theme.textTheme.labelSmall
-                                                  ?.copyWith(
-                                                    fontWeight: FontWeight.bold,
-                                                    color: Colors.black,
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    displayName,
+                                                    style: theme
+                                                        .textTheme
+                                                        .labelSmall
+                                                        ?.copyWith(
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          color: Colors.black,
+                                                        ),
                                                   ),
+                                                  if (fullName.isNotEmpty)
+                                                    Text(
+                                                      username,
+                                                      style: theme
+                                                          .textTheme
+                                                          .bodySmall
+                                                          ?.copyWith(
+                                                            color: Colors.grey,
+                                                          ),
+                                                    ),
+                                                ],
+                                              ),
                                             ),
                                           ],
                                         ),
@@ -531,6 +665,31 @@ class _AdminUserManagementState extends State<AdminUserManagement> {
                                           email,
                                           style: theme.textTheme.labelMedium
                                               ?.copyWith(color: Colors.black87),
+                                        ),
+                                      ),
+                                      // Every profile in `users` is a registered
+                                      // account; guests have no account to list.
+                                      Expanded(
+                                        child: Align(
+                                          alignment: Alignment.centerLeft,
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 3,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: Colors.blue.shade50,
+                                              borderRadius:
+                                                  BorderRadius.circular(20),
+                                            ),
+                                            child: Text(
+                                              'Registered',
+                                              style: theme.textTheme.labelSmall
+                                                  ?.copyWith(
+                                                    color: Colors.blue.shade800,
+                                                  ),
+                                            ),
+                                          ),
                                         ),
                                       ),
                                       Expanded(
@@ -581,17 +740,6 @@ class _AdminUserManagementState extends State<AdminUserManagement> {
                                         child: Row(
                                           children: [
                                             TextButton(
-                                              onPressed: () =>
-                                                  _editUser(doc, data),
-                                              child: Text(
-                                                'Edit',
-                                                style: theme.textTheme.bodySmall
-                                                    ?.copyWith(
-                                                      color: Colors.black,
-                                                    ),
-                                              ),
-                                            ),
-                                            TextButton(
                                               onPressed: busy
                                                   ? null
                                                   : () => isDeactivated
@@ -629,6 +777,36 @@ class _AdminUserManagementState extends State<AdminUserManagement> {
                                                           : Colors.red.shade700,
                                                     ),
                                               ),
+                                            ),
+                                            // View details / Edit. There is no
+                                            // Delete: the admin portal has no
+                                            // way to delete accounts.
+                                            PopupMenuButton<String>(
+                                              tooltip: 'More actions',
+                                              icon: const Icon(
+                                                Icons.more_vert,
+                                                size: 18,
+                                              ),
+                                              onSelected: (value) {
+                                                if (value == 'details') {
+                                                  showAdminUserInfo(
+                                                    context,
+                                                    data,
+                                                  );
+                                                } else if (value == 'edit') {
+                                                  _editUser(doc, data);
+                                                }
+                                              },
+                                              itemBuilder: (_) => const [
+                                                PopupMenuItem(
+                                                  value: 'details',
+                                                  child: Text('View details'),
+                                                ),
+                                                PopupMenuItem(
+                                                  value: 'edit',
+                                                  child: Text('Edit'),
+                                                ),
+                                              ],
                                             ),
                                           ],
                                         ),

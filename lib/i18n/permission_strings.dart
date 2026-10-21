@@ -11,9 +11,9 @@ class PermissionStrings {
   final String privacyTitle;
   final String privacy;
   final String allowCamera;
-  final String skipForNow;
   final String continueButton;
-  final String notGranted;
+  final String deniedMessage;
+  final String openSettings;
   final String genericError;
 
   const PermissionStrings({
@@ -24,9 +24,9 @@ class PermissionStrings {
     required this.privacyTitle,
     required this.privacy,
     required this.allowCamera,
-    required this.skipForNow,
     required this.continueButton,
-    required this.notGranted,
+    required this.deniedMessage,
+    required this.openSettings,
     required this.genericError,
   });
 
@@ -52,11 +52,12 @@ class PermissionStrings {
     allowCamera:
         'I allow the app to access my camera for medical literacy and '
         'assessment purposes.',
-    skipForNow: 'Skip for now',
     continueButton: 'Continue',
-    notGranted:
-        'Camera permission was not granted. You can enable it later in '
-        'Settings.',
+    deniedMessage:
+        'Camera access is turned off, so AI scanning will not work. You can '
+        'turn it on in the Settings of your phone. Tap Continue to move on '
+        'without it and enable it later.',
+    openSettings: 'Open Settings',
     genericError: 'Something went wrong. Please try again.',
   );
 
@@ -81,11 +82,12 @@ class PermissionStrings {
     allowCamera:
         'Pinapayagan ko ang app na gamitin ang aking camera para sa '
         'kaalamang medikal at layunin ng pagsusuri.',
-    skipForNow: 'Laktawan muna',
     continueButton: 'Magpatuloy',
-    notGranted:
-        'Hindi ibinigay ang pahintulot sa camera. Maaari mo itong i-on '
-        'mamaya sa Settings.',
+    deniedMessage:
+        'Naka-off ang access sa camera kaya hindi gagana ang AI scanning. '
+        'Maaari mo itong i-on sa Settings ng iyong telepono. I-tap ang '
+        'Magpatuloy para magpatuloy nang wala nito at i-on ito mamaya.',
+    openSettings: 'Buksan ang Settings',
     genericError: 'May nangyaring mali. Pakisubukang muli.',
   );
 }

@@ -69,7 +69,7 @@ class PhotoStrings {
         'pick is used.',
     continueLabel: 'Continue',
     notNow: 'Not now',
-    cameraDeniedTitle: 'Camera access is off',
+    cameraDeniedTitle: 'Access Required',
     cameraDeniedBody:
         'Without camera access, Fine Aid can\'t take a photo. You can turn '
         'it on in your phone\'s app settings, or use Upload image instead.',
@@ -100,7 +100,7 @@ class PhotoStrings {
         'entry na ito. Ang larawang pipiliin mo lamang ang gagamitin.',
     continueLabel: 'Magpatuloy',
     notNow: 'Hindi muna',
-    cameraDeniedTitle: 'Naka-off ang access sa camera',
+    cameraDeniedTitle: 'Kailangan ang Access',
     cameraDeniedBody:
         'Kung walang access sa camera, hindi makakakuha ng larawan ang Fine '
         'Aid. Maaari mo itong i-on sa app settings ng iyong telepono, o '

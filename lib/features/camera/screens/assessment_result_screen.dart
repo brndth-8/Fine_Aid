@@ -7,20 +7,15 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../services/api/gemini_service.dart';
 import '../../../services/firebase/storage_service.dart';
 import '../../../services/firebase/first_aid_content_service.dart';
-import '../../../services/firebase/notification_service.dart';
-import '../../../core/widgets/remind_me_checkbox.dart';
 import '../../../core/widgets/evaluation_card.dart';
 import '../../../core/widgets/first_aid_step_image.dart';
 import '../../../data/first_aid_step_images.dart';
-import '../../../i18n/ai_scan_stats_strings.dart';
 import '../../../i18n/voice_strings.dart';
 import '../../../services/ai_scan_stats_service.dart';
-import '../../../i18n/notification_strings.dart';
 import '../../../services/connectivity_service.dart';
 import '../../../services/voice_input_service.dart';
 import '../../../services/health_profile_service.dart';
 import '../../../services/otc_filter_service.dart';
-import '../../../data/healing_durations.dart';
 import '../../../data/health_profile_cautions.dart';
 import '../../../core/widgets/nearby_healthcare_sheet.dart';
 import '../../../core/widgets/voice_message_bubble.dart';
@@ -100,8 +95,6 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen>
   bool _errorIsOffline = false;
   bool _savedToJournal = false;
   bool _isSaving = false;
-  // "Remind me": the user asked for a healing check-in for this entry.
-  bool _remindMe = false;
   bool _showTagalog = false;
   List<String>? _tagalogSteps;
   bool _isLoadingTagalog = false;
@@ -115,10 +108,6 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen>
   // The user's 1-10 pain rating, asked right after the AI scan and before
   // the results are shown. Saved with the journal entry.
   int? _painScore;
-  // Optional "Was this result correct?" answer (null = not answered). The
-  // question is only offered for a scan that counted as successful.
-  bool? _scanRating;
-  bool _canRate = false;
 
   final List<_FollowUpMessage> _followUpMessages = [];
   bool _isSendingFollowUp = false;
@@ -196,61 +185,7 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen>
       stats.recordFailure(ScanFailureReason.lowConfidence);
     } else {
       stats.recordSuccess();
-      _canRate = true;
     }
-  }
-
-  void _rateScan(bool correct) {
-    final previous = _scanRating;
-    // Tapping the same answer again takes it back.
-    final next = previous == correct ? null : correct;
-    AiScanStatsService.instance.recordRating(previous: previous, current: next);
-    setState(() => _scanRating = next);
-  }
-
-  /// Small, optional "Was this result correct? Yes / No" row. Never blocks
-  /// anything.
-  Widget _buildResultFeedback(ThemeData theme) {
-    if (!_canRate) return const SizedBox.shrink();
-    final s = AiScanStatsStrings.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  s.feedbackQuestion,
-                  style: theme.textTheme.bodySmall,
-                ),
-              ),
-              ChoiceChip(
-                label: Text(s.yes),
-                selected: _scanRating == true,
-                visualDensity: VisualDensity.compact,
-                onSelected: (_) => _rateScan(true),
-              ),
-              const SizedBox(width: 6),
-              ChoiceChip(
-                label: Text(s.no),
-                selected: _scanRating == false,
-                visualDensity: VisualDensity.compact,
-                onSelected: (_) => _rateScan(false),
-              ),
-            ],
-          ),
-          if (_scanRating != null)
-            Text(
-              s.feedbackThanks,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: Colors.grey.shade600,
-              ),
-            ),
-        ],
-      ),
-    );
   }
 
   bool _painDialogOpen = false;
@@ -290,8 +225,6 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen>
     // unrelated earlier wound's conversation bleeding into this one.
     GeminiService().resetChat();
     _painScore = null;
-    _scanRating = null;
-    _canRate = false;
 
     _startAnalyzingTimer();
     // The pain rating is asked right away, over the loading screen, while the
@@ -512,7 +445,7 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen>
           // Marks the 0-5 scale (older entries were rated 1-10).
           'painScaleMax': kPainMax,
         },
-        'remindMe': _remindMe,
+        'remindMe': false,
         'imageCount': 1,
         'source': 'ai_camera',
       };
@@ -539,17 +472,6 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen>
             .add(journalData)
             .timeout(const Duration(seconds: 10));
 
-        final healingDays = healingDurationDays[assessment.category];
-        final noBenchmark = _remindMe && healingDays == null;
-        if (_remindMe && healingDays != null && mounted) {
-          await NotificationService().ensureHealingReminderPermission(context);
-          await NotificationService().scheduleHealingCheckIn(
-            entryId: docRef.id,
-            classification: assessment.category,
-            healingDays: healingDays,
-          );
-        }
-
         if (mounted) {
           setState(() {
             _savedToJournal = true;
@@ -558,13 +480,8 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen>
             _isSaving = false;
           });
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                noBenchmark
-                    ? 'Assessment saved to Health Journal. '
-                          '${NotificationStrings.of(context).noBenchmark}'
-                    : 'Assessment saved to Health Journal.',
-              ),
+            const SnackBar(
+              content: Text('Assessment saved to Health Journal.'),
             ),
           );
         }
@@ -1843,16 +1760,8 @@ class _AssessmentResultScreenState extends State<AssessmentResultScreen>
                     if (!_isAnalyzing && _error == null)
                       _buildOtcSuggestions(theme),
 
-                    if (!_isAnalyzing && _error == null)
-                      _buildResultFeedback(theme),
-
                     // Save to Journal button
                     if (!_isAnalyzing && _error == null) ...[
-                      if (!_savedToJournal)
-                        RemindMeCheckbox(
-                          value: _remindMe,
-                          onChanged: (v) => setState(() => _remindMe = v),
-                        ),
                       if (_savedToJournal && !_hasUnsavedFollowUps)
                         Container(
                           width: double.infinity,

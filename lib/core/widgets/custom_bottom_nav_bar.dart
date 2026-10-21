@@ -49,7 +49,7 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar>
   static const double _barHeight = 70;
   static const double _centerDiameter = 60; // the maroon circle
   static const double _centerRing = 5; // the grey ring around it
-  static const double _centerRaise = 38; // how far the circle rises above
+  static const double _centerRaise = 42; // how far the circle rises above
   static const Color _maroon = Color(0xFF780000);
   static const Color _inactive = Color(0xFF4A4A4A);
   static const Color _ring = Color(0xFFCCCCCC);
@@ -251,6 +251,7 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar>
             child: AnimatedDefaultTextStyle(
               duration: const Duration(milliseconds: 200),
               style: Theme.of(context).textTheme.labelMedium!.copyWith(
+                fontSize: 13,
                 color: isCenter ? _inactive : color,
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
                 height: 1.15,

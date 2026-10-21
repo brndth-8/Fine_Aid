@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../../../core/network_error.dart';
+import '../../../i18n/calendar_strings.dart';
 import 'entry_detail_screen.dart';
 
 class DayEntriesScreen extends StatefulWidget {
@@ -17,21 +18,6 @@ class DayEntriesScreen extends StatefulWidget {
 class _DayEntriesScreenState extends State<DayEntriesScreen> {
   late DateTime _selectedDate;
   late DateTime _displayedMonth;
-
-  static const List<String> _months = [
-    'JANUARY',
-    'FEBRUARY',
-    'MARCH',
-    'APRIL',
-    'MAY',
-    'JUNE',
-    'JULY',
-    'AUGUST',
-    'SEPTEMBER',
-    'OCTOBER',
-    'NOVEMBER',
-    'DECEMBER',
-  ];
 
   @override
   void initState() {
@@ -110,7 +96,9 @@ class _DayEntriesScreenState extends State<DayEntriesScreen> {
                             _buildCalendarCard(theme, markedDates),
                             const SizedBox(height: 20),
                             Text(
-                              DateFormat('MMMM d').format(_selectedDate),
+                              CalendarStrings.of(
+                                context,
+                              ).monthDay(_selectedDate),
                               style: theme.textTheme.titleLarge?.copyWith(
                                 fontWeight: FontWeight.bold,
                                 color: theme.colorScheme.primary,
@@ -230,6 +218,9 @@ class _DayEntriesScreenState extends State<DayEntriesScreen> {
   Widget _buildCalendarCard(ThemeData theme, Set<DateTime> markedDates) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
+    final c = CalendarStrings.of(context);
+    final onCurrentMonth =
+        _displayedMonth.year == now.year && _displayedMonth.month == now.month;
     final daysInMonth = DateUtils.getDaysInMonth(
       _displayedMonth.year,
       _displayedMonth.month,
@@ -237,149 +228,179 @@ class _DayEntriesScreenState extends State<DayEntriesScreen> {
     final firstWeekday =
         DateTime(_displayedMonth.year, _displayedMonth.month, 1).weekday % 7;
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4),
-        ],
-      ),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.chevron_left),
-                onPressed: () {
-                  setState(() {
-                    _displayedMonth = DateTime(
-                      _displayedMonth.year,
-                      _displayedMonth.month - 1,
-                    );
-                  });
-                },
-              ),
-              Text(
-                _months[_displayedMonth.month - 1],
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1,
+    void changeMonth(int by) => setState(() {
+      _displayedMonth = DateTime(
+        _displayedMonth.year,
+        _displayedMonth.month + by,
+      );
+    });
+
+    return GestureDetector(
+      // Swipe left for the next month, right for the previous one.
+      onHorizontalDragEnd: (details) {
+        final v = details.primaryVelocity ?? 0;
+        if (v < -200) changeMonth(1);
+        if (v > 200) changeMonth(-1);
+      },
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 4,
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.chevron_left),
+                  onPressed: () {
+                    setState(() {
+                      _displayedMonth = DateTime(
+                        _displayedMonth.year,
+                        _displayedMonth.month - 1,
+                      );
+                    });
+                  },
                 ),
+                Text(
+                  c.months[_displayedMonth.month - 1].toUpperCase(),
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.chevron_right),
+                  onPressed: () {
+                    setState(() {
+                      _displayedMonth = DateTime(
+                        _displayedMonth.year,
+                        _displayedMonth.month + 1,
+                      );
+                    });
+                  },
+                ),
+              ],
+            ),
+            if (!onCurrentMonth)
+              TextButton(
+                onPressed: () => setState(() {
+                  _displayedMonth = DateTime(now.year, now.month);
+                  _selectedDate = today;
+                }),
+                child: Text(c.jumpToToday),
               ),
-              IconButton(
-                icon: const Icon(Icons.chevron_right),
-                onPressed: () {
-                  setState(() {
-                    _displayedMonth = DateTime(
-                      _displayedMonth.year,
-                      _displayedMonth.month + 1,
-                    );
-                  });
-                },
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
-                .map(
-                  (d) => SizedBox(
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                for (var i = 0; i < 7; i++)
+                  SizedBox(
                     width: 32,
                     child: Text(
-                      d,
+                      c.weekdays[i],
                       textAlign: TextAlign.center,
                       style: theme.textTheme.labelSmall?.copyWith(
                         fontWeight: FontWeight.bold,
-                        color: d == 'Su'
+                        color: i == 0
                             ? Colors.red.shade400
                             : theme.colorScheme.primary,
                       ),
                     ),
                   ),
-                )
-                .toList(),
-          ),
-          const SizedBox(height: 4),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 7,
-              childAspectRatio: 1,
+              ],
             ),
-            itemCount: firstWeekday + daysInMonth,
-            itemBuilder: (context, index) {
-              if (index < firstWeekday) return const SizedBox();
-              final day = index - firstWeekday + 1;
-              final thisDate = DateTime(
-                _displayedMonth.year,
-                _displayedMonth.month,
-                day,
-              );
-              final isToday = thisDate == today;
-              final isSelected = thisDate == _selectedDate;
-              final hasEntry = markedDates.contains(thisDate);
+            const SizedBox(height: 4),
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 7,
+                childAspectRatio: 1,
+              ),
+              itemCount: firstWeekday + daysInMonth,
+              itemBuilder: (context, index) {
+                if (index < firstWeekday) return const SizedBox();
+                final day = index - firstWeekday + 1;
+                final thisDate = DateTime(
+                  _displayedMonth.year,
+                  _displayedMonth.month,
+                  day,
+                );
+                final isToday = thisDate == today;
+                final isSelected = thisDate == _selectedDate;
+                final hasEntry = markedDates.contains(thisDate);
 
-              return GestureDetector(
-                onTap: () {
-                  setState(() => _selectedDate = thisDate);
-                },
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 30,
-                        height: 30,
-                        alignment: Alignment.center,
-                        decoration: isToday
-                            ? BoxDecoration(
-                                color: theme.colorScheme.primary,
-                                shape: BoxShape.circle,
-                              )
-                            : null,
-                        child: Text(
-                          '$day',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: isToday ? Colors.white : null,
-                            fontWeight: isToday || hasEntry
-                                ? FontWeight.bold
-                                : null,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Container(
-                        width: 18,
-                        height: 2,
-                        color: isSelected
-                            ? theme.colorScheme.primary
-                            : Colors.transparent,
-                      ),
-                      if (hasEntry && !isSelected)
+                return GestureDetector(
+                  onTap: () {
+                    setState(() => _selectedDate = thisDate);
+                  },
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
                         Container(
-                          margin: const EdgeInsets.only(top: 2),
-                          width: 4,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.primary.withValues(
-                              alpha: 0.5,
+                          width: 30,
+                          height: 30,
+                          alignment: Alignment.center,
+                          decoration: isToday
+                              ? BoxDecoration(
+                                  color: theme.colorScheme.primary,
+                                  shape: BoxShape.circle,
+                                )
+                              : null,
+                          child: Text(
+                            '$day',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              // Days still to come are dimmed.
+                              color: isToday
+                                  ? Colors.white
+                                  : (thisDate.isAfter(today)
+                                        ? Colors.grey.shade500
+                                        : null),
+                              fontWeight: isToday || hasEntry
+                                  ? FontWeight.bold
+                                  : null,
                             ),
-                            shape: BoxShape.circle,
                           ),
                         ),
-                    ],
+                        const SizedBox(height: 2),
+                        Container(
+                          width: 18,
+                          height: 2,
+                          color: isSelected
+                              ? theme.colorScheme.primary
+                              : Colors.transparent,
+                        ),
+                        if (hasEntry && !isSelected)
+                          Container(
+                            margin: const EdgeInsets.only(top: 2),
+                            width: 4,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.primary.withValues(
+                                alpha: 0.5,
+                              ),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
-                ),
-              );
-            },
-          ),
-        ],
+                );
+              },
+            ),
+          ],
+        ),
       ),
     );
   }

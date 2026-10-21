@@ -9,6 +9,10 @@ import '../../../services/firebase/storage_service.dart';
 import '../../../services/image_compressor.dart';
 import '../../camera/screens/ai_camera_screen.dart';
 import '../../../i18n/chat_upload_strings.dart';
+import '../../../core/photo_permission.dart';
+import '../../../core/nearby_intent.dart';
+import '../../../core/widgets/nearby_healthcare_sheet.dart';
+import '../../../i18n/nearby_strings.dart';
 import '../../../services/firebase/first_aid_content_service.dart';
 import '../../../services/voice_input_service.dart';
 import '../../../services/otc_filter_service.dart';
@@ -34,6 +38,9 @@ class _ChatMessage {
   // Set only for a photo the user attached — its local file path, shown as
   // an image in the bubble.
   final String? imagePath;
+  // True for an answer that points to nearby healthcare: the bubble then
+  // carries the "Find Nearby Healthcare" button.
+  final bool showNearby;
 
   _ChatMessage({
     required this.text,
@@ -43,6 +50,7 @@ class _ChatMessage {
     this.otcSuggestions = const [],
     this.audioPath,
     this.imagePath,
+    this.showNearby = false,
   });
 }
 
@@ -56,7 +64,16 @@ class ChatbotScreen extends StatefulWidget {
   /// entry. Left null for a normal, standalone chat session.
   final String? journalEntryId;
 
-  const ChatbotScreen({super.key, this.initialContext, this.journalEntryId});
+  /// True when opened from "Need More Help" for an entry whose recovery is
+  /// not progressing: the chat then opens with nearby healthcare options.
+  final bool showNearbyFirst;
+
+  const ChatbotScreen({
+    super.key,
+    this.initialContext,
+    this.journalEntryId,
+    this.showNearbyFirst = false,
+  });
 
   @override
   State<ChatbotScreen> createState() => _ChatbotScreenState();
@@ -92,6 +109,16 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
               "first aid, wound care, and what to expect during healing. "
               "What's on your mind?";
     _messages.add(_ChatMessage(text: greeting, isUser: false));
+    if (widget.showNearbyFirst) {
+      _messages.add(
+        _ChatMessage(
+          text: NearbyStrings.en.worseningChatReply,
+          tagalog: NearbyStrings.tl.worseningChatReply,
+          isUser: false,
+          showNearby: true,
+        ),
+      );
+    }
   }
 
   @override
@@ -163,6 +190,15 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
       ),
     );
     if (source == null || !mounted) return;
+
+    // Ask for the permission first (with its explanation). Without it
+    // nothing is opened and nothing is uploaded; if it is refused an
+    // "Access Required" pop-up offers Open Settings / Cancel.
+    final allowed = await ensurePhotoPermission(
+      context,
+      source == 'camera' ? PhotoSource.camera : PhotoSource.gallery,
+    );
+    if (!allowed || !mounted) return;
 
     String? path;
     if (source == 'camera') {
@@ -333,6 +369,24 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     });
     _scrollToBottom();
 
+    // "Where is the nearest hospital / clinic / pharmacy…?": answered with the
+    // nearby healthcare options (works offline, no AI call needed).
+    if (asksForNearbyHealthcare(text)) {
+      setState(() {
+        _messages.add(
+          _ChatMessage(
+            text: NearbyStrings.en.chatNearbyReply,
+            tagalog: NearbyStrings.tl.chatNearbyReply,
+            isUser: false,
+            showNearby: true,
+          ),
+        );
+        _isTyping = false;
+      });
+      _scrollToBottom();
+      return;
+    }
+
     final online = await ConnectivityService().isOnline;
     if (!online) {
       if (!mounted) return;
@@ -347,6 +401,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     String english;
     String? tagalog;
     bool isUrgent = false;
+    bool suggestNearby = false;
     List<OtcSuggestion> otcSuggestions = const [];
     try {
       // RAG: look up relevant chunks from the firstAidContent Firestore
@@ -362,6 +417,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
       english = parsed.english;
       tagalog = parsed.tagalog;
       isUrgent = parsed.isUrgent;
+      suggestNearby = parsed.suggestNearby;
       otcSuggestions = await OtcFilterService.instance.filter(
         parsed.otcSuggestions,
       );
@@ -386,6 +442,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
           isUser: false,
           isUrgent: isUrgent,
           otcSuggestions: otcSuggestions,
+          showNearby: suggestNearby,
         ),
       );
       _isTyping = false;
@@ -819,6 +876,11 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
               ),
             if (!message.isUser && message.otcSuggestions.isNotEmpty)
               OtcSuggestionsBlock(suggestions: message.otcSuggestions),
+            if (!message.isUser && message.showNearby)
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: NearbyHealthcareButton(),
+              ),
           ],
         ),
       ),

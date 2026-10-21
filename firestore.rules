@@ -27,19 +27,64 @@ service cloud.firestore {
         (resource.data.uid == request.auth.uid || isAdmin());
     }
 
+    // EMAIL UNIQUENESS
+    // One account per email address. Firestore has no unique indexes, so each
+    // address is reserved by a document `emails/{lower-case email}` = {uid}.
+    // A profile may only set or change `recoveryEmail` if that address is
+    // reserved for the same account once the write (or transaction) is done
+    // (getAfter), and a reservation can't be taken from another account, so
+    // the server rejects duplicates even if the app's own check is skipped.
+    function emailReservedFor(uid) {
+      return getAfter(/databases/$(database)/documents/emails/$(request.resource.data.recoveryEmail.lower())).data.uid == uid;
+    }
+
+    function emailOkOnCreate(uid) {
+      return !('recoveryEmail' in request.resource.data) || emailReservedFor(uid);
+    }
+
+    function emailOkOnUpdate(uid) {
+      return !('recoveryEmail' in request.resource.data) ||
+        ('recoveryEmail' in resource.data &&
+          resource.data.recoveryEmail == request.resource.data.recoveryEmail) ||
+        emailReservedFor(uid);
+    }
+
+    match /emails/{email} {
+      // A signed-in user can check one address (needed to say "already
+      // registered"); the list can't be read or scanned.
+      allow get: if isSignedIn();
+      allow create: if isSignedIn() &&
+        request.resource.data.keys().hasOnly(['uid']) &&
+        request.resource.data.uid is string &&
+        (request.resource.data.uid == request.auth.uid || isAdmin()) &&
+        getAfter(/databases/$(database)/documents/users/$(request.resource.data.uid))
+          .data.get('recoveryEmail', '').lower() == email;
+      // Released when the owner changes or removes their email (or an admin
+      // does it for them) — only if that profile no longer holds the address
+      // afterwards, so a reservation can't be dropped to let a second account
+      // claim an address that is still in use. Reservations are never
+      // overwritten.
+      allow delete: if isSignedIn() &&
+        (resource.data.uid == request.auth.uid || isAdmin()) &&
+        getAfter(/databases/$(database)/documents/users/$(resource.data.uid))
+          .data.get('recoveryEmail', '').lower() != email;
+      allow update, list: if false;
+    }
+
     // USERS
     // Profiles hold phone number and health data: owner or admin only.
     match /users/{uid} {
       allow read: if isOwner(uid) || isAdmin();
-      allow create: if isOwner(uid);
+      allow create: if isOwner(uid) && emailOkOnCreate(uid);
       // Owners cannot touch their own deactivation state (the flag, the
       // scheduled date, or who/when requested it) — otherwise a user could
       // simply delete `deactivateAt` to cancel their own deactivation.
-      allow update: if (isOwner(uid) &&
+      allow update: if ((isOwner(uid) &&
           !request.resource.data.diff(resource.data).affectedKeys()
             .hasAny(['deactivated', 'deactivateAt', 'deactivatedAt',
                      'deactivationRequestedBy',
-                     'deactivationRequestedAt'])) || isAdmin();
+                     'deactivationRequestedAt'])) || isAdmin()) &&
+        emailOkOnUpdate(uid);
       allow delete: if false;
 
       match /journalEntries/{entryId} {
@@ -121,6 +166,16 @@ service cloud.firestore {
             request.resource.data.respondedBy == request.auth.uid
           )
         );
+    }
+
+    // TEXTBOOKS
+    // The first-aid textbook list (the PDFs themselves are in Storage under
+    // textbooks/). Readable by everyone, guests included — they are public
+    // reference books — and never writable from the app: books are added with
+    // the Admin SDK (functions/scripts/upload-textbooks.js) or in the console.
+    match /textbooks/{bookId} {
+      allow read: if true;
+      allow write: if false;
     }
 
     // FIRST AID CONTENT

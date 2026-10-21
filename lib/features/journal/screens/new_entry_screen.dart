@@ -18,6 +18,9 @@ import '../../../i18n/classification_strings.dart';
 import '../../../i18n/app_language.dart';
 import '../../../data/pain_assessment.dart';
 import '../../../core/widgets/category_info_dialog.dart';
+import '../../../core/widgets/app_date_picker.dart';
+import '../../../core/widgets/nearby_healthcare_sheet.dart';
+import '../../../i18n/nearby_strings.dart';
 import '../../../core/widgets/pain_scale_dialog.dart';
 
 class NewEntryScreen extends StatefulWidget {
@@ -35,6 +38,8 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
   String? _classification;
   String? _severity; // for Injury: Deep / Minor
   bool _remindMe = false;
+  // The date the entry is for (today unless the user picks another).
+  DateTime _entryDate = DateUtils.dateOnly(DateTime.now());
   int? _painScore; // 0-5, required
   bool _isSaving = false;
 
@@ -45,6 +50,7 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
     ('Burns', Icons.local_fire_department_outlined),
     ('Skin Issues', Icons.back_hand_outlined),
     ('Scratch', Icons.gesture),
+    ('Animal Scratch', Icons.pets),
   ];
 
   @override
@@ -239,6 +245,39 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
     }
   }
 
+  bool get _isBackdated => !DateUtils.isSameDay(_entryDate, DateTime.now());
+
+  // The chosen day with the current time of day (so entries on the same day
+  // keep their order).
+  DateTime _entryDateTime() {
+    final now = DateTime.now();
+    return DateTime(
+      _entryDate.year,
+      _entryDate.month,
+      _entryDate.day,
+      now.hour,
+      now.minute,
+    );
+  }
+
+  // Today keeps the server's own timestamp (as before); another day is saved
+  // as that day. Same field, same format.
+  Object _createdAtValue() => _isBackdated
+      ? Timestamp.fromDate(_entryDateTime())
+      : FieldValue.serverTimestamp();
+
+  Future<void> _pickEntryDate() async {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final picked = await showAppDatePicker(
+      context,
+      initial: _entryDate,
+      // Back up to a year, never a future date.
+      firstDate: today.subtract(const Duration(days: 365)),
+      lastDate: today,
+    );
+    if (picked != null && mounted) setState(() => _entryDate = picked);
+  }
+
   Future<void> _handleSave() async {
     if (FirebaseAuth.instance.currentUser == null) {
       await showGuestSaveGateDialog(context);
@@ -296,7 +335,7 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
             'remindMe': _remindMe,
             'imageUrls': imageUrls,
             'imageCount': _pickedImages.length,
-            'createdAt': FieldValue.serverTimestamp(),
+            'createdAt': _createdAtValue(),
           })
           .timeout(const Duration(seconds: 10));
 
@@ -317,6 +356,7 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
             entryId: docRef.id,
             classification: _classification!,
             healingDays: healingDays,
+            from: _isBackdated ? _entryDateTime() : null,
           );
         }
       }
@@ -378,6 +418,37 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
       _classification = key;
       _severity = subType;
     });
+
+    // An animal scratch needs a doctor: say so right away.
+    if (key == 'Animal Scratch') await _showAnimalScratchNotice();
+  }
+
+  /// Urgent notice for an animal scratch (rabies, tetanus, infection risk),
+  /// with a button to the nearby healthcare options.
+  Future<void> _showAnimalScratchNotice() {
+    final n = NearbyStrings.of(context);
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        icon: Icon(
+          Icons.warning_amber_rounded,
+          color: Theme.of(context).colorScheme.primary,
+          size: 36,
+        ),
+        title: Text(n.animalTitle, textAlign: TextAlign.center),
+        content: Text(n.animalBody),
+        actionsAlignment: MainAxisAlignment.center,
+        actionsOverflowDirection: VerticalDirection.down,
+        actions: [
+          const NearbyHealthcareButton(compact: false),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(n.understood),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _label(ThemeData theme, IconData? icon, String text) {
@@ -618,21 +689,35 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
                         ),
                         const SizedBox(height: 12),
                         _label(theme, null, strings.dateLabel),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 14,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.grey.shade400),
-                          ),
-                          child: Text(
-                            strings.formatDate(DateTime.now()),
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: Colors.grey.shade700,
+                        InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: _pickEntryDate,
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 14,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.grey.shade400),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    strings.formatDate(_entryDate),
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: Colors.grey.shade800,
+                                    ),
+                                  ),
+                                ),
+                                Icon(
+                                  Icons.keyboard_arrow_down,
+                                  color: Colors.grey.shade700,
+                                ),
+                              ],
                             ),
                           ),
                         ),
@@ -665,12 +750,14 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
                           for (var i = row; i < row + 2; i++) ...[
                             if (i > row) const SizedBox(width: 10),
                             Expanded(
-                              child: _categoryTile(
-                                theme,
-                                strings,
-                                _categories[i].$1,
-                                _categories[i].$2,
-                              ),
+                              child: i < _categories.length
+                                  ? _categoryTile(
+                                      theme,
+                                      strings,
+                                      _categories[i].$1,
+                                      _categories[i].$2,
+                                    )
+                                  : const SizedBox.shrink(),
                             ),
                           ],
                         ],
@@ -698,29 +785,43 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
                     ),
                   const SizedBox(height: 14),
 
-                  // Pain rating 0-5.
-                  Text(
-                    pain.dialogTitle,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
+                  // Pain rating 0-5, in the same card style as the pain dialog.
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFDEEEC),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          pain.dialogTitle,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(pain.dialogBody, style: theme.textTheme.bodySmall),
+                        const SizedBox(height: 12),
+                        PainScaleSelector(
+                          monochrome: true,
+                          value: _painScore,
+                          onChanged: (n) => setState(() => _painScore = n),
+                        ),
+                        if (_painScore != null) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            pain.rating(_painScore!).message,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(pain.dialogBody, style: theme.textTheme.bodySmall),
-                  const SizedBox(height: 12),
-                  PainScaleSelector(
-                    value: _painScore,
-                    onChanged: (n) => setState(() => _painScore = n),
-                  ),
-                  if (_painScore != null) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      pain.rating(_painScore!).message,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                  ],
                   const SizedBox(height: 20),
 
                   // Guests get no notifications, so no reminder option.

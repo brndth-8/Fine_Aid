@@ -1,7 +1,11 @@
+import '../../../core/age_utils.dart';
+import '../../../core/widgets/app_date_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../../../i18n/registration_strings.dart';
 import '../../../services/firebase/auth_service.dart';
+import '../../../services/firebase/email_reservation.dart' show normalizeEmail;
+import '../../../services/firebase/registration_flow.dart';
 import '../../../core/password_requirements.dart';
 import '../../../core/widgets/password_checklist.dart';
 import '../../../core/ph_phone_validator.dart';
@@ -82,6 +86,17 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   // One key + focus node per field so its error can appear as soon as the
   // user leaves it (typing triggers it too, via autovalidateMode below) —
   // but never before they've interacted with it.
+  // Personal details.
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
+  final _dobController = TextEditingController();
+  final _ageController = TextEditingController();
+  DateTime? _dob;
+  String? _gender; // 'male' | 'female' | 'other'
+  final _firstNameKey = GlobalKey<FormFieldState<String>>();
+  final _lastNameKey = GlobalKey<FormFieldState<String>>();
+  final _dobKey = GlobalKey<FormFieldState<String>>();
+  final _genderKey = GlobalKey<FormFieldState<String>>();
   final _usernameKey = GlobalKey<FormFieldState<String>>();
   final _phoneKey = GlobalKey<FormFieldState<String>>();
   final _emailKey = GlobalKey<FormFieldState<String>>();
@@ -93,6 +108,10 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   final _passwordFocus = FocusNode();
   final _confirmFocus = FocusNode();
   bool _emailTouched = false;
+
+  /// An address the server just said belongs to another account. The field
+  /// shows "already registered" until the person types a different one.
+  String? _takenEmail;
 
   bool _isLoading = false;
   bool _obscurePassword = true;
@@ -124,6 +143,10 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
   @override
   void dispose() {
+    _firstNameController.dispose();
+    _lastNameController.dispose();
+    _dobController.dispose();
+    _ageController.dispose();
     _usernameController.dispose();
     _phoneController.dispose();
     _emailController.dispose();
@@ -136,6 +159,31 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     _confirmFocus.dispose();
     super.dispose();
   }
+
+  String? _validateName(String? value, {required bool first}) {
+    final s = RegistrationStrings.of(context);
+    final text = value?.trim() ?? '';
+    if (text.isEmpty) return first ? s.firstNameRequired : s.lastNameRequired;
+    if (!RegExp(r"^[\p{L}][\p{L} .'\-]*$", unicode: true).hasMatch(text)) {
+      return s.nameInvalid;
+    }
+    return null;
+  }
+
+  String? _validateDob(String? value) {
+    final s = RegistrationStrings.of(context);
+    final dob = _dob;
+    if (dob == null) {
+      return (value ?? '').isEmpty ? s.dobRequired : s.dobInvalid;
+    }
+    final today = DateUtils.dateOnly(DateTime.now());
+    if (dob.isAfter(today)) return s.dobFuture;
+    if (dob.year < 1900) return s.dobInvalid;
+    return null;
+  }
+
+  String? _validateGender(String? value) =>
+      (_gender == null) ? RegistrationStrings.of(context).genderRequired : null;
 
   String? _validateUsername(String? value) {
     if (value == null || value.trim().isEmpty) {
@@ -176,9 +224,12 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
           ? 'Email address is required'
           : null;
     }
-    final emailRegex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
+    final emailRegex = RegExp(r'^[^@\s/]+@[^@\s/]+\.[^@\s/]+$');
     if (!emailRegex.hasMatch(trimmed)) {
       return 'Please enter a valid email address';
+    }
+    if (_takenEmail != null && normalizeEmail(trimmed) == _takenEmail) {
+      return RegistrationStrings.of(context).emailTaken;
     }
     return null;
   }
@@ -196,13 +247,66 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   /// True only when every field is filled and passes its own validator —
   /// this is what enables the Sign Up button.
   bool get _isFormValid =>
+      _validateName(_firstNameController.text, first: true) == null &&
+      _validateName(_lastNameController.text, first: false) == null &&
+      _validateDob(_dobController.text) == null &&
+      _validateGender(_gender) == null &&
       _validateUsername(_usernameController.text) == null &&
       _validatePhone(_phoneController.text) == null &&
       _validateEmail(_emailController.text) == null &&
       validatePasswordStrength(_passwordController.text) == null &&
       _validateConfirmPassword(_confirmPasswordController.text) == null;
 
+  Future<void> _pickDob() async {
+    final now = DateTime.now();
+    final today = DateUtils.dateOnly(now);
+    final picked = await showAppDatePicker(
+      context,
+      // Opens on a date 18 years ago, so most people are a few taps away.
+      initial: _dob ?? DateTime(now.year - 18, now.month, now.day),
+      firstDate: DateTime(1900),
+      lastDate: today,
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _dob = picked;
+      _dobController.text = formatDateInput(picked);
+      _ageController.text = '${calculateAge(picked)}';
+    });
+    _dobKey.currentState?.validate();
+  }
+
+  /// Under 18: a notice that can only be closed with its one button.
+  Future<bool> _confirmUnderage() async {
+    final s = RegistrationStrings.of(context);
+    final acknowledged = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: Text(s.underageTitle),
+          content: SingleChildScrollView(child: Text(s.underageBody)),
+          actions: [
+            ElevatedButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: Text(s.underageButton),
+            ),
+          ],
+        ),
+      ),
+    );
+    return acknowledged == true;
+  }
+
   Future<void> _handleSignUp() async {
+    // A second tap while the first sign-up is still running must not start
+    // another one (the button is disabled too, this covers a fast double-tap
+    // before the rebuild).
+    if (_isLoading) return;
     if (!_formKey.currentState!.validate()) return;
 
     final normalizedPhone = normalizePhMobileNumber(
@@ -215,6 +319,13 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       return;
     }
 
+    // Under 18: the supervision notice comes first; sign-up only carries on
+    // once it has been acknowledged.
+    final dob = _dob!;
+    final isUnderage = calculateAge(dob) < kAdultAge;
+    if (isUnderage && !await _confirmUnderage()) return;
+    if (!mounted) return;
+
     setState(() => _isLoading = true);
 
     try {
@@ -226,63 +337,146 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         phoneNumber: normalizedPhone,
         recoveryEmail: email.isEmpty ? null : email,
         verificationMethod: isEmailMethod ? 'email' : 'phone',
+        firstName: _firstNameController.text.trim(),
+        lastName: _lastNameController.text.trim(),
+        dateOfBirth: dob,
+        gender: _gender,
+        underageAcknowledged: isUnderage,
       );
 
       if (!mounted) return;
 
-      // Show OTP notice
-      await showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          title: Text(
-            isEmailMethod ? 'Verify your email' : 'Verify your phone number',
-          ),
-          content: Text(
-            isEmailMethod
-                ? 'A verification code will be sent to:\n$email\n\n'
-                      'Please check your inbox.'
-                : 'A verification code will be sent to:\n'
-                      '$normalizedPhone\n\n'
-                      'Please have your phone ready.',
-          ),
-          actions: [
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('OK, proceed'),
-            ),
-          ],
-        ),
-      );
-
-      if (!mounted) return;
+      // Only reached when every step of the sign-up really succeeded. The
+      // account is signed in and not verified yet, so going back to the
+      // root lets AuthGate take the user straight to the verification step
+      // (no login in between).
       Navigator.of(context).popUntil((route) => route.isFirst);
-    } on FirebaseAuthException catch (e) {
-      String message = 'Registration failed. Please try again.';
-      if (e.code == 'username-already-in-use') {
-        message = 'This username is already taken.';
-      } else if (e.code == 'email-already-in-use') {
-        message = 'This username is already registered.';
-      } else if (e.code == 'weak-password') {
-        message = 'Password is too weak.';
-      }
+    } on RegistrationException catch (e) {
       if (!mounted) return;
+      final message = RegistrationStrings.of(context).messageFor(e.error);
+      if (e.error == RegistrationError.emailTaken) {
+        // Show it on the email field itself, not only in a snackbar.
+        setState(() => _takenEmail = normalizeEmail(_emailController.text));
+        _emailKey.currentState?.validate();
+      }
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(message)));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Something went wrong. Please try again.'),
-        ),
+        SnackBar(content: Text(RegistrationStrings.of(context).unknown)),
       );
     } finally {
+      // Lets AuthGate carry on (it was held back while signing up).
+      AuthService.releaseRegistrationHold();
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  /// First name, last name, date of birth, the age worked out from it
+  /// (read-only), and gender.
+  List<Widget> _personalFields(ThemeData theme) {
+    final s = RegistrationStrings.of(context);
+    return [
+      _label(theme, s.firstNameLabel),
+      const SizedBox(height: 6),
+      TextFormField(
+        key: _firstNameKey,
+        controller: _firstNameController,
+        textCapitalization: TextCapitalization.words,
+        autovalidateMode: AutovalidateMode.onUserInteraction,
+        decoration: InputDecoration(
+          hintText: s.firstNameHint,
+          prefixIcon: const Icon(Icons.badge_outlined),
+        ),
+        validator: (v) => _validateName(v, first: true),
+      ),
+      const SizedBox(height: 16),
+      _label(theme, s.lastNameLabel),
+      const SizedBox(height: 6),
+      TextFormField(
+        key: _lastNameKey,
+        controller: _lastNameController,
+        textCapitalization: TextCapitalization.words,
+        autovalidateMode: AutovalidateMode.onUserInteraction,
+        decoration: InputDecoration(
+          hintText: s.lastNameHint,
+          prefixIcon: const Icon(Icons.badge_outlined),
+        ),
+        validator: (v) => _validateName(v, first: false),
+      ),
+      const SizedBox(height: 16),
+      _label(theme, s.dobLabel),
+      const SizedBox(height: 6),
+      TextFormField(
+        key: _dobKey,
+        controller: _dobController,
+        readOnly: true,
+        onTap: _pickDob,
+        autovalidateMode: AutovalidateMode.onUserInteraction,
+        decoration: InputDecoration(
+          hintText: s.dobHint,
+          prefixIcon: const Icon(Icons.calendar_today_outlined),
+          suffixIcon: const Icon(Icons.arrow_drop_down),
+        ),
+        validator: _validateDob,
+      ),
+      const SizedBox(height: 16),
+      // Worked out from the date of birth — never typed, so the two can't
+      // disagree.
+      _label(theme, s.ageLabel, required: false),
+      const SizedBox(height: 6),
+      TextFormField(
+        controller: _ageController,
+        readOnly: true,
+        canRequestFocus: false,
+        decoration: InputDecoration(
+          hintText: s.ageHint,
+          prefixIcon: const Icon(Icons.cake_outlined),
+          fillColor: Colors.grey.shade200,
+        ),
+      ),
+      const SizedBox(height: 16),
+      _label(theme, s.genderLabel),
+      const SizedBox(height: 6),
+      DropdownButtonFormField<String>(
+        key: _genderKey,
+        initialValue: _gender,
+        autovalidateMode: AutovalidateMode.onUserInteraction,
+        isExpanded: true,
+        decoration: InputDecoration(
+          hintText: s.genderHint,
+          prefixIcon: const Icon(Icons.wc_outlined),
+        ),
+        items: [
+          DropdownMenuItem(value: 'male', child: Text(s.genderMale)),
+          DropdownMenuItem(value: 'female', child: Text(s.genderFemale)),
+          DropdownMenuItem(value: 'other', child: Text(s.genderOther)),
+        ],
+        onChanged: (v) => setState(() => _gender = v),
+        validator: _validateGender,
+      ),
+      const SizedBox(height: 16),
+    ];
+  }
+
+  /// Field label; a red * marks the required ones.
+  Widget _label(ThemeData theme, String text, {bool required = true}) {
+    return Text.rich(
+      TextSpan(
+        text: text,
+        style: theme.textTheme.titleSmall,
+        children: required
+            ? [
+                TextSpan(
+                  text: ' *',
+                  style: TextStyle(color: theme.colorScheme.error),
+                ),
+              ]
+            : null,
+      ),
+    );
   }
 
   @override
@@ -313,8 +507,9 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                 Text('Create Account', style: theme.textTheme.titleSmall),
 
                 const SizedBox(height: 24),
+                ..._personalFields(theme),
                 // Username
-                Text('Username', style: theme.textTheme.titleSmall),
+                _label(theme, 'Username'),
                 const SizedBox(height: 6),
                 TextFormField(
                   key: _usernameKey,
@@ -362,7 +557,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                 const SizedBox(height: 16),
 
                 // Phone number
-                Text('Phone Number', style: theme.textTheme.titleSmall),
+                _label(theme, 'Phone Number'),
                 const SizedBox(height: 6),
                 TextFormField(
                   key: _phoneKey,
@@ -374,6 +569,14 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                   inputFormatters: const [PhPhoneDigitsFormatter()],
                   decoration: const InputDecoration(
                     hintText: '9123456789',
+                    // Smaller, lighter and light gray (placeholder only — the
+                    // typed digits and the +63 prefix are unchanged), so the
+                    // number never looks cramped beside the +63 prefix.
+                    hintStyle: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w300,
+                      color: Color(0xFFBDBDBD),
+                    ),
                     counterText: '',
                     // Fixed, non-editable country code shown before the
                     // digits the user types.
@@ -397,7 +600,11 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
                 // Email — required when Email verification is chosen above,
                 // otherwise optional (still usable for password recovery).
-                Text('Email', style: theme.textTheme.titleSmall),
+                _label(
+                  theme,
+                  'Email',
+                  required: _verificationMethod == _VerificationMethod.email,
+                ),
                 const SizedBox(height: 6),
                 TextFormField(
                   key: _emailKey,
@@ -415,7 +622,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                 const SizedBox(height: 16),
 
                 // Password
-                Text('Password', style: theme.textTheme.titleSmall),
+                _label(theme, 'Password'),
                 const SizedBox(height: 6),
                 TextFormField(
                   key: _passwordKey,
@@ -452,7 +659,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                 const SizedBox(height: 16),
 
                 // Confirm Password
-                Text('Confirm Password', style: theme.textTheme.titleSmall),
+                _label(theme, 'Confirm Password'),
                 const SizedBox(height: 6),
                 TextFormField(
                   key: _confirmKey,
@@ -486,6 +693,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                       : null,
                   style: ElevatedButton.styleFrom(
                     minimumSize: const Size.fromHeight(50),
+                    side: BorderSide(color: theme.colorScheme.outline),
                     // While loading keep the existing look; otherwise the
                     // disabled state is gray.
                     disabledBackgroundColor: _isLoading
@@ -505,27 +713,6 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                           ),
                         )
                       : const Text('Sign Up'),
-                ),
-                const SizedBox(height: 16),
-
-                // Login link
-                Center(
-                  child: TextButton(
-                    onPressed: () =>
-                        Navigator.pushNamed(context, '/login-form'),
-                    child: RichText(
-                      text: TextSpan(
-                        style: theme.textTheme.bodyMedium,
-                        children: const [
-                          TextSpan(text: 'Already have an account? '),
-                          TextSpan(
-                            text: 'Login here',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
                 ),
               ],
             ),

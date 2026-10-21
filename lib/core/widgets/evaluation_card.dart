@@ -31,6 +31,8 @@ class EvaluationCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(16),
+        // Same outline the journal's other cards use.
+        border: Border.all(color: theme.colorScheme.primary, width: 1.2),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

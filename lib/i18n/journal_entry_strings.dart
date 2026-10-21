@@ -38,6 +38,11 @@ class JournalEntryStrings {
   final List<String> weekdays; // Monday..Sunday
   final List<String> months; // January..December
 
+  // Journal list date filter.
+  final String filterByDate;
+  final String clearFilter;
+  final String noEntriesInRange;
+
   const JournalEntryStrings({
     required this.screenTitle,
     required this.addImageSubtitle,
@@ -63,6 +68,9 @@ class JournalEntryStrings {
     required this.injurySubtitle,
     required this.weekdays,
     required this.months,
+    required this.filterByDate,
+    required this.clearFilter,
+    required this.noEntriesInRange,
   });
 
   static JournalEntryStrings of(BuildContext context) =>
@@ -102,8 +110,12 @@ class JournalEntryStrings {
       'Burns': 'Burns',
       'Skin Issues': 'Skin Issues',
       'Scratch': 'Scratch',
+      'Animal Scratch': 'Animal Scratch',
     },
     injurySubtitle: '(Wounds, Laceration/ Abrasion)',
+    filterByDate: 'Filter by date',
+    clearFilter: 'Clear date filter',
+    noEntriesInRange: 'No entries in this date range.',
     weekdays: [
       'Monday',
       'Tuesday',
@@ -157,8 +169,12 @@ class JournalEntryStrings {
       'Burns': 'Paso',
       'Skin Issues': 'Problema sa Balat',
       'Scratch': 'Kalmot',
+      'Animal Scratch': 'Kalmot ng Hayop',
     },
     injurySubtitle: '(Sugat, Hiwa/ Galos)',
+    filterByDate: 'I-filter ayon sa petsa',
+    clearFilter: 'I-clear ang filter ng petsa',
+    noEntriesInRange: 'Walang entry sa saklaw ng petsang ito.',
     weekdays: [
       'Lunes',
       'Martes',

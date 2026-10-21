@@ -89,12 +89,10 @@ flutter:
     - assets/images/FINE_AID_Background.png
     - assets/images/FINE_AID_Logo.png
     - assets/images/FINE_AID_Logo_Icon.png
-    - assets/images/FineAid_Background.png
     - assets/images/Fine_Aid_BG.png
     - assets/images/welcome_banner.png
     - assets/images/login_background.png
     - assets/images/FINEAID_ADMIN_LANDING_PAGE.png
-    - assets/images/FineAid_Logo_Icon.jpg
     - assets/images/help_hero.png
     - assets/images/help_getting_started.png
     - assets/images/help_privacy.png
@@ -102,7 +100,7 @@ flutter:
     - assets/images/help_references.png
     - assets/images/books/
     - assets/images/first_aid/
-    - assets/pdfs/
+    - assets/web/
     - assets/config/otc_filter_config.json
   # To add assets to your application, add an assets section, like this:
   # assets:

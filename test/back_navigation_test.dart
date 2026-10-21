@@ -1,4 +1,5 @@
 import 'package:fine_aid/features/auth/screens/terms_screen.dart';
+import 'package:fine_aid/features/settings/screens/help_screen.dart';
 import 'package:fine_aid/features/settings/screens/help_topic_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -15,8 +16,14 @@ void main() {
     await tester.pump();
   }
 
+  testWidgets('Help & Support: a single arrow, no Back button', (tester) async {
+    await pump(tester, const HelpScreen());
+    expect(find.byIcon(Icons.arrow_back_ios), findsOneWidget);
+    expect(find.text('Back'), findsNothing);
+  });
+
   for (final topic in HelpTopic.values) {
-    testWidgets('help topic "${topic.name}": a single arrow, no Back button', (
+    testWidgets('help page "${topic.name}": a single arrow, no Back button', (
       tester,
     ) async {
       await pump(tester, HelpTopicScreen(topic: topic));
@@ -49,10 +56,7 @@ void main() {
               child: ElevatedButton(
                 onPressed: () => Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        const HelpTopicScreen(topic: HelpTopic.privacy),
-                  ),
+                  MaterialPageRoute(builder: (_) => const HelpScreen()),
                 ),
                 child: const Text('open'),
               ),

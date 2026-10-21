@@ -11,10 +11,37 @@ class PermissionScreen extends StatefulWidget {
   State<PermissionScreen> createState() => _PermissionScreenState();
 }
 
-class _PermissionScreenState extends State<PermissionScreen> {
+class _PermissionScreenState extends State<PermissionScreen>
+    with WidgetsBindingObserver {
   bool _allowCamera = false;
-  bool _skipForNow = false;
   bool _isLoading = false;
+
+  // Set once the camera was asked for and refused. The message and the
+  // "Open Settings" button show; pressing Continue again then moves on
+  // (the choice is saved as "not granted"), so a refusal never loops.
+  bool _denied = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  // Back from the phone's Settings: if the camera was switched on there, the
+  // "denied" message is no longer true.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || !_denied) return;
+    Permission.camera.status.then((status) {
+      if (mounted && status.isGranted) setState(() => _denied = false);
+    });
+  }
 
   Future<void> _saveCameraPreference(bool granted) async {
     final user = FirebaseAuth.instance.currentUser;
@@ -34,18 +61,15 @@ class _PermissionScreenState extends State<PermissionScreen> {
     setState(() => _isLoading = true);
 
     try {
-      bool granted = false;
+      final status = await Permission.camera.request();
+      final granted = status.isGranted;
 
-      if (_allowCamera && !_skipForNow) {
-        final status = await Permission.camera.request();
-        granted = status.isGranted;
-
-        if (!granted && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(PermissionStrings.of(context).notGranted)),
-          );
-        }
+      if (!granted && !_denied) {
+        // First refusal: stay here and explain how to turn it on.
+        if (mounted) setState(() => _denied = true);
+        return;
       }
+      if (granted && _denied && mounted) setState(() => _denied = false);
 
       await _saveCameraPreference(granted);
 
@@ -109,28 +133,44 @@ class _PermissionScreenState extends State<PermissionScreen> {
                     const SizedBox(height: 16),
                     CheckboxListTile(
                       value: _allowCamera,
-                      onChanged: (value) => setState(() {
-                        _allowCamera = value ?? false;
-                        if (_allowCamera) _skipForNow = false;
-                      }),
+                      onChanged: (value) =>
+                          setState(() => _allowCamera = value ?? false),
                       title: Text(s.allowCamera),
-                      controlAffinity: ListTileControlAffinity.leading,
-                    ),
-                    CheckboxListTile(
-                      value: _skipForNow,
-                      onChanged: (value) => setState(() {
-                        _skipForNow = value ?? false;
-                        if (_skipForNow) _allowCamera = false;
-                      }),
-                      title: Text(s.skipForNow),
                       controlAffinity: ListTileControlAffinity.leading,
                     ),
                   ],
                 ),
               ),
+              if (_denied) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        s.deniedMessage,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onErrorContainer,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: openAppSettings,
+                        icon: const Icon(Icons.settings_outlined),
+                        label: Text(s.openSettings),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 24),
               ElevatedButton(
-                onPressed: (_isLoading || (!_allowCamera && !_skipForNow))
+                onPressed: (_isLoading || !_allowCamera)
                     ? null
                     : _handleContinue,
                 style: ElevatedButton.styleFrom(

@@ -365,6 +365,10 @@ class NotificationService {
     required String entryId,
     required String classification,
     required int healingDays,
+    // The date the injury / entry is counted from. Defaults to now; a
+    // backdated entry passes its own date (a check-in already due is then
+    // sent the next morning).
+    DateTime? from,
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -373,7 +377,8 @@ class NotificationService {
       entryId: entryId,
       classification: classification,
       healingDays: healingDays,
-      from: DateTime.now(),
+      from: from ?? DateTime.now(),
+      nextMorningIfOverdue: from != null,
     );
   }
 

@@ -135,6 +135,9 @@ void main() {
       await tester.pump();
       await tester.tap(find.text(en.allergyFood));
       await tester.pump();
+      // Checking a condition shows the disclaimer; dismiss it.
+      await tester.tap(find.text(en.disclaimerOk));
+      await tester.pumpAndSettle();
       await tester.tap(find.text(en.noneOfTheAbove));
       await tester.pump();
       // "none" is chosen and the allergy is cleared: one box ticked.
@@ -146,7 +149,7 @@ void main() {
       expect(continueButton(tester).onPressed, isNotNull);
       // picking an allergy again clears "none": still one box ticked.
       await tester.tap(find.text(en.allergySkin));
-      await tester.pump();
+      await tester.pumpAndSettle();
       expect(ticked(), 1);
     });
 

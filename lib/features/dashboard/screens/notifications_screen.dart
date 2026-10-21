@@ -652,8 +652,10 @@ class _NotificationDetailSheetState extends State<_NotificationDetailSheet> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) =>
-                          ChatbotScreen(journalEntryId: item.entryId),
+                      builder: (context) => ChatbotScreen(
+                        journalEntryId: item.entryId,
+                        showNearbyFirst: true,
+                      ),
                     ),
                   );
                 },

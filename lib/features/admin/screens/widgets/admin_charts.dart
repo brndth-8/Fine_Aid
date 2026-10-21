@@ -64,7 +64,9 @@ List<TrendSeries> standardAdminTrendSeries(ColorScheme scheme) {
   return [
     TrendSeries(
       name: 'New users',
-      query: db.collection('users'),
+      query: db
+          .collection('users')
+          .where('registrationComplete', isEqualTo: true),
       color: scheme.primary,
       marker: TrendMarker.circle,
       dash: TrendDash.solid,

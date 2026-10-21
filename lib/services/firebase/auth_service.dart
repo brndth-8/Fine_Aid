@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
+import 'registration_flow.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -60,14 +63,29 @@ class AuthService {
     }
   }
 
-  Future<UserCredential> registerWithUsername({
+  // While a sign-up is running, the auth-state change that createUser causes
+  // must not send AuthGate to the app: the profile document does not exist
+  // yet, and a missing profile reads as "fully onboarded". fetchOnboardingFlags
+  // waits for this first. After a successful sign-up the hold stays until the
+  // Sign Up screen calls [releaseRegistrationHold] (once it has gone back to
+  // the root, so the verification step starts on top of a clean screen).
+  static Completer<void>? _registrationHold;
+
+  static void releaseRegistrationHold() {
+    final hold = _registrationHold;
+    if (hold != null && !hold.isCompleted) hold.complete();
+  }
+
+  /// All-or-nothing sign-up — see [RegistrationFlow]. Throws a
+  /// [RegistrationException] saying which step failed.
+  Future<void> registerWithUsername({
     required String username,
     required String password,
     required String phoneNumber,
     // Optional — a real address the user can additionally use for account
     // recovery via Forgot Password's email option. Never used as the
     // Firebase Auth login email itself (that's always the generated
-    // username@fineaid.app one below), so leaving it out just means that
+    // username@fineaid.app one), so leaving it out just means that
     // recovery option stays unavailable until it's added, here or later
     // from Edit Profile.
     String? recoveryEmail,
@@ -75,58 +93,34 @@ class AuthService {
     // this account through right after registration. 'email' requires
     // recoveryEmail to be set, since that's where the code goes.
     String verificationMethod = 'phone',
-  }) async {
-    final taken = await isUsernameTaken(username);
-    if (taken) {
-      throw FirebaseAuthException(
-        code: 'username-already-in-use',
-        message: 'This username is already taken.',
-      );
-    }
-
-    // Auto-generate email from username — never shown to user
-    final generatedEmail = '${username.trim().toLowerCase()}@fineaid.app';
-
-    final credential = await _auth.createUserWithEmailAndPassword(
-      email: generatedEmail,
-      password: password,
-    );
-
-    final uid = credential.user!.uid;
-    final trimmedRecoveryEmail = recoveryEmail?.trim();
-
-    // Write full profile to users collection
-    await _firestore
-        .collection('users')
-        .doc(uid)
-        .set({
-          'username': username.trim(),
-          'email': generatedEmail,
-          if (trimmedRecoveryEmail != null && trimmedRecoveryEmail.isNotEmpty)
-            'recoveryEmail': trimmedRecoveryEmail,
-          'phoneNumber': phoneNumber.trim(),
-          'verificationMethod': verificationMethod,
-          'createdAt': FieldValue.serverTimestamp(),
-          'phoneVerified': false,
-          'onboardingComplete': false,
-        })
-        .timeout(const Duration(seconds: 10));
-
-    // Write to public usernames collection, keyed by the exact-case
-    // username itself so sign-in (see _emailForUsername) is case-sensitive
-    // going forward. `usernameExact` is kept for symmetry with legacy docs
-    // and for display purposes.
-    await _firestore
-        .collection('usernames')
-        .doc(username.trim())
-        .set({
-          'email': generatedEmail,
-          'uid': uid,
-          'usernameExact': username.trim(),
-        })
-        .timeout(const Duration(seconds: 10));
-
-    return credential;
+    String? firstName,
+    String? lastName,
+    DateTime? dateOfBirth,
+    String? gender,
+    bool underageAcknowledged = false,
+  }) {
+    releaseRegistrationHold();
+    final hold = _registrationHold = Completer<void>();
+    final run =
+        RegistrationFlow(
+          FirebaseRegistrationBackend(auth: _auth, firestore: _firestore),
+        ).register(
+          username: username,
+          password: password,
+          phoneNumber: phoneNumber,
+          recoveryEmail: recoveryEmail,
+          verificationMethod: verificationMethod,
+          firstName: firstName,
+          lastName: lastName,
+          dateOfBirth: dateOfBirth,
+          gender: gender,
+          underageAcknowledged: underageAcknowledged,
+        );
+    // A failed sign-up has nothing to hold the gate for.
+    run.catchError((_) {
+      if (!hold.isCompleted) hold.complete();
+    });
+    return run;
   }
 
   Future<UserCredential> signInWithUsername({
@@ -229,6 +223,7 @@ class AuthService {
   /// timeout) read when there's no cache yet (eg the very first launch on
   /// a device, before anything has ever synced).
   Future<Map<String, bool>> fetchOnboardingFlags(String uid) async {
+    await _registrationHold?.future;
     try {
       final cacheDoc = await _firestore
           .collection('users')

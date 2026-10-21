@@ -15,7 +15,9 @@ class _AdminReportsAnalyticsState extends State<AdminReportsAnalytics> {
   // The three stat cards use server-side count() aggregates instead of
   // streaming every document just to read `.length`.
   late final Future<int?> _usersCount = _count(
-    FirebaseFirestore.instance.collection('users'),
+    FirebaseFirestore.instance
+        .collection('users')
+        .where('registrationComplete', isEqualTo: true),
   );
 
   late final Future<int?> _autoReferralsCount = _count(
@@ -40,6 +42,7 @@ class _AdminReportsAnalyticsState extends State<AdminReportsAnalytics> {
   late final Future<int?> _usersThisMonth = _count(
     FirebaseFirestore.instance
         .collection('users')
+        .where('registrationComplete', isEqualTo: true)
         .where(
           'createdAt',
           isGreaterThanOrEqualTo: Timestamp.fromDate(
@@ -77,6 +80,7 @@ class _AdminReportsAnalyticsState extends State<AdminReportsAnalytics> {
         case 'User activity':
           final snapshot = await FirebaseFirestore.instance
               .collection('users')
+              .where('registrationComplete', isEqualTo: true)
               .orderBy('createdAt', descending: true)
               .get();
           await exportAdminCsv(
@@ -136,7 +140,11 @@ class _AdminReportsAnalyticsState extends State<AdminReportsAnalytics> {
           );
         default: // 'App usage summary'
           final results = await Future.wait([
-            FirebaseFirestore.instance.collection('users').count().get(),
+            FirebaseFirestore.instance
+                .collection('users')
+                .where('registrationComplete', isEqualTo: true)
+                .count()
+                .get(),
             FirebaseFirestore.instance
                 .collectionGroup('journalEntries')
                 .count()

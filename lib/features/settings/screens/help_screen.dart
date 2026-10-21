@@ -1,10 +1,17 @@
 import 'package:flutter/material.dart';
-import 'help_topic_screen.dart';
 import '../../../core/widgets/help_tour_launcher.dart';
 import '../../../i18n/help_strings.dart';
+import 'help_topic_screen.dart';
 
 class HelpScreen extends StatelessWidget {
   const HelpScreen({super.key});
+
+  static const _topics = [
+    (HelpTopic.gettingStarted, 'assets/images/help_getting_started.png'),
+    (HelpTopic.privacy, 'assets/images/help_privacy.png'),
+    (HelpTopic.journal, 'assets/images/help_journal.png'),
+    (HelpTopic.references, 'assets/images/help_references.png'),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -28,78 +35,52 @@ class HelpScreen extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(s.heading, style: theme.textTheme.headlineSmall),
-              const SizedBox(height: 24),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: Container(
-                  width: double.infinity,
-                  color: theme.colorScheme.primary,
-                  padding: const EdgeInsets.all(24),
-                  child: Image.asset(
-                    'assets/images/help_hero.png',
-                    height: 120,
-                    fit: BoxFit.contain,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-              Row(
-                children: [
-                  Expanded(
-                    child: _helpTile(
-                      context,
-                      theme,
-                      imagePath: 'assets/images/help_getting_started.png',
-                      label: s.gettingStartedTile,
-                      topic: HelpTopic.gettingStarted,
+              const SizedBox(height: 16),
+              Expanded(
+                child: ListView(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      child: Container(
+                        width: double.infinity,
+                        color: theme.colorScheme.primary,
+                        padding: const EdgeInsets.all(24),
+                        child: Image.asset(
+                          'assets/images/help_hero.png',
+                          height: 120,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _helpTile(
-                      context,
-                      theme,
-                      imagePath: 'assets/images/help_privacy.png',
-                      label: s.privacyTile,
-                      topic: HelpTopic.privacy,
+                    const SizedBox(height: 20),
+                    for (final (topic, icon) in _topics) ...[
+                      _PageTile(
+                        title: HelpTopicScreen.sectionOf(s, topic).title,
+                        icon: icon,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => HelpTopicScreen(topic: topic),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        HelpTourLauncher.instance.requestTour();
+                        Navigator.of(
+                          context,
+                        ).popUntil((route) => route.isFirst);
+                      },
+                      icon: const Icon(Icons.play_circle_outline),
+                      label: Text(s.replayTour),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48),
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _helpTile(
-                      context,
-                      theme,
-                      imagePath: 'assets/images/help_journal.png',
-                      label: s.journalTile,
-                      topic: HelpTopic.journal,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _helpTile(
-                      context,
-                      theme,
-                      imagePath: 'assets/images/help_references.png',
-                      label: s.referencesTile,
-                      topic: HelpTopic.references,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              OutlinedButton.icon(
-                onPressed: () {
-                  HelpTourLauncher.instance.requestTour();
-                  Navigator.of(context).popUntil((route) => route.isFirst);
-                },
-                icon: const Icon(Icons.play_circle_outline),
-                label: Text(s.replayTour),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(48),
+                  ],
                 ),
               ),
             ],
@@ -108,45 +89,59 @@ class HelpScreen extends StatelessWidget {
       ),
     );
   }
+}
 
-  Widget _helpTile(
-    BuildContext context,
-    ThemeData theme, {
-    required String imagePath,
-    required String label,
-    required HelpTopic topic,
-  }) {
-    return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => HelpTopicScreen(topic: topic),
-          ),
-        );
-      },
-      child: AspectRatio(
-        aspectRatio: 1,
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            border: Border.all(color: theme.colorScheme.primary),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Image.asset(imagePath, height: 40, width: 40),
-              const SizedBox(height: 12),
-              Text(
-                label,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.titleSmall?.copyWith(
-                  color: theme.colorScheme.primary,
-                  fontWeight: FontWeight.bold,
+/// A bordered row (icon, title, arrow) that opens a Help page.
+class _PageTile extends StatelessWidget {
+  final String title;
+  final String icon;
+  final VoidCallback onTap;
+
+  const _PageTile({
+    required this.title,
+    required this.icon,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final radius = BorderRadius.circular(16);
+    return Semantics(
+      button: true,
+      label: title,
+      excludeSemantics: true,
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border.all(color: theme.colorScheme.primary),
+          borderRadius: radius,
+        ),
+        child: InkWell(
+          borderRadius: radius,
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Image.asset(icon, height: 32, width: 32),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
-              ),
-            ],
+                Icon(
+                  Icons.chevron_right,
+                  color: theme.colorScheme.primary,
+                  size: 28,
+                ),
+              ],
+            ),
           ),
         ),
       ),

@@ -10,6 +10,10 @@ import '../../settings/screens/guest_profile_gate_screen.dart';
 import '../../settings/screens/profile_screen.dart';
 import '../screens/notifications_screen.dart';
 import '../first_aid_kit_screen.dart';
+import '../../../i18n/tour_strings.dart';
+import '../../../i18n/nav_strings.dart';
+import '../../../core/widgets/app_date_picker.dart';
+import '../../../i18n/calendar_strings.dart';
 import '../../../services/connectivity_service.dart';
 import '../../../core/widgets/help_tour_launcher.dart';
 import '../../../core/widgets/help_tour_overlay.dart';
@@ -17,18 +21,38 @@ import '../../../core/widgets/custom_bottom_nav_bar.dart';
 import '../../../core/widgets/connectivity_badge.dart';
 import '../../../services/notification_inbox_store.dart';
 import 'textbook_viewer_screen.dart';
+import '../../../services/firebase/textbook_service.dart';
 
 class _BookItem {
   final String title;
-  final String imagePath;
-  final String pdfPath;
+
+  /// Bundled cover picture, or null for the generic book icon.
+  final String? imagePath;
+
+  /// Where the PDF is in Firebase Storage, eg `textbooks/Some Book.pdf`.
+  final String storagePath;
 
   const _BookItem({
     required this.title,
     required this.imagePath,
-    required this.pdfPath,
+    required this.storagePath,
   });
 }
+
+// Covers that ship with the app, by the PDF's file name. A book added in
+// Firebase later has no bundled cover and shows the generic book icon.
+const Map<String, String> _bundledCovers = {
+  'SJA-First-Aid-Reference-Guide-English.pdf':
+      'assets/images/books/9db08e09-34bd-4553-b1ba-d1ae592627d4.jpg',
+  'E-AG-5.5-First-Aid-Vision-2030.pdf':
+      'assets/images/books/6a929f4b-fb12-4ae3-be63-5af42a559d39 (1).jpg',
+  'Philippine Red Cross First Aid Support.pdf':
+      'assets/images/books/philippine_red_cross_first_aid_support.jpg',
+  'First Aid Pocket Guide.pdf':
+      'assets/images/books/first_aid_pocket_guide.jpg',
+  'FA-CPR-AED-Part-Manual.pdf':
+      'assets/images/books/first_aid_handbook_manual.jpg',
+};
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -43,17 +67,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   int? _selectedNavIndex;
 
   // Bottom nav
-  static const List<BottomNavItem> _navItems = [
-    BottomNavItem(icon: Icons.menu_book_outlined, label: 'Health Journal'),
-    BottomNavItem(
-      icon: Icons.crop_free,
-      label: 'AI Vision Camera',
-      badge: 'AI',
-    ),
-    BottomNavItem(
-      icon: Icons.support_agent_outlined,
-      label: 'Help and Support',
-    ),
+  List<BottomNavItem> _navItems(NavStrings n) => [
+    BottomNavItem(icon: Icons.menu_book_outlined, label: n.healthJournal),
+    BottomNavItem(icon: Icons.crop_free, label: n.aiVisionCamera, badge: 'AI'),
+    BottomNavItem(icon: Icons.support_agent_outlined, label: n.helpAndSupport),
   ];
 
   // Tour keys
@@ -72,36 +89,53 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final PageController _bookController = PageController(viewportFraction: 0.75);
   int _currentBookPage = 1;
 
-  final List<_BookItem> _books = const [
+  // The built-in list: shown straight away and kept if Firebase can't be
+  // reached. Replaced by the list in Firestore (`textbooks`) once it loads.
+  List<_BookItem> _books = const [
     _BookItem(
       title: 'First Aid Reference Guide',
       imagePath: 'assets/images/books/9db08e09-34bd-4553-b1ba-d1ae592627d4.jpg',
-      pdfPath: 'assets/pdfs/SJA-First-Aid-Reference-Guide-English.pdf',
+      storagePath: 'textbooks/SJA-First-Aid-Reference-Guide-English.pdf',
     ),
     _BookItem(
       title:
           'IFRC International First Aid, Resuscitation and Education Guidelines 2025',
       imagePath:
           'assets/images/books/6a929f4b-fb12-4ae3-be63-5af42a559d39 (1).jpg',
-      pdfPath: 'assets/pdfs/E-AG-5.5-First-Aid-Vision-2030.pdf',
+      storagePath: 'textbooks/E-AG-5.5-First-Aid-Vision-2030.pdf',
     ),
     _BookItem(
       title: 'Philippine Red Cross First Aid Support',
       imagePath:
           'assets/images/books/philippine_red_cross_first_aid_support.jpg',
-      pdfPath: 'assets/pdfs/Philippine Red Cross First Aid Support.pdf',
+      storagePath: 'textbooks/Philippine Red Cross First Aid Support.pdf',
     ),
     _BookItem(
       title: 'First Aid Pocket Guide',
       imagePath: 'assets/images/books/first_aid_pocket_guide.jpg',
-      pdfPath: 'assets/pdfs/First Aid Pocket Guide.pdf',
+      storagePath: 'textbooks/First Aid Pocket Guide.pdf',
     ),
     _BookItem(
-      title: 'First Aid and CPR Manual',
-      imagePath: 'assets/images/books/first_aid_and_CPR_manual.jpg',
-      pdfPath: 'assets/pdfs/First Aid and CPR Manual.pdf',
+      title: 'First Aid Hand book Manual',
+      imagePath: 'assets/images/books/first_aid_handbook_manual.jpg',
+      storagePath: 'textbooks/FA-CPR-AED-Part-Manual.pdf',
     ),
   ];
+
+  Future<void> _loadBooks() async {
+    final list = await TextbookService.instance.fetchList();
+    if (!mounted || list.isEmpty) return;
+    setState(() {
+      _books = [
+        for (final b in list)
+          _BookItem(
+            title: b.title,
+            imagePath: _bundledCovers[b.fileName],
+            storagePath: b.storagePath,
+          ),
+      ];
+    });
+  }
 
   static bool _guestTourShownThisSession = false;
 
@@ -109,6 +143,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void initState() {
     super.initState();
     _bookController.addListener(_onBookScroll);
+    _loadBooks();
 
     // Check initial connectivity
     ConnectivityService().isOnline.then((online) {
@@ -172,60 +207,46 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
-  List<HelpTourStep> get _tourSteps => [
-    const HelpTourStep(
-      title: 'Welcome to Fine Aid',
-      description:
-          'A quick look at the main features - tap Next to continue, or '
-          'Skip Tour any time.',
+  List<HelpTourStep> _tourSteps(TourStrings t) => [
+    HelpTourStep(
+      title: t.steps[0].title,
+      description: t.steps[0].description,
       icon: Icons.waving_hand_outlined,
     ),
     HelpTourStep(
       targetKey: _scannerNavKey,
-      title: 'AI Scanner',
-      description:
-          'Point your camera at a wound or skin issue and get instant, '
-          'AI-powered first aid guidance.',
+      title: t.steps[1].title,
+      description: t.steps[1].description,
       icon: Icons.center_focus_strong_outlined,
     ),
     HelpTourStep(
       targetKey: _journalNavKey,
-      title: 'Health Journal',
-      description:
-          'Track your recovery over time, with healing-progress estimates '
-          'and reminders if something needs a closer look.',
+      title: t.steps[2].title,
+      description: t.steps[2].description,
       icon: Icons.menu_book_outlined,
     ),
     HelpTourStep(
       targetKey: _bookCarouselKey,
-      title: 'First Aid Textbook',
-      description:
-          'Browse trusted first aid reference books — available even '
-          'when you\'re offline, with search to jump straight to a topic.',
+      title: t.steps[3].title,
+      description: t.steps[3].description,
       icon: Icons.import_contacts_outlined,
     ),
     HelpTourStep(
       targetKey: _helpNavKey,
-      title: 'Help & Support',
-      description:
-          'Find answers to common questions, or come back here to replay '
-          'this tour whenever you like.',
+      title: t.steps[4].title,
+      description: t.steps[4].description,
       icon: Icons.support_agent_outlined,
     ),
     HelpTourStep(
       targetKey: _profileKey,
-      title: 'Profile',
-      description:
-          'View and edit your profile, and manage your account details '
-          'from here.',
+      title: t.steps[5].title,
+      description: t.steps[5].description,
       icon: Icons.account_circle_outlined,
     ),
     HelpTourStep(
       targetKey: _settingsKey,
-      title: 'Settings',
-      description:
-          'Adjust notifications, text size, and other app preferences '
-          'from here.',
+      title: t.steps[6].title,
+      description: t.steps[6].description,
       icon: Icons.settings,
     ),
   ];
@@ -235,24 +256,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _bookController.dispose();
     HelpTourLauncher.instance.requestToken.removeListener(_onTourRequested);
     super.dispose();
-  }
-
-  String _monthName(int month) {
-    const months = [
-      'January',
-      'February',
-      'March',
-      'April',
-      'May',
-      'June',
-      'July',
-      'August',
-      'September',
-      'October',
-      'November',
-      'December',
-    ];
-    return months[month - 1];
   }
 
   void _handleNavTap(int index) {
@@ -325,7 +328,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _buildScaffold(theme, isGuest),
         if (_showTour)
           HelpTourOverlay(
-            steps: _tourSteps,
+            steps: _tourSteps(TourStrings.of(context)),
+            skipLabel: TourStrings.of(context).skipTour,
+            backLabel: TourStrings.of(context).back,
+            nextLabel: TourStrings.of(context).next,
+            doneLabel: TourStrings.of(context).done,
             onFinished: () => setState(() => _showTour = false),
           ),
       ],
@@ -336,7 +343,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Scaffold(
       bottomNavigationBar: CustomBottomNavBar(
         key: _actionTilesKey,
-        items: _navItems,
+        items: _navItems(NavStrings.of(context)),
         itemKeys: [_journalNavKey, _scannerNavKey, _helpNavKey],
         selectedIndex: _selectedNavIndex,
         onItemTap: _handleNavTap,
@@ -675,7 +682,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       MaterialPageRoute(
                         builder: (context) => TextbookViewerScreen(
                           title: book.title,
-                          assetPdfPath: book.pdfPath,
+                          storagePath: book.storagePath,
                         ),
                       ),
                     ),
@@ -784,8 +791,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  // Opens the date picker and shows the month of the date chosen.
+  Future<void> _jumpToDate() async {
+    final now = DateTime.now();
+    final picked = await showAppDatePicker(
+      context,
+      initial: DateTime(_displayedMonth.year, _displayedMonth.month, 1),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(now.year + 1, 12, 31),
+    );
+    if (picked != null && mounted) {
+      setState(() => _displayedMonth = DateTime(picked.year, picked.month));
+    }
+  }
+
   Widget _buildCalendarWidget(ThemeData theme, Set<DateTime> markedDates) {
     final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final c = CalendarStrings.of(context);
     final daysInMonth = DateUtils.getDaysInMonth(
       _displayedMonth.year,
       _displayedMonth.month,
@@ -795,196 +818,245 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final isCurrentMonth =
         _displayedMonth.year == now.year && _displayedMonth.month == now.month;
 
-    return Container(
-      key: _calendarKey,
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: Column(
-        children: [
-          // Month navigation
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.chevron_left, size: 30),
-                onPressed: () {
-                  setState(() {
-                    _displayedMonth = DateTime(
-                      _displayedMonth.year,
-                      _displayedMonth.month - 1,
-                    );
-                  });
-                },
-              ),
-              Text(
-                '${_monthName(_displayedMonth.month)} '
-                '${_displayedMonth.year}',
-                style: theme.textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black,
+    return GestureDetector(
+      // Swipe left for the next month, right for the previous one.
+      onHorizontalDragEnd: (details) {
+        final v = details.primaryVelocity ?? 0;
+        if (v < -200) {
+          setState(() {
+            _displayedMonth = DateTime(
+              _displayedMonth.year,
+              _displayedMonth.month + 1,
+            );
+          });
+        }
+        if (v > 200) {
+          setState(() {
+            _displayedMonth = DateTime(
+              _displayedMonth.year,
+              _displayedMonth.month - 1,
+            );
+          });
+        }
+      },
+      child: Container(
+        key: _calendarKey,
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Column(
+          children: [
+            // Month navigation
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.chevron_left, size: 30),
+                  onPressed: () {
+                    setState(() {
+                      _displayedMonth = DateTime(
+                        _displayedMonth.year,
+                        _displayedMonth.month - 1,
+                      );
+                    });
+                  },
                 ),
+                // Tap the month to jump straight to any date.
+                InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: _jumpToDate,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '${c.months[_displayedMonth.month - 1]} '
+                          '${_displayedMonth.year}',
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black,
+                          ),
+                        ),
+                        const Icon(Icons.arrow_drop_down, color: Colors.black),
+                      ],
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.chevron_right, size: 30),
+                  onPressed: () {
+                    setState(() {
+                      _displayedMonth = DateTime(
+                        _displayedMonth.year,
+                        _displayedMonth.month + 1,
+                      );
+                    });
+                  },
+                ),
+              ],
+            ),
+            if (!isCurrentMonth)
+              TextButton(
+                onPressed: () => setState(() {
+                  _displayedMonth = DateTime(now.year, now.month);
+                }),
+                child: Text(c.jumpToToday),
               ),
-              IconButton(
-                icon: const Icon(Icons.chevron_right, size: 30),
-                onPressed: () {
-                  setState(() {
-                    _displayedMonth = DateTime(
-                      _displayedMonth.year,
-                      _displayedMonth.month + 1,
-                    );
-                  });
-                },
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
+            const SizedBox(height: 8),
 
-          // Day headers
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
-                .map(
-                  (d) => SizedBox(
+            // Day headers
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                for (var i = 0; i < 7; i++)
+                  SizedBox(
                     width: 32,
                     child: Text(
-                      d,
+                      c.weekdays[i],
                       textAlign: TextAlign.center,
                       style: theme.textTheme.labelLarge?.copyWith(
                         fontWeight: FontWeight.bold,
                         // Weekends in maroon, the rest in black.
-                        color: (d == 'Su' || d == 'Sa')
+                        color: (i == 0 || i == 6)
                             ? theme.colorScheme.primary
                             : Colors.black,
                       ),
                     ),
                   ),
-                )
-                .toList(),
-          ),
-          const SizedBox(height: 4),
-
-          // Calendar grid
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 7,
-              childAspectRatio: 1,
+              ],
             ),
-            itemCount: firstWeekday + daysInMonth,
-            itemBuilder: (context, index) {
-              if (index < firstWeekday) {
-                return const SizedBox();
-              }
-              final day = index - firstWeekday + 1;
-              final thisDate = DateTime(
-                _displayedMonth.year,
-                _displayedMonth.month,
-                day,
-              );
-              final isToday = isCurrentMonth && day == now.day;
-              final hasEntry = markedDates.contains(thisDate);
-              final isWeekend =
-                  thisDate.weekday == DateTime.saturday ||
-                  thisDate.weekday == DateTime.sunday;
+            const SizedBox(height: 4),
 
-              return GestureDetector(
-                onTap: hasEntry
-                    ? () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) =>
-                                DayEntriesScreen(initialDate: thisDate),
-                          ),
-                        );
-                      }
-                    : null,
-                child: Center(
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      // Today highlight
-                      if (isToday)
-                        Container(
-                          width: 32,
-                          height: 32,
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.primary,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                      // Day number
-                      Text(
-                        '$day',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: isToday
-                              ? Colors.white
-                              : (isWeekend ? theme.colorScheme.primary : null),
-                          fontWeight: isToday ? FontWeight.bold : null,
-                        ),
-                      ),
-                      // Journal entry dot
-                      if (hasEntry && !isToday)
-                        Positioned(
-                          bottom: 1,
-                          child: Container(
-                            width: 20,
-                            height: 15,
+            // Calendar grid
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 7,
+                childAspectRatio: 1,
+              ),
+              itemCount: firstWeekday + daysInMonth,
+              itemBuilder: (context, index) {
+                if (index < firstWeekday) {
+                  return const SizedBox();
+                }
+                final day = index - firstWeekday + 1;
+                final thisDate = DateTime(
+                  _displayedMonth.year,
+                  _displayedMonth.month,
+                  day,
+                );
+                final isToday = isCurrentMonth && day == now.day;
+                final hasEntry = markedDates.contains(thisDate);
+                final isWeekend =
+                    thisDate.weekday == DateTime.saturday ||
+                    thisDate.weekday == DateTime.sunday;
+
+                return GestureDetector(
+                  onTap: hasEntry
+                      ? () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  DayEntriesScreen(initialDate: thisDate),
+                            ),
+                          );
+                        }
+                      : null,
+                  child: Center(
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        // Today highlight
+                        if (isToday)
+                          Container(
+                            width: 32,
+                            height: 32,
                             decoration: BoxDecoration(
-                              color: theme.colorScheme.primary.withValues(
-                                alpha: 0.3,
+                              color: theme.colorScheme.primary,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        // Day number
+                        Text(
+                          '$day',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            // Days still to come are dimmed.
+                            color: isToday
+                                ? Colors.white
+                                : (thisDate.isAfter(today)
+                                      ? Colors.grey.shade500
+                                      : (isWeekend
+                                            ? theme.colorScheme.primary
+                                            : null)),
+                            fontWeight: isToday ? FontWeight.bold : null,
+                          ),
+                        ),
+                        // Journal entry dot
+                        if (hasEntry && !isToday)
+                          Positioned(
+                            bottom: 1,
+                            child: Container(
+                              width: 20,
+                              height: 15,
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.primary.withValues(
+                                  alpha: 0.3,
+                                ),
+                                shape: BoxShape.circle,
                               ),
-                              shape: BoxShape.circle,
                             ),
                           ),
-                        ),
 
-                      // Today + entry: white dot
-                      if (hasEntry && isToday)
-                        Positioned(
-                          bottom: 1,
-                          child: Container(
-                            width: 6,
-                            height: 6,
-                            decoration: const BoxDecoration(
-                              color: Colors.white,
-                              shape: BoxShape.circle,
+                        // Today + entry: white dot
+                        if (hasEntry && isToday)
+                          Positioned(
+                            bottom: 1,
+                            child: Container(
+                              width: 6,
+                              height: 6,
+                              decoration: const BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                              ),
                             ),
                           ),
-                        ),
-                    ],
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 12),
+
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary,
+                    shape: BoxShape.circle,
                   ),
                 ),
-              );
-            },
-          ),
-          const SizedBox(height: 12),
 
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primary,
-                  shape: BoxShape.circle,
+                const SizedBox(width: 6),
+                Text(
+                  c.today,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: Colors.grey,
+                  ),
                 ),
-              ),
-
-              const SizedBox(width: 6),
-              Text(
-                'Today',
-                style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1016,7 +1088,7 @@ class _TextbookCard extends StatelessWidget {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(10),
                   child: Image.asset(
-                    book.imagePath,
+                    book.imagePath ?? '',
                     width: double.infinity,
                     fit: BoxFit.cover,
                     errorBuilder: (_, _, _) => Container(
@@ -1104,7 +1176,7 @@ class _AllBooksScreen extends StatelessWidget {
                         MaterialPageRoute(
                           builder: (context) => TextbookViewerScreen(
                             title: book.title,
-                            assetPdfPath: book.pdfPath,
+                            storagePath: book.storagePath,
                           ),
                         ),
                       ),

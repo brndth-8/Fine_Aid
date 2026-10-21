@@ -95,8 +95,7 @@ class PainStrings {
   static const en = PainStrings(
     dialogTitle: 'How much pain are you feeling?',
     dialogBody:
-        'Rate your pain from 0 to 5, where 0 is no pain and 5 is the worst '
-        'pain.',
+        'Rate your pain from 0 to 5, where 0 is no pain and 5 is severe.',
     chooseHint: 'Choose a number to continue.',
     continueButton: 'Continue',
     levelMild: 'Mild',
@@ -201,7 +200,7 @@ class PainStrings {
     dialogTitle: 'Gaano kasakit ang nararamdaman mo?',
     dialogBody:
         'I-rate ang iyong sakit mula 0 hanggang 5, kung saan ang 0 ay walang '
-        'sakit at ang 5 ay ang pinakamatinding sakit.',
+        'sakit at ang 5 ay matindi.',
     chooseHint: 'Pumili ng numero para magpatuloy.',
     continueButton: 'Magpatuloy',
     levelMild: 'Banayad',

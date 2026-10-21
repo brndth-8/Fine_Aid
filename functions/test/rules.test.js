@@ -180,6 +180,109 @@ test("scan stats: an admin can read the counters group, a user cannot read other
   await assertSucceeds(asUser().doc("users/user1/aiScanStats/summary").get());
 });
 
+// ---- One account per email ---------------------------------------------------
+
+const asUser2 = () => env.authenticatedContext("user2").firestore();
+
+/** Saves a profile and its email reservation the way the app does. */
+function saveWithEmail(db, uid, email, { reserve = email, existingProfile = true } = {}) {
+  const batch = db.batch();
+  const profile = db.doc(`users/${uid}`);
+  if (existingProfile) batch.update(profile, { recoveryEmail: email });
+  else batch.set(profile, { username: uid, recoveryEmail: email });
+  if (reserve) batch.set(db.doc(`emails/${reserve}`), { uid });
+  return batch.commit();
+}
+
+async function seedReservation(uid, email) {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await db.doc(`users/${uid}`).set({ username: uid, recoveryEmail: email });
+    await db.doc(`emails/${email}`).set({ uid });
+  });
+}
+
+test("email: a profile can take an address by reserving it in the same write", async () => {
+  await assertSucceeds(saveWithEmail(asUser(), "user1", "juan@example.com"));
+});
+
+test("email: a profile cannot hold an address it hasn't reserved", async () => {
+  await assertFails(
+    saveWithEmail(asUser(), "user1", "juan@example.com", { reserve: null })
+  );
+});
+
+test("email: a second account cannot take an address already reserved", async () => {
+  await seedReservation("user1", "juan@example.com");
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().doc("users/user2").set({ username: "user2" });
+  });
+  await assertFails(saveWithEmail(asUser2(), "user2", "juan@example.com"));
+});
+
+test("email: the check ignores letter case", async () => {
+  await seedReservation("user1", "juan@example.com");
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().doc("users/user2").set({ username: "user2" });
+  });
+  // Different case, so a different document id, but the profile's address
+  // lower-cases to the one already reserved for user1.
+  await assertFails(saveWithEmail(asUser2(), "user2", "Juan@Example.com", { reserve: "Juan@Example.com" }));
+  await assertFails(saveWithEmail(asUser2(), "user2", "Juan@Example.com", { reserve: null }));
+});
+
+test("email: a new sign-up with a free address works, with a taken one it fails", async () => {
+  await seedReservation("user1", "juan@example.com");
+  await assertSucceeds(
+    saveWithEmail(asUser2(), "user2", "maria@example.com", { existingProfile: false })
+  );
+  const user3 = env.authenticatedContext("user3").firestore();
+  await assertFails(
+    saveWithEmail(user3, "user3", "juan@example.com", { existingProfile: false })
+  );
+});
+
+test("email: changing it moves the reservation; an unchanged email needs nothing", async () => {
+  await seedReservation("user1", "old@example.com");
+  // Other profile edits don't touch the email (also true for older accounts
+  // that have no reservation yet).
+  await assertSucceeds(asUser().doc("users/user1").update({ username: "renamed" }));
+  const batch = asUser().batch();
+  batch.update(asUser().doc("users/user1"), { recoveryEmail: "new@example.com" });
+  batch.set(asUser().doc("emails/new@example.com"), { uid: "user1" });
+  batch.delete(asUser().doc("emails/old@example.com"));
+  await assertSucceeds(batch.commit());
+});
+
+test("email: a reservation can't be dropped while the profile still uses the address", async () => {
+  await seedReservation("user1", "juan@example.com");
+  await assertFails(asUser().doc("emails/juan@example.com").delete());
+  // Removing the address and the reservation together is fine.
+  const batch = asUser().batch();
+  batch.update(asUser().doc("users/user1"), {
+    recoveryEmail: require("firebase/compat/app").default.firestore.FieldValue.delete(),
+  });
+  batch.delete(asUser().doc("emails/juan@example.com"));
+  await assertSucceeds(batch.commit());
+});
+
+test("email: reservations can be checked one at a time but not listed", async () => {
+  await seedReservation("user1", "juan@example.com");
+  await assertSucceeds(asUser2().doc("emails/juan@example.com").get());
+  await assertFails(asGuest().doc("emails/juan@example.com").get());
+  await assertFails(asUser2().collection("emails").get());
+});
+
+test("email: an admin can set a user's address only through a reservation", async () => {
+  await assertFails(
+    saveWithEmail(asAdmin(), "user1", "set-by-admin@example.com", { reserve: null })
+  );
+  const batch = asAdmin().batch();
+  batch.update(asAdmin().doc("users/user1"), { recoveryEmail: "set-by-admin@example.com" });
+  batch.set(asAdmin().doc("emails/set-by-admin@example.com"), { uid: "user1" });
+  await assertSucceeds(batch.commit());
+});
+
 // ---- guard rails that must keep working -----------------------------------
 
 test("journal: the owner reads their entry, an admin reads via the group query", async () => {

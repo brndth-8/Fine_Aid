@@ -1,3 +1,4 @@
+import '../../../../core/widgets/app_date_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
@@ -128,9 +129,9 @@ class _AdminNotificationsState extends State<AdminNotifications> {
     if (_titleController.text.trim().isEmpty) return;
 
     final now = DateTime.now();
-    final date = await showDatePicker(
-      context: context,
-      initialDate: now,
+    final date = await showAppDatePicker(
+      context,
+      initial: now,
       firstDate: now,
       lastDate: now.add(const Duration(days: 365)),
     );
@@ -269,7 +270,7 @@ class _AdminNotificationsState extends State<AdminNotifications> {
                                         [
                                               'All users',
                                               'Registered only',
-                                              'Premium',
+                                              'Guest only',
                                             ]
                                             .map(
                                               (a) => DropdownMenuItem(

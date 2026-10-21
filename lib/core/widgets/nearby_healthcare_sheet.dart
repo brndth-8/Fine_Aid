@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../data/healthcare_facilities.dart';
+import '../../i18n/nearby_strings.dart';
 import '../../services/api/nearby_healthcare_service.dart';
 
 Future<void> showNearbyHealthcareSheet(BuildContext context) {
@@ -12,6 +13,28 @@ Future<void> showNearbyHealthcareSheet(BuildContext context) {
     ),
     builder: (sheetContext) => const NearbyHealthcareSheet(),
   );
+}
+
+/// The "Find Nearby Healthcare" button: opens the same sheet everywhere
+/// (AI result, journal, chat, Animal Scratch notice).
+class NearbyHealthcareButton extends StatelessWidget {
+  final bool compact;
+  const NearbyHealthcareButton({super.key, this.compact = true});
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: () => showNearbyHealthcareSheet(context),
+      icon: Icon(Icons.local_hospital_outlined, size: compact ? 16 : 20),
+      label: Text(NearbyStrings.of(context).findNearby),
+      style: compact
+          ? OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              minimumSize: const Size(0, 36),
+            )
+          : null,
+    );
+  }
 }
 
 class NearbyHealthcareSheet extends StatefulWidget {

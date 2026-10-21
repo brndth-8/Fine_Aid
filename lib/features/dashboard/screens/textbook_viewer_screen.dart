@@ -1,17 +1,19 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
+import '../../../i18n/textbook_strings.dart';
+import '../../../services/firebase/textbook_service.dart';
 
 class TextbookViewerScreen extends StatefulWidget {
   final String title;
-  final String assetPdfPath;
+
+  /// Where the PDF is in Firebase Storage, eg `textbooks/Some Book.pdf`.
+  final String storagePath;
 
   const TextbookViewerScreen({
     super.key,
     required this.title,
-    required this.assetPdfPath,
+    required this.storagePath,
   });
 
   @override
@@ -20,6 +22,8 @@ class TextbookViewerScreen extends StatefulWidget {
 
 class _TextbookViewerScreenState extends State<TextbookViewerScreen> {
   String? _localPdfPath;
+  // Download progress (0..1) while the book is being fetched.
+  final ValueNotifier<double?> _progress = ValueNotifier(null);
   bool _isLoading = true;
   String? _errorMessage;
   int _currentPage = 0;
@@ -34,7 +38,7 @@ class _TextbookViewerScreenState extends State<TextbookViewerScreen> {
   @override
   void initState() {
     super.initState();
-    _loadPdfFromAssets();
+    _loadPdf();
   }
 
   @override
@@ -43,26 +47,45 @@ class _TextbookViewerScreenState extends State<TextbookViewerScreen> {
     _searchController.dispose();
     _searchFocusNode.dispose();
     _pdfController.dispose();
+    _progress.dispose();
     super.dispose();
   }
 
-  Future<void> _loadPdfFromAssets() async {
+  Future<void> _loadPdf() async {
     setState(() {
       _errorMessage = null;
       _isLoading = true;
       _localPdfPath = null;
     });
+    _progress.value = null;
     try {
-      final byteData = await rootBundle.load(widget.assetPdfPath);
-      final tempDir = await getTemporaryDirectory();
-      final fileName = widget.assetPdfPath.split('/').last;
-      final tempFile = File('${tempDir.path}/$fileName');
-      await tempFile.writeAsBytes(byteData.buffer.asUint8List(), flush: true);
-      if (mounted) setState(() => _localPdfPath = tempFile.path);
+      // Downloaded from Firebase the first time, then served from the copy
+      // kept on the phone.
+      final file = await TextbookService.instance.getFile(
+        widget.storagePath,
+        onProgress: (p) {
+          if (mounted) _progress.value = p;
+        },
+      );
+      if (mounted) setState(() => _localPdfPath = file.path);
+    } on TextbookOfflineException {
+      if (mounted) {
+        setState(() {
+          _errorMessage = TextbookStrings.of(context).needsInternet;
+          _isLoading = false;
+        });
+      }
+    } on TextbookNotFoundException {
+      if (mounted) {
+        setState(() {
+          _errorMessage = TextbookStrings.of(context).notAvailable;
+          _isLoading = false;
+        });
+      }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = 'Could not load PDF. Please try again.';
+          _errorMessage = TextbookStrings.of(context).couldNotLoad;
           _isLoading = false;
         });
       }
@@ -216,7 +239,7 @@ class _TextbookViewerScreenState extends State<TextbookViewerScreen> {
               Text(_errorMessage!, textAlign: TextAlign.center),
               const SizedBox(height: 16),
               ElevatedButton.icon(
-                onPressed: _loadPdfFromAssets,
+                onPressed: _loadPdf,
                 icon: const Icon(Icons.refresh),
                 label: const Text('Retry'),
               ),
@@ -227,7 +250,25 @@ class _TextbookViewerScreenState extends State<TextbookViewerScreen> {
     }
 
     if (_localPdfPath == null) {
-      return const Center(child: CircularProgressIndicator());
+      return Center(
+        child: ValueListenableBuilder<double?>(
+          valueListenable: _progress,
+          builder: (context, progress, _) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(value: progress),
+              if (progress != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  TextbookStrings.of(
+                    context,
+                  ).downloading((progress * 100).clamp(0, 100).round()),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
     }
 
     return Stack(

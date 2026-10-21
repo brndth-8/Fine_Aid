@@ -4,10 +4,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../../../services/firebase/notification_service.dart';
 import '../../../core/network_error.dart';
+import '../../../core/widgets/app_date_picker.dart';
+import '../../../i18n/journal_entry_strings.dart';
 import 'new_entry_screen.dart';
 import 'entry_detail_screen.dart';
 
-class JournalListScreen extends StatelessWidget {
+class JournalListScreen extends StatefulWidget {
   const JournalListScreen({super.key});
 
   static Future<bool> confirmAndDeleteEntry(
@@ -62,6 +64,38 @@ class JournalListScreen extends StatelessWidget {
       }
       return false;
     }
+  }
+
+  @override
+  State<JournalListScreen> createState() => _JournalListScreenState();
+}
+
+class _JournalListScreenState extends State<JournalListScreen> {
+  // Only entries between these two dates (inclusive) are shown; null = all.
+  DateTimeRange? _range;
+
+  Future<void> _pickRange() async {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final picked = await showAppDateRangePicker(
+      context,
+      initial: _range,
+      firstDate: DateTime(2020),
+      lastDate: today,
+    );
+    if (picked != null && mounted) setState(() => _range = picked);
+  }
+
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _filtered(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    final range = _range;
+    if (range == null) return docs;
+    return docs.where((doc) {
+      final at = (doc.data()['createdAt'] as Timestamp?)?.toDate();
+      if (at == null) return false;
+      final day = DateUtils.dateOnly(at);
+      return !day.isBefore(range.start) && !day.isAfter(range.end);
+    }).toList();
   }
 
   @override
@@ -122,7 +156,33 @@ class JournalListScreen extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 16),
+            // Date-range filter.
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _pickRange,
+                      icon: const Icon(Icons.date_range_outlined, size: 18),
+                      label: Text(
+                        _range == null
+                            ? JournalEntryStrings.of(context).filterByDate
+                            : '${formatDateInput(_range!.start)} – '
+                                  '${formatDateInput(_range!.end)}',
+                      ),
+                    ),
+                  ),
+                  if (_range != null)
+                    IconButton(
+                      tooltip: JournalEntryStrings.of(context).clearFilter,
+                      icon: const Icon(Icons.close),
+                      onPressed: () => setState(() => _range = null),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
             Expanded(
               child: user == null
                   ? const Center(child: Text('Not signed in'))
@@ -158,14 +218,29 @@ class JournalListScreen extends StatelessWidget {
                             child: CircularProgressIndicator(),
                           );
                         }
-                        final docs = snapshot.data!.docs;
-                        if (docs.isEmpty) {
+                        final all = snapshot.data!.docs;
+                        final docs = _filtered(all);
+                        if (all.isEmpty) {
                           return Center(
                             child: Padding(
                               padding: const EdgeInsets.all(24),
                               child: Text(
                                 'No journal entries yet. Tap "Add Entry" to start '
                                 'tracking your recovery.',
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.bodyMedium,
+                              ),
+                            ),
+                          );
+                        }
+                        if (docs.isEmpty) {
+                          return Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Text(
+                                JournalEntryStrings.of(
+                                  context,
+                                ).noEntriesInRange,
                                 textAlign: TextAlign.center,
                                 style: theme.textTheme.bodyMedium,
                               ),
@@ -286,7 +361,8 @@ class JournalListScreen extends StatelessWidget {
             IconButton(
               icon: Icon(Icons.delete_outline, color: Colors.grey.shade700),
               tooltip: 'Delete entry',
-              onPressed: () => confirmAndDeleteEntry(context, entryId),
+              onPressed: () =>
+                  JournalListScreen.confirmAndDeleteEntry(context, entryId),
             ),
           ],
         ),

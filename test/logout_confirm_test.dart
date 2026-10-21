@@ -148,8 +148,13 @@ void main() {
     ).colorScheme;
     expect(
       logout.style?.backgroundColor?.resolve({}),
-      scheme.error,
-      reason: 'uses the theme\'s warning colour',
+      scheme.primary,
+      reason: 'the theme\'s dark red',
+    );
+    expect(
+      logout.style?.foregroundColor?.resolve({}),
+      scheme.onPrimary,
+      reason: 'readable text on the dark red',
     );
   });
 

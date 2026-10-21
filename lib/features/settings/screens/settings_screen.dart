@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../../services/firebase/auth_service.dart';
 import '../../../i18n/app_language.dart';
+import '../../../core/navigation/app_navigator.dart';
+import '../../../services/api/gemini_service.dart';
 import '../../../i18n/settings_strings.dart';
 import 'personalization_screen.dart';
 import 'help_screen.dart';
@@ -46,9 +48,10 @@ Future<bool> confirmLogout(BuildContext context) async {
           ),
           ElevatedButton(
             onPressed: () => answer(true),
+            // The theme's dark red (primary) with its on-colour (white) text.
             style: ElevatedButton.styleFrom(
-              backgroundColor: theme.colorScheme.error,
-              foregroundColor: theme.colorScheme.onError,
+              backgroundColor: theme.colorScheme.primary,
+              foregroundColor: theme.colorScheme.onPrimary,
             ),
             child: Text(s.logOutConfirmButton),
           ),
@@ -75,12 +78,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     try {
       await AuthService().signOut();
+      // Forget the signed-in user's AI chat session too.
+      GeminiService().reset();
       if (!mounted) return;
-      // Pop every pushed route (Dashboard, Settings, etc.) back to
-      // AuthGate, which now shows the landing/login screen since the user
-      // is signed out. Without this, signing out leaves the authenticated
-      // screens sitting on the navigation stack, reachable via back.
-      Navigator.of(context).popUntil((route) => route.isFirst);
+      // Always end on the login screen with an empty back stack: Back can't
+      // return to a signed-in screen, and no guest dashboard is left behind.
+      resetToLogin(Navigator.of(context));
     } catch (e) {
       if (!mounted) return;
       setState(() => _isLoggingOut = false);

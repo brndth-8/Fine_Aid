@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import '../../../services/local_profile_photo.dart';
+import '../../../services/firebase/email_reservation.dart';
 import '../../../services/firebase/storage_service.dart';
 import '../../../core/password_requirements.dart';
 import '../../../core/widgets/password_checklist.dart';
@@ -252,7 +253,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   String? _validateRecoveryEmail(String? value) {
     if (value == null || value.trim().isEmpty) return null; // optional
-    final emailRegex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
+    final emailRegex = RegExp(r'^[^@\s/]+@[^@\s/]+\.[^@\s/]+$');
     if (!emailRegex.hasMatch(value.trim())) {
       return 'Enter a valid email address';
     }
@@ -280,7 +281,24 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       if (user == null) return;
 
       final newUsername = _usernameController.text.trim();
-      final recoveryEmail = _recoveryEmailController.text.trim();
+      // Stored trimmed and lower-case; one account per email address.
+      final recoveryEmail = normalizeEmail(_recoveryEmailController.text);
+      final emailChanged =
+          recoveryEmail != normalizeEmail(_originalRecoveryEmail);
+      final firestore = FirebaseFirestore.instance;
+
+      // Check the address first so a taken email doesn't leave a
+      // half-applied username change behind (the save below re-checks it
+      // atomically).
+      if (emailChanged && recoveryEmail.isNotEmpty) {
+        final reservation = await firestore
+            .collection('emails')
+            .doc(recoveryEmail)
+            .get();
+        if (reservation.exists && reservation.data()?['uid'] != user.uid) {
+          throw EmailTakenException(recoveryEmail);
+        }
+      }
 
       // Usernames are case-sensitive app-wide (see AuthService) — the
       // reservation doc is keyed by the exact-case username itself. An
@@ -327,15 +345,28 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         await batch.commit();
       }
 
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .update({
-            'username': newUsername,
-            if (recoveryEmail.isNotEmpty) 'recoveryEmail': recoveryEmail,
-            if (recoveryEmail.isEmpty) 'recoveryEmail': FieldValue.delete(),
-          })
-          .timeout(const Duration(seconds: 10));
+      // The profile and the email reservation change in one transaction.
+      // An unchanged email isn't touched at all.
+      final userRef = firestore.collection('users').doc(user.uid);
+      await firestore.runTransaction((tx) async {
+        final applyEmail = emailChanged
+            ? await EmailReservation.prepare(
+                tx,
+                firestore,
+                uid: user.uid,
+                newEmail: recoveryEmail,
+                oldEmail: _originalRecoveryEmail,
+              )
+            : () {};
+        tx.update(userRef, {
+          'username': newUsername,
+          if (emailChanged && recoveryEmail.isNotEmpty)
+            'recoveryEmail': recoveryEmail,
+          if (emailChanged && recoveryEmail.isEmpty)
+            'recoveryEmail': FieldValue.delete(),
+        });
+        applyEmail();
+      }).timeout(const Duration(seconds: 10));
 
       if (_passwordController.text.isNotEmpty) {
         await user.updatePassword(_passwordController.text);
@@ -346,6 +377,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         const SnackBar(content: Text('Profile updated successfully.')),
       );
       Navigator.pop(context);
+    } on EmailTakenException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('This email is already registered.')),
+      );
     } on FirebaseAuthException catch (e) {
       String message = 'Could not update profile.';
       if (e.code == 'requires-recent-login') {

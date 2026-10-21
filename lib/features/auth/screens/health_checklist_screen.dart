@@ -21,12 +21,23 @@ const List<(String, IconData)> _allergyTypes = [
   ('latex', Icons.pan_tool_outlined),
 ];
 
+// Diabetes types (single choice). The stored id is saved as
+// `healthProfile.diabetesType`.
+const List<String> _diabetesTypes = [
+  'type1',
+  'type2',
+  'gestational',
+  'prediabetes',
+  'notSure',
+];
+
 const Color _maroon = Color(0xFF780000);
 const Color _cardTint = Color(0xFFF9EFEF);
 const Color _iconTint = Color(0xFFF6D9D9);
 
 class _HealthChecklistScreenState extends State<HealthChecklistScreen> {
   bool _diabetes = false;
+  String? _diabetesType;
   bool _hemophilia = false;
   final Set<String> _allergies = {};
   bool _allergiesExpanded = false;
@@ -42,6 +53,7 @@ class _HealthChecklistScreenState extends State<HealthChecklistScreen> {
       _noneOfTheAbove = value ?? false;
       if (_noneOfTheAbove) {
         _diabetes = false;
+        _diabetesType = null;
         _hemophilia = false;
         _allergies.clear();
       }
@@ -52,7 +64,34 @@ class _HealthChecklistScreenState extends State<HealthChecklistScreen> {
     setState(() {
       setter(value ?? false);
       if (value == true) _noneOfTheAbove = false;
+      // Unchecking Diabetes forgets the chosen type.
+      if (!_diabetes) _diabetesType = null;
     });
+    if (value == true) _showDisclaimer();
+  }
+
+  // One shared pop-up for every condition that gets checked (never on
+  // uncheck). It only informs: the selection is already made, saving isn't
+  // blocked, and it is shown one at a time.
+  bool _disclaimerOpen = false;
+  Future<void> _showDisclaimer() async {
+    if (_disclaimerOpen || !mounted) return;
+    _disclaimerOpen = true;
+    final s = ChecklistStrings.of(context);
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        content: Text(s.disclaimer),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Text(s.disclaimerOk),
+          ),
+        ],
+      ),
+    );
+    _disclaimerOpen = false;
   }
 
   void _toggleAllergy(String id, bool? value) {
@@ -64,6 +103,7 @@ class _HealthChecklistScreenState extends State<HealthChecklistScreen> {
         _allergies.remove(id);
       }
     });
+    if (value == true) _showDisclaimer();
   }
 
   Future<void> _handleContinue() async {
@@ -78,6 +118,8 @@ class _HealthChecklistScreenState extends State<HealthChecklistScreen> {
             .update({
               'healthProfile': {
                 'diabetes': _diabetes,
+                // Which type, when one was chosen (null otherwise).
+                'diabetesType': _diabetes ? _diabetesType : null,
                 'hemophiliaOrBloodDisorders': _hemophilia,
                 'severeAllergies': _hasAllergies,
                 // Which kinds of allergy (an addition; the flag above is
@@ -137,6 +179,7 @@ class _HealthChecklistScreenState extends State<HealthChecklistScreen> {
     required String description,
     required bool value,
     required void Function(bool?) onChanged,
+    Widget? extra,
   }) {
     final theme = Theme.of(context);
     return Padding(
@@ -144,40 +187,124 @@ class _HealthChecklistScreenState extends State<HealthChecklistScreen> {
       child: Material(
         color: _cardTint,
         borderRadius: BorderRadius.circular(18),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(18),
-          onTap: () => onChanged(!value),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
-            child: Row(
-              children: [
-                _iconBox(icon),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
+        child: Column(
+          children: [
+            InkWell(
+              borderRadius: BorderRadius.circular(18),
+              onTap: () => onChanged(!value),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
+                child: Row(
+                  children: [
+                    _iconBox(icon),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            description,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: Colors.grey.shade700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    _checkbox(value, onChanged),
+                  ],
+                ),
+              ),
+            ),
+            ?extra,
+          ],
+        ),
+      ),
+    );
+  }
+
+  (String, String) _diabetesTypeText(ChecklistStrings s, String id) =>
+      switch (id) {
+        'type1' => (s.diabetesType1, s.diabetesType1Info),
+        'type2' => (s.diabetesType2, s.diabetesType2Info),
+        'gestational' => (s.diabetesGestational, s.diabetesGestationalInfo),
+        'prediabetes' => (s.diabetesPrediabetes, s.diabetesPrediabetesInfo),
+        _ => (s.diabetesNotSure, s.diabetesNotSureInfo),
+      };
+
+  // Single-choice list under Diabetes. Tapping the chosen type again clears
+  // it (the type is optional).
+  Widget _diabetesTypePicker(ChecklistStrings s) {
+    final theme = Theme.of(context);
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      padding: const EdgeInsets.fromLTRB(12, 10, 4, 4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            s.diabetesTypeTitle,
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          for (final id in _diabetesTypes)
+            Semantics(
+              inMutuallyExclusiveGroup: true,
+              selected: _diabetesType == id,
+              child: InkWell(
+                onTap: () => setState(
+                  () => _diabetesType = _diabetesType == id ? null : id,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        title,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
+                      Padding(
+                        padding: const EdgeInsets.only(top: 1, right: 10),
+                        child: Icon(
+                          _diabetesType == id
+                              ? Icons.radio_button_checked
+                              : Icons.radio_button_unchecked,
+                          color: _maroon,
+                          size: 22,
                         ),
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        description,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: Colors.grey.shade700,
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _diabetesTypeText(s, id).$1,
+                              style: theme.textTheme.bodyMedium,
+                            ),
+                            Text(
+                              _diabetesTypeText(s, id).$2,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: Colors.grey.shade700,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
                 ),
-                _checkbox(value, onChanged),
-              ],
+              ),
             ),
-          ),
-        ),
+        ],
       ),
     );
   }
@@ -269,9 +396,30 @@ class _HealthChecklistScreenState extends State<HealthChecklistScreen> {
                             Icon(_allergyTypes[i].$2, color: _maroon, size: 20),
                             const SizedBox(width: 12),
                             Expanded(
-                              child: Text(
-                                _allergyLabel(s, _allergyTypes[i].$1),
-                                style: theme.textTheme.bodyMedium,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _allergyLabel(s, _allergyTypes[i].$1),
+                                    style: theme.textTheme.bodyMedium,
+                                  ),
+                                  // Examples help people recognise what
+                                  // counts as a food allergy.
+                                  if (_allergyTypes[i].$1 == 'food')
+                                    Padding(
+                                      padding: const EdgeInsets.only(
+                                        top: 2,
+                                        bottom: 4,
+                                      ),
+                                      child: Text(
+                                        s.foodAllergyExamples,
+                                        style: theme.textTheme.bodySmall
+                                            ?.copyWith(
+                                              color: Colors.grey.shade700,
+                                            ),
+                                      ),
+                                    ),
+                                ],
                               ),
                             ),
                             _checkbox(
@@ -333,6 +481,7 @@ class _HealthChecklistScreenState extends State<HealthChecklistScreen> {
                       value: _diabetes,
                       onChanged: (v) =>
                           _toggleCondition((val) => _diabetes = val, v),
+                      extra: _diabetes ? _diabetesTypePicker(s) : null,
                     ),
                     _conditionTile(
                       icon: Icons.bloodtype_outlined,

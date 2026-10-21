@@ -214,11 +214,13 @@ class _OtpScreenState extends State<OtpScreen> {
   // Just signing out would leave the half-registered account (and its
   // username reservation) behind — the user would land on a blank Create
   // Account form but immediately get "username already taken" if they try
-  // the same one again. So "back" here means abandon this registration
-  // outright: delete the never-verified auth user, its profile doc, and
-  // release the username, then go to a genuinely fresh Create Account
-  // screen. The account is only ever this incomplete for the few seconds
-  // between registering and verifying, so this is always safe to discard.
+  // the same one again. So "back" here means abandon this registration:
+  // mark the profile as not registered (it then stays out of the Admin
+  // portal — the security rules don't let an app user delete a profile
+  // document), release the username, and delete the never-verified sign-in
+  // account, then go to a genuinely fresh Create Account screen. If the
+  // sign-in account can't be deleted it is left without a username, and
+  // signing up again with the same password simply continues from it.
   Future<void> _handleBack() async {
     if (_isSigningOut) return;
     setState(() => _isSigningOut = true);
@@ -226,23 +228,20 @@ class _OtpScreenState extends State<OtpScreen> {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       try {
-        final profileDoc = await FirebaseFirestore.instance
+        final profileRef = FirebaseFirestore.instance
             .collection('users')
-            .doc(user.uid)
-            .get();
-        final username = profileDoc.data()?['username'] as String?;
+            .doc(user.uid);
+        final username =
+            (await profileRef.get()).data()?['username'] as String?;
+        await profileRef.update({'registrationComplete': false});
         if (username != null && username.trim().isNotEmpty) {
           // Registration reserves the username under its exact-case doc ID
-          // (see AuthService.registerWithUsername) — release that same doc.
+          // (see RegistrationFlow) — release that same doc.
           await FirebaseFirestore.instance
               .collection('usernames')
               .doc(username.trim())
               .delete();
         }
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .delete();
         await user.delete();
       } catch (e) {
         debugPrint('OTP back: could not fully clean up, signing out: $e');

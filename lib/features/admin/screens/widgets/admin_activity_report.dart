@@ -1,3 +1,4 @@
+import '../../../../core/widgets/app_date_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -120,11 +121,11 @@ class _AdminActivityReportState extends State<AdminActivityReport> {
 
   Future<void> _pickRange() async {
     final today = DateUtils.dateOnly(DateTime.now());
-    final picked = await showDateRangePicker(
-      context: context,
+    final picked = await showAppDateRangePicker(
+      context,
+      initial: _range,
       firstDate: DateTime(2024),
       lastDate: today,
-      initialDateRange: _range,
     );
     if (picked == null || !mounted) return;
     _range = picked;

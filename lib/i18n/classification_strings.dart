@@ -393,6 +393,7 @@ final Map<String, (ClassificationInfo, ClassificationInfo)> _byName = {
   'unable to classify': _unable,
   'injury (wounds/laceration/abrasion)': _injuryGroup,
   'animal bite/scratch': _animal,
+  'animal scratch': _animal,
 };
 
 /// The explanation for [classification] in the requested language, or null

@@ -27,10 +27,20 @@ class HelpTourOverlay extends StatefulWidget {
   final List<HelpTourStep> steps;
   final VoidCallback onFinished;
 
+  // Button text; the dashboard passes the translated versions.
+  final String skipLabel;
+  final String backLabel;
+  final String nextLabel;
+  final String doneLabel;
+
   const HelpTourOverlay({
     super.key,
     required this.steps,
     required this.onFinished,
+    this.skipLabel = 'Skip Tour',
+    this.backLabel = 'Back',
+    this.nextLabel = 'Next',
+    this.doneLabel = 'Done',
   });
 
   @override
@@ -121,21 +131,6 @@ class _HelpTourOverlayState extends State<HelpTourOverlay>
             ),
           ),
           _buildTooltipCard(context, step, screenSize),
-          Positioned(
-            top: MediaQuery.of(context).padding.top + 12,
-            right: 12,
-            child: TextButton(
-              onPressed: widget.onFinished,
-              style: TextButton.styleFrom(
-                backgroundColor: Colors.black54,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-              ),
-              child: const Text('Skip Tour'),
-            ),
-          ),
         ],
       ),
     );
@@ -148,108 +143,144 @@ class _HelpTourOverlayState extends State<HelpTourOverlay>
   ) {
     final theme = Theme.of(context);
     final cardWidth = screenSize.width < 360 ? screenSize.width - 32 : 300.0;
-    final rect = _displayRect;
+    final padding = MediaQuery.of(context).padding;
 
-    final left = ((rect?.center.dx ?? screenSize.width / 2) - cardWidth / 2)
-        .clamp(
-          16.0,
-          (screenSize.width - cardWidth - 16).clamp(16.0, double.infinity),
-        );
-
-    double top;
-    if (rect == null) {
-      top = screenSize.height / 2 - 110;
-    } else {
-      final spaceBelow = screenSize.height - rect.bottom;
-      if (spaceBelow > 240) {
-        top = rect.bottom + 20;
-      } else {
-        top = (rect.top - 20 - 220).clamp(
-          MediaQuery.of(context).padding.top + 60,
-          screenSize.height - 240,
-        );
-      }
-    }
+    // The description stays put for every step: centered across the screen,
+    // in a fixed band in the lower middle — below the book carousel and the
+    // top bar, above the bottom navigation bar — so it never covers the
+    // highlighted feature, wherever the highlight moves. Long (eg Tagalog)
+    // text wraps, and scrolls inside the band if it is still too tall.
+    final areaTop = (screenSize.height * 0.52).clamp(
+      padding.top + 60,
+      screenSize.height,
+    );
+    final areaBottom = (screenSize.height - padding.bottom - 130).clamp(
+      areaTop,
+      screenSize.height,
+    );
 
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 320),
       curve: Curves.easeInOutCubic,
-      left: left,
-      top: top,
-      width: cardWidth,
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 220),
-        transitionBuilder: (child, animation) => FadeTransition(
-          opacity: animation,
-          child: SlideTransition(
-            position: Tween<Offset>(
-              begin: const Offset(0, 0.05),
-              end: Offset.zero,
-            ).animate(animation),
-            child: child,
+      left: 0,
+      right: 0,
+      top: areaTop,
+      height: areaBottom - areaTop,
+      // Anchored to the top of the band, so the card's top edge is in the
+      // same place on every step (it only grows downward for longer text).
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: SizedBox(
+          width: cardWidth,
+          child: SingleChildScrollView(
+            child: _tooltipSwitcher(context, step, theme),
           ),
         ),
-        child: Container(
-          key: ValueKey(_index),
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
-            borderRadius: BorderRadius.circular(18),
-            boxShadow: const [
-              BoxShadow(
-                color: Colors.black38,
-                blurRadius: 16,
-                offset: Offset(0, 6),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(step.icon, color: theme.colorScheme.primary),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      step.title,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+      ),
+    );
+  }
+
+  Widget _tooltipSwitcher(
+    BuildContext context,
+    HelpTourStep step,
+    ThemeData theme,
+  ) {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 220),
+      transitionBuilder: (child, animation) => FadeTransition(
+        opacity: animation,
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 0.05),
+            end: Offset.zero,
+          ).animate(animation),
+          child: child,
+        ),
+      ),
+      child: Container(
+        key: ValueKey(_index),
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: const [
+            BoxShadow(
+              color: Colors.black38,
+              blurRadius: 16,
+              offset: Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(step.icon, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    step.title,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(step.description, style: theme.textTheme.bodyMedium),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    '${_index + 1} / ${widget.steps.length}',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: Colors.grey,
-                    ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              step.description,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  '${_index + 1} / ${widget.steps.length}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: Colors.grey,
                   ),
-                  Row(
+                ),
+                // Wraps instead of overflowing when the (longer) Tagalog
+                // button labels don't fit beside the counter.
+                Flexible(
+                  child: Wrap(
+                    alignment: WrapAlignment.end,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 4,
                     children: [
+                      // Skip Tour sits to the left of Next, side by side
+                      // (the last step has "Done" instead, so no Skip).
+                      if (_index < widget.steps.length - 1)
+                        ElevatedButton(
+                          onPressed: widget.onFinished,
+                          child: Text(widget.skipLabel),
+                        ),
                       if (_index > 0)
-                        TextButton(onPressed: _back, child: const Text('Back')),
-                      const SizedBox(width: 4),
+                        TextButton(
+                          onPressed: _back,
+                          child: Text(widget.backLabel),
+                        ),
                       ElevatedButton(
                         onPressed: _next,
                         child: Text(
-                          _index == widget.steps.length - 1 ? 'Done' : 'Next',
+                          _index == widget.steps.length - 1
+                              ? widget.doneLabel
+                              : widget.nextLabel,
                         ),
                       ),
                     ],
                   ),
-                ],
-              ),
-            ],
-          ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );

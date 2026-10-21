@@ -77,15 +77,44 @@ class _TermsScreenState extends State<TermsScreen> {
     }
   }
 
-  Widget _sectionHeader(ThemeData theme, String text) {
+  Widget _sectionHeader(ThemeData theme, String text, {bool sub = false}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Text(
         text,
-        style: theme.textTheme.titleSmall?.copyWith(
-          fontWeight: FontWeight.bold,
-          color: theme.colorScheme.primary,
-          letterSpacing: 0.2,
+        style: sub
+            ? theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+                height: 1.4,
+              )
+            : theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: theme.colorScheme.primary,
+                letterSpacing: 0.2,
+              ),
+      ),
+    );
+  }
+
+  // The disclaimers that must stand out (not for emergencies, limitation of
+  // damages): a bordered box with bold text.
+  Widget _warningBox(ThemeData theme, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          border: Border.all(color: theme.colorScheme.primary, width: 1.4),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(
+          text,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.bold,
+            height: 1.5,
+          ),
         ),
       ),
     );
@@ -196,18 +225,19 @@ class _TermsScreenState extends State<TermsScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           for (final section in s.sections) ...[
-                            _sectionHeader(theme, section.header),
+                            if (section.header.isNotEmpty)
+                              _sectionHeader(
+                                theme,
+                                section.header,
+                                sub: section.subheader,
+                              ),
                             if (section.paragraph != null)
-                              _paragraph(theme, section.paragraph!),
+                              section.warning
+                                  ? _warningBox(theme, section.paragraph!)
+                                  : _paragraph(theme, section.paragraph!),
                             if (section.bullets.isNotEmpty)
                               _bulletList(theme, section.bullets),
                           ],
-                          Text(
-                            s.closing,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              height: 1.5,
-                            ),
-                          ),
                         ],
                       ),
                     ),

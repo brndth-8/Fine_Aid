@@ -20,8 +20,11 @@ class AdminMainDashboard extends StatefulWidget {
 class _AdminMainDashboardState extends State<AdminMainDashboard> {
   // Server-side count() aggregates: the cards used to stream every document
   // of these collections just to read `.length`.
+  // Users counts include finished registrations only (`registrationComplete`).
   late final Future<int?> _usersCount = _count(
-    FirebaseFirestore.instance.collection('users'),
+    FirebaseFirestore.instance
+        .collection('users')
+        .where('registrationComplete', isEqualTo: true),
   );
 
   late final Future<int?> _journalEntriesCount = _count(
@@ -47,6 +50,7 @@ class _AdminMainDashboardState extends State<AdminMainDashboard> {
   late final Future<int?> _usersThisMonth = _count(
     FirebaseFirestore.instance
         .collection('users')
+        .where('registrationComplete', isEqualTo: true)
         .where(
           'createdAt',
           isGreaterThanOrEqualTo: Timestamp.fromDate(
@@ -83,12 +87,6 @@ class _AdminMainDashboardState extends State<AdminMainDashboard> {
   Widget build(BuildContext context) {
     final theme = widget.theme;
     final now = DateTime.now();
-    final hour = now.hour;
-    final greeting = hour < 12
-        ? 'Good morning'
-        : hour < 17
-        ? 'Good afternoon'
-        : 'Good evening';
 
     return Column(
       children: [
@@ -103,8 +101,6 @@ class _AdminMainDashboardState extends State<AdminMainDashboard> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('$greeting, Admin', style: theme.textTheme.titleLarge),
-                const SizedBox(height: 20),
                 // Stats row
                 Row(
                   children: [

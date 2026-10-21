@@ -15,6 +15,10 @@ Future<int?> showPainScaleDialog(BuildContext context) {
   );
 }
 
+// The pop-up's two node colours.
+const Color _maroonNode = Color(0xFF7A0000);
+const Color _grayNode = Color(0xFFB0B0B0);
+
 // Green (no pain) -> dark red (worst), so the scale reads at a glance.
 const List<Color> _painColors = [
   Color(0xFF2E7D32),
@@ -31,7 +35,17 @@ class PainScaleSelector extends StatelessWidget {
   final int? value;
   final ValueChanged<int> onChanged;
 
-  const PainScaleSelector({super.key, this.value, required this.onChanged});
+  /// The pop-up's look: maroon for the chosen number, light gray for the
+  /// rest, and a plain gray line. Off = the green-to-red colours used on the
+  /// Add Entry form.
+  final bool monochrome;
+
+  const PainScaleSelector({
+    super.key,
+    this.value,
+    required this.onChanged,
+    this.monochrome = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -57,7 +71,10 @@ class PainScaleSelector extends StatelessWidget {
                   height: 4,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(2),
-                    gradient: LinearGradient(colors: _painColors),
+                    color: monochrome ? _grayNode : null,
+                    gradient: monochrome
+                        ? null
+                        : LinearGradient(colors: _painColors),
                   ),
                 ),
               ),
@@ -92,7 +109,9 @@ class PainScaleSelector extends StatelessWidget {
     required double slot,
   }) {
     final theme = Theme.of(context);
-    final color = _painColors[n];
+    final color = monochrome
+        ? (selected ? _maroonNode : _grayNode)
+        : _painColors[n];
     final size = selected ? 38.0 : 26.0;
     return Semantics(
       button: true,
@@ -114,7 +133,9 @@ class PainScaleSelector extends StatelessWidget {
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: selected ? color : color.withValues(alpha: 0.9),
+                    color: selected || monochrome
+                        ? color
+                        : color.withValues(alpha: 0.9),
                     border: Border.all(
                       color: Colors.white,
                       width: selected ? 3 : 1.5,
@@ -149,6 +170,7 @@ class PainScaleSelector extends StatelessWidget {
                   maxLines: 1,
                   style: theme.textTheme.labelSmall?.copyWith(
                     fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                    color: monochrome && selected ? _maroonNode : null,
                   ),
                 ),
               ),
@@ -178,6 +200,7 @@ class _PainScaleDialogState extends State<_PainScaleDialog> {
     return PopScope(
       canPop: false,
       child: AlertDialog(
+        backgroundColor: const Color(0xFFFDEEEC),
         insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(s.dialogTitle),
@@ -189,6 +212,7 @@ class _PainScaleDialogState extends State<_PainScaleDialog> {
               Text(s.dialogBody, style: theme.textTheme.bodyMedium),
               const SizedBox(height: 16),
               PainScaleSelector(
+                monochrome: true,
                 value: _selected,
                 onChanged: (n) => setState(() => _selected = n),
               ),
@@ -209,6 +233,12 @@ class _PainScaleDialogState extends State<_PainScaleDialog> {
         ),
         actions: [
           ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _maroonNode,
+              foregroundColor: Colors.white,
+              disabledBackgroundColor: Colors.grey.shade400,
+              disabledForegroundColor: Colors.white,
+            ),
             onPressed: _selected == null
                 ? null
                 : () => Navigator.pop(context, _selected),

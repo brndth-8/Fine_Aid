@@ -6,6 +6,8 @@ import '../../../services/export_service.dart';
 import '../../../services/firebase/notification_service.dart';
 import '../../../i18n/notification_strings.dart';
 import '../../../core/widgets/evaluation_card.dart';
+import '../../../data/journal_evaluation.dart';
+import '../../../i18n/app_language.dart';
 import '../../../data/healing_durations.dart';
 import '../../../core/widgets/nearby_healthcare_sheet.dart';
 import '../../../core/widgets/classification_info_button.dart';
@@ -388,6 +390,15 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
     );
   }
 
+  /// The same Evaluation text the card shows, in the current language, for
+  /// the exported log.
+  String? _evaluationText(Map<String, dynamic> data, int monitoredDays) =>
+      buildJournalEvaluation(
+        data,
+        tagalog: AppLanguageScope.isTagalog(context),
+        monitoredDays: monitoredDays,
+      );
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -572,6 +583,7 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
                             createdAt: timestamp?.toDate() ?? DateTime.now(),
                             monitoredDays: monitoredDays,
                             referredForConsultation: _showingReferral,
+                            evaluation: _evaluationText(data, monitoredDays),
                           );
                         },
                         child: const Text('Export Log'),
@@ -589,6 +601,8 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
                       builder: (context) => ChatbotScreen(
                         initialContext: classification,
                         journalEntryId: widget.entryId,
+                        // Recovery not progressing: open with nearby options.
+                        showNearbyFirst: _showingReferral,
                       ),
                     ),
                   );
@@ -608,6 +622,7 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
                     createdAt: timestamp?.toDate() ?? DateTime.now(),
                     monitoredDays: monitoredDays,
                     referredForConsultation: _showingReferral,
+                    evaluation: _evaluationText(data, monitoredDays),
                   );
                 },
                 child: const Text('Export Log'),

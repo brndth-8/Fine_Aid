@@ -1,0 +1,33 @@
+rules_version = '2';
+
+// Firebase Storage rules for fine-aid-9e0a9.
+//
+// NOT DEPLOYED YET. The two "users/..." blocks below are the rules that are
+// live now (copied from the console); the "textbooks" block is the new one.
+// Anything not matched here is denied.
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Profile photos - only owner can read/write
+    match /users/{uid}/profile/{file} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+          && request.auth.uid == uid;
+    }
+
+    // Journal images - only owner can read/write
+    match /users/{uid}/journal/{entryId}/{file} {
+      allow read, write: if request.auth != null
+          && request.auth.uid == uid;
+    }
+
+    // Textbooks (PDFs) - anyone can read them, guests included (they are
+    // public reference books); nobody can write or delete from the app. Books
+    // are uploaded with the Admin SDK (functions/scripts/upload-textbooks.js)
+    // or in the console, both of which bypass these rules.
+    match /textbooks/{fileName} {
+      allow read: if true;
+      allow write: if false;
+    }
+  }
+}

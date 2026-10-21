@@ -72,7 +72,11 @@ void main() {
     }
 
     // Document order: username, phone, email, password, confirm.
-    Finder field(int i) => find.byType(TextFormField).at(i);
+    // Document order: first name, last name, date of birth, age (read-only),
+    // then username, phone, email, password, confirm. field(i) counts from
+    // the username, as before the personal details were added.
+    Finder field(int i) => find.byType(TextFormField).at(i + 4);
+    Finder personal(int i) => find.byType(TextFormField).at(i);
     Future<void> type(WidgetTester t, int i, String text) async {
       await t.enterText(field(i), text);
       await t.pump();
@@ -82,7 +86,32 @@ void main() {
     bool enabled(WidgetTester t) =>
         t.widget<ElevatedButton>(signUp()).onPressed != null;
 
+    // First name, last name, date of birth (through the date picker) and
+    // gender — all valid, as an adult.
+    Future<void> fillPersonal(
+      WidgetTester t, {
+      String dob = '01152000',
+      String gender = 'Male',
+    }) async {
+      await t.enterText(personal(0), 'Juan');
+      await t.enterText(personal(1), 'Dela Cruz');
+      await t.pump();
+      await t.ensureVisible(personal(2));
+      await t.tap(personal(2));
+      await t.pumpAndSettle();
+      await t.enterText(find.byKey(const ValueKey('start-field')), dob);
+      await t.pump();
+      await t.tap(find.text('OK'));
+      await t.pumpAndSettle();
+      await t.ensureVisible(find.byType(DropdownButtonFormField<String>));
+      await t.tap(find.byType(DropdownButtonFormField<String>));
+      await t.pumpAndSettle();
+      await t.tap(find.text(gender).last);
+      await t.pumpAndSettle();
+    }
+
     Future<void> fillAllValid(WidgetTester t) async {
+      await fillPersonal(t);
       await type(t, 0, 'juan_dela.cruz');
       await type(t, 1, '9171234567');
       await type(t, 3, 'Str0ng!Pass');
@@ -107,9 +136,50 @@ void main() {
       );
     });
 
+    testWidgets('Part 2: red asterisks on required labels, the Sign Up button '
+        'has a gray outline, and the phone placeholder is smaller', (
+      tester,
+    ) async {
+      await pump(tester);
+      final error = Theme.of(
+        tester.element(find.byType(Scaffold)),
+      ).colorScheme.error;
+
+      List<TextSpan> stars() => tester
+          .widgetList<Text>(find.byType(Text))
+          .map((t) => t.textSpan)
+          .whereType<TextSpan>()
+          .expand((s) => s.children ?? const <InlineSpan>[])
+          .whereType<TextSpan>()
+          .where((c) => c.text == ' *')
+          .toList();
+
+      // SMS is the default: first name, last name, date of birth, gender,
+      // username, phone, password, confirm (age is read-only, and email is
+      // optional then, so neither has an asterisk).
+      expect(stars().length, 8);
+      expect(stars().every((c) => c.style?.color == error), isTrue);
+      expect(find.text('* Required'), findsNothing);
+
+      await tester.tap(find.text('Email').first);
+      await tester.pump();
+      expect(stars().length, 9);
+
+      expect(find.text('Login here', findRichText: true), findsNothing);
+
+      final btn = tester.widget<ElevatedButton>(signUp()).style!;
+      expect(btn.side!.resolve({})!.color, isNot(Colors.transparent));
+
+      final phone = tester.widget<TextField>(
+        find.descendant(of: field(1), matching: find.byType(TextField)),
+      );
+      expect(phone.decoration!.hintStyle!.fontSize, 12);
+    });
+
     testWidgets('REQ 1: a blank phone keeps the button disabled even when '
         'every other field is valid', (tester) async {
       await pump(tester);
+      await fillPersonal(tester);
       await type(tester, 0, 'juan_dela.cruz');
       await type(tester, 3, 'Str0ng!Pass');
       await type(tester, 4, 'Str0ng!Pass');
@@ -126,6 +196,65 @@ void main() {
       // Break one field again -> disabled again.
       await type(tester, 1, '91712');
       expect(enabled(tester), isFalse);
+    });
+
+    testWidgets(
+      'the Age field is read-only and filled from the date of birth',
+      (tester) async {
+        await pump(tester);
+        await fillPersonal(tester); // born 2000-01-15
+        final age = tester.widget<TextField>(
+          find.descendant(of: personal(3), matching: find.byType(TextField)),
+        );
+        expect(age.readOnly, isTrue);
+        final expected =
+            DateTime.now().year -
+            2000 -
+            (DateTime.now().isBefore(DateTime(DateTime.now().year, 1, 15))
+                ? 1
+                : 0);
+        expect(age.controller!.text, '$expected');
+      },
+    );
+
+    testWidgets('under 18: a modal that cannot be dismissed must be '
+        'acknowledged before registering', (tester) async {
+      await pump(tester);
+      final now = DateTime.now();
+      final young = DateTime(now.year - 10, now.month, now.day);
+      final dob =
+          '${young.month.toString().padLeft(2, '0')}'
+          '${young.day.toString().padLeft(2, '0')}${young.year}';
+      await fillPersonal(tester, dob: dob);
+      await type(tester, 0, 'juan_dela.cruz');
+      await type(tester, 1, '9171234567');
+      await type(tester, 3, 'Str0ng!Pass');
+      await type(tester, 4, 'Str0ng!Pass');
+      expect(enabled(tester), isTrue);
+
+      await tester.ensureVisible(signUp());
+      await tester.tap(signUp());
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Underage Access & Supervision Disclaimer'),
+        findsOneWidget,
+      );
+      expect(find.text('I Acknowledge & Proceed'), findsOneWidget);
+
+      // Tapping outside and the back button do not close it.
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Underage Access & Supervision Disclaimer'),
+        findsOneWidget,
+      );
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Underage Access & Supervision Disclaimer'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('REQ 1: mismatched confirm password keeps it disabled', (
@@ -238,6 +367,7 @@ void main() {
     testWidgets('REQ 3: the button stays disabled until every password rule '
         'is met', (tester) async {
       await pump(tester);
+      await fillPersonal(tester);
       await type(tester, 0, 'juan_dela.cruz');
       await type(tester, 1, '9171234567');
 
@@ -264,7 +394,7 @@ void main() {
       expect(find.text('+63'), findsOneWidget);
       await type(tester, 1, '9171234567');
       final controller = tester
-          .widget<TextField>(find.byType(TextField).at(1))
+          .widget<TextField>(find.byType(TextField).at(5))
           .controller!;
       expect(controller.text, '9171234567'); // no "+63" in the value
     });
@@ -274,7 +404,7 @@ void main() {
       await pump(tester);
       await type(tester, 1, 'a9b1 7-1(2)+3');
       final controller = tester
-          .widget<TextField>(find.byType(TextField).at(1))
+          .widget<TextField>(find.byType(TextField).at(5))
           .controller!;
       expect(
         controller.text,
@@ -288,7 +418,7 @@ void main() {
       await pump(tester);
       await type(tester, 1, '09171234567899');
       final controller = tester
-          .widget<TextField>(find.byType(TextField).at(1))
+          .widget<TextField>(find.byType(TextField).at(5))
           .controller!;
       expect(controller.text, '9171234567');
       expect(controller.text.length, 10);

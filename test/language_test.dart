@@ -3,7 +3,6 @@ import 'package:fine_aid/features/auth/screens/permission_screen.dart';
 import 'package:fine_aid/features/auth/screens/terms_screen.dart';
 import 'package:fine_aid/features/onboarding/screens/onboarding_screen.dart';
 import 'package:fine_aid/features/settings/screens/help_screen.dart';
-import 'package:fine_aid/features/settings/screens/help_topic_screen.dart';
 import 'package:fine_aid/features/settings/screens/settings_screen.dart';
 import 'package:fine_aid/i18n/app_language.dart';
 import 'package:fine_aid/i18n/checklist_strings.dart';
@@ -98,13 +97,16 @@ void main() {
     test('spot checks', () {
       expect(TermsStrings.en.title, 'Terms & Conditions');
       expect(TermsStrings.en.agree, 'I Agree & Continue');
-      expect(TermsStrings.en.sections.first.header, 'Medical Disclaimer');
+      expect(
+        TermsStrings.en.sections[1].header,
+        'MEDICAL DISCLAIMER & EMERGENCY SERVICES',
+      );
       expect(PermissionStrings.en.title, 'Camera Access Required');
       expect(PermissionStrings.en.continueButton, 'Continue');
       expect(ChecklistStrings.en.title, 'Health Profile');
       expect(ChecklistStrings.en.hemophilia, 'Hemophilia or Blood Disorders');
       expect(HelpStrings.en.heading, 'How can we help?');
-      expect(HelpStrings.en.referencesTile, 'References');
+      expect(HelpStrings.en.references.title, 'References');
       expect(OnboardingStrings.en.pages.first.title, 'AI Wound Scanning');
       expect(SettingsStrings.en.logOut, 'Log Out');
       expect(SettingsStrings.en.signIn, 'Sign in');
@@ -124,23 +126,25 @@ void main() {
       const tl = TermsStrings.tl;
       expect(tl.sections.length, en.sections.length);
       for (var i = 0; i < en.sections.length; i++) {
-        expect(tl.sections[i].header, isNot(en.sections[i].header));
+        if (en.sections[i].header.isNotEmpty) {
+          expect(tl.sections[i].header, isNot(en.sections[i].header));
+        }
+        expect(tl.sections[i].subheader, en.sections[i].subheader);
+        expect(tl.sections[i].warning, en.sections[i].warning);
         expect(tl.sections[i].bullets.length, en.sections[i].bullets.length);
         expect(
           tl.sections[i].paragraph == null,
           en.sections[i].paragraph == null,
         );
       }
-      expect(tl.closing, isNot(en.closing));
       expect(
         blank([
           tl.title,
           tl.scrollHint,
           tl.agree,
           tl.saveError,
-          tl.closing,
           for (final s in tl.sections) ...[
-            s.header,
+            if (s.header.isNotEmpty) s.header,
             ?s.paragraph,
             ...s.bullets,
           ],
@@ -178,10 +182,10 @@ void main() {
         (HelpStrings.en.references, HelpStrings.tl.references),
       ]) {
         expect(pair.$2.title, isNot(pair.$1.title));
-        expect(pair.$2.paragraphs.length, pair.$1.paragraphs.length);
-        expect(pair.$2.cardLabels.length, pair.$1.cardLabels.length);
-        for (var i = 0; i < pair.$1.paragraphs.length; i++) {
-          expect(pair.$2.paragraphs[i], isNot(pair.$1.paragraphs[i]));
+        // Same block-for-block structure in both languages.
+        expect(pair.$2.blocks.length, pair.$1.blocks.length);
+        for (var i = 0; i < pair.$1.blocks.length; i++) {
+          expect(pair.$2.blocks[i].runtimeType, pair.$1.blocks[i].runtimeType);
         }
       }
     });
@@ -206,33 +210,30 @@ void main() {
       await Firebase.initializeApp();
     });
 
-    testWidgets(
-      'Terms: every heading and the closing text, in both languages',
-      (tester) async {
-        for (final entry in {
-          AppLanguage.en: TermsStrings.en,
-          AppLanguage.tl: TermsStrings.tl,
-        }.entries) {
-          await _pump(
-            tester,
-            const TermsScreen(readOnly: true),
-            language: entry.key,
-          );
-          expect(find.text(entry.value.title), findsOneWidget);
-          for (final section in entry.value.sections) {
-            expect(find.text(section.header), findsOneWidget);
-          }
-          expect(find.text(entry.value.closing), findsOneWidget);
+    testWidgets('Terms: every heading, in both languages', (tester) async {
+      for (final entry in {
+        AppLanguage.en: TermsStrings.en,
+        AppLanguage.tl: TermsStrings.tl,
+      }.entries) {
+        await _pump(
+          tester,
+          const TermsScreen(readOnly: true),
+          language: entry.key,
+        );
+        expect(find.text(entry.value.title), findsOneWidget);
+        for (final section in entry.value.sections) {
+          if (section.header.isEmpty) continue;
+          expect(find.text(section.header), findsOneWidget);
         }
-      },
-    );
+      }
+    });
 
     testWidgets('Camera permission screen in Tagalog', (tester) async {
       _ignoreListTileInkWarning();
       await _pump(tester, const PermissionScreen(), language: AppLanguage.tl);
       expect(find.text(PermissionStrings.tl.title), findsOneWidget);
       expect(find.text(PermissionStrings.tl.allowCamera), findsOneWidget);
-      expect(find.text(PermissionStrings.tl.skipForNow), findsOneWidget);
+      expect(find.text('Laktawan muna'), findsNothing);
       expect(find.text('Camera Access Required'), findsNothing);
     });
 
@@ -257,34 +258,16 @@ void main() {
       expect(find.text('Skip'), findsNothing);
     });
 
-    testWidgets('Help & Support list and every topic page in Tagalog', (
+    testWidgets('Help & Support shows the four sections in Tagalog', (
       tester,
     ) async {
       await _pump(tester, const HelpScreen(), language: AppLanguage.tl);
       expect(find.text(HelpStrings.tl.heading), findsOneWidget);
-      expect(find.text(HelpStrings.tl.gettingStartedTile), findsOneWidget);
-      expect(find.text(HelpStrings.tl.privacyTile), findsOneWidget);
-      expect(find.text(HelpStrings.tl.journalTile), findsOneWidget);
-      expect(find.text(HelpStrings.tl.referencesTile), findsOneWidget);
-
-      for (final topic in HelpTopic.values) {
-        await _pump(
-          tester,
-          HelpTopicScreen(topic: topic),
-          language: AppLanguage.tl,
-        );
-        final text = switch (topic) {
-          HelpTopic.gettingStarted => HelpStrings.tl.gettingStarted,
-          HelpTopic.privacy => HelpStrings.tl.privacy,
-          HelpTopic.journal => HelpStrings.tl.journal,
-          HelpTopic.references => HelpStrings.tl.references,
-        };
-        expect(find.text(text.title), findsOneWidget);
-        expect(find.text(text.paragraphs.first), findsOneWidget);
-        for (final label in text.cardLabels) {
-          expect(find.text(label), findsOneWidget);
-        }
+      for (final section in HelpStrings.tl.sections) {
+        expect(find.text(section.title), findsOneWidget);
       }
+      expect(find.text(HelpStrings.tl.replayTour), findsOneWidget);
+      expect(find.text(HelpStrings.en.heading), findsNothing);
     });
 
     testWidgets('a screen already on display redraws when the language '

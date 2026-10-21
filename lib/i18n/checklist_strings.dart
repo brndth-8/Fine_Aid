@@ -28,6 +28,24 @@ class ChecklistStrings {
   final String privacy;
   final String continueButton;
   final String saveError;
+  // Diabetes type (single choice, shown once Diabetes is checked) with a
+  // short plain-language description each. MEDICAL REVIEW NEEDED.
+  final String diabetesTypeTitle;
+  final String diabetesType1;
+  final String diabetesType1Info;
+  final String diabetesType2;
+  final String diabetesType2Info;
+  final String diabetesGestational;
+  final String diabetesGestationalInfo;
+  final String diabetesPrediabetes;
+  final String diabetesPrediabetesInfo;
+  final String diabetesNotSure;
+  final String diabetesNotSureInfo;
+  // Shown every time a condition is checked.
+  final String disclaimer;
+  final String disclaimerOk;
+  // Examples under Food Allergies.
+  final String foodAllergyExamples;
 
   const ChecklistStrings({
     required this.title,
@@ -51,6 +69,20 @@ class ChecklistStrings {
     required this.privacy,
     required this.continueButton,
     required this.saveError,
+    required this.diabetesTypeTitle,
+    required this.diabetesType1,
+    required this.diabetesType1Info,
+    required this.diabetesType2,
+    required this.diabetesType2Info,
+    required this.diabetesGestational,
+    required this.diabetesGestationalInfo,
+    required this.diabetesPrediabetes,
+    required this.diabetesPrediabetesInfo,
+    required this.diabetesNotSure,
+    required this.diabetesNotSureInfo,
+    required this.disclaimer,
+    required this.disclaimerOk,
+    required this.foodAllergyExamples,
   });
 
   static ChecklistStrings of(BuildContext context) =>
@@ -93,6 +125,28 @@ class ChecklistStrings {
         'your explicit consent.',
     continueButton: 'Continue',
     saveError: 'Could not save your health profile. Please try again.',
+    diabetesTypeTitle: 'Type of diabetes (optional)',
+    diabetesType1: 'Type 1',
+    diabetesType1Info: 'The body makes little or no insulin.',
+    diabetesType2: 'Type 2',
+    diabetesType2Info:
+        'The body does not use insulin well. The most common type.',
+    diabetesGestational: 'Gestational',
+    diabetesGestationalInfo: 'Diabetes first found during pregnancy.',
+    diabetesPrediabetes: 'Prediabetes',
+    diabetesPrediabetesInfo:
+        'Blood sugar is higher than normal but not yet in the diabetes '
+        'range.',
+    diabetesNotSure: 'Not sure',
+    diabetesNotSureInfo: 'I have diabetes but I do not know which type.',
+    disclaimer:
+        'Health conditions you select here should be reviewed by a licensed '
+        'medical professional. They are not a self-assessment or a '
+        'diagnosis.',
+    disclaimerOk: 'OK, I understand',
+    foodAllergyExamples:
+        'Examples: peanuts, tree nuts, shellfish (shrimp, crab), fish, eggs, '
+        'milk, soy, wheat, sesame',
   );
 
   static const tl = ChecklistStrings(
@@ -139,5 +193,28 @@ class ChecklistStrings {
     saveError:
         'Hindi na-save ang iyong profile ng kalusugan. Pakisubukang '
         'muli.',
+    diabetesTypeTitle: 'Uri ng diabetes (opsyonal)',
+    diabetesType1: 'Type 1',
+    diabetesType1Info: 'Kaunti o walang insulin na nagagawa ang katawan.',
+    diabetesType2: 'Type 2',
+    diabetesType2Info:
+        'Hindi mahusay na nagagamit ng katawan ang insulin. Ito ang '
+        'pinakakaraniwang uri.',
+    diabetesGestational: 'Gestational',
+    diabetesGestationalInfo: 'Diabetes na unang natuklasan habang buntis.',
+    diabetesPrediabetes: 'Prediabetes',
+    diabetesPrediabetesInfo:
+        'Mas mataas kaysa normal ang asukal sa dugo pero wala pa sa antas '
+        'ng diabetes.',
+    diabetesNotSure: 'Hindi sigurado',
+    diabetesNotSureInfo: 'May diabetes ako pero hindi ko alam kung anong uri.',
+    disclaimer:
+        'Ang mga kondisyong pangkalusugan na pipiliin mo rito ay dapat '
+        'suriin ng isang lisensyadong propesyonal sa medisina. Hindi ito '
+        'self-assessment o diagnosis.',
+    disclaimerOk: 'OK, naiintindihan ko',
+    foodAllergyExamples:
+        'Mga halimbawa: mani, tree nuts, shellfish (hipon, alimango), isda, '
+        'itlog, gatas, toyo (soy), trigo, linga',
   );
 }
