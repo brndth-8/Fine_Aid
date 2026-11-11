@@ -1,10 +1,13 @@
+import '../../data/health_context.dart' show healthContextPromptBlock;
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' show Rect;
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:google_generative_ai/google_generative_ai.dart';
-import '../../core/constants/api_keys.dart';
+import 'gemini_proxy_client.dart';
+import '../../core/constants/analysis_lock.dart';
 import '../../core/scope_check.dart';
+import 'gemini_usage.dart';
 
 /// The fixed, extensible wound/skin-issue taxonomy used across detection,
 /// the result screen's category badge, and OTC-suggestion mapping. Add new
@@ -47,8 +50,9 @@ enum DetectionConfidence { high, medium, low }
 
 /// Whether the detected mark looks like it could be something other than a
 /// genuine skin injury — a pen/marker line, drawn mark, makeup, temporary
-/// marking, printed image, screenshot, shadow, clothing pattern, hair
-/// strand, or similar artifact — rather than real skin trauma.
+/// marking, drawing, shadow, clothing pattern, hair strand, or similar
+/// artifact — rather than real skin trauma. (A screenshot, or a photo of a
+/// screen, that shows a real wound or scar is NOT an artifact.)
 enum ArtificialMarkLikelihood { no, unsure, yes }
 
 /// The three-state outcome of the Free Pass Filter (see [WoundDetectionResult.freePassResult]).
@@ -80,6 +84,20 @@ class WoundDetectionResult {
   final DetectionConfidence confidence;
   final ArtificialMarkLikelihood artificialMarkLikelihood;
 
+  /// Other reasons the photo cannot be used: too dark (or washed out), the
+  /// affected area cropped or too far away, no skin recognisable in it, or a
+  /// fake picture (a drawing, illustration, cartoon, render or AI-made image
+  /// that is not a real wound or scar). Screenshots and photos of a screen
+  /// that show a real wound or scar are accepted.
+  final bool isTooDark;
+  final bool isCropped;
+  final bool isUnrecognizable;
+  final bool looksFake;
+
+  /// The check itself could not be completed (no reply, an error, or a reply
+  /// that could not be read). The photo is then NOT let through.
+  final bool checkFailed;
+
   /// Normalized (0-1) bounding box per wound, in the same order as
   /// [woundDescriptions]. An entry is null if the model didn't return a
   /// usable box for that wound, so the UI can fall back to a generated
@@ -93,16 +111,25 @@ class WoundDetectionResult {
     required this.woundDescriptions,
     this.confidence = DetectionConfidence.medium,
     this.artificialMarkLikelihood = ArtificialMarkLikelihood.no,
+    this.isTooDark = false,
+    this.isCropped = false,
+    this.isUnrecognizable = false,
+    this.looksFake = false,
+    this.checkFailed = false,
     this.woundBoxes = const [],
   });
+
+  /// Blurry, too dark, cropped or unrecognisable: "the image is unclear".
+  bool get isUnclear => isBlurry || isTooDark || isCropped || isUnrecognizable;
 
   /// The "Free Pass Filter": a three-state judgment on whether it's safe
   /// to proceed to wound classification and first-aid recommendations,
   /// rather than risking misleading guidance from an unclear photo, an
-  /// artificial mark (pen line, drawing, makeup, printed image, etc.), or
+  /// artificial mark (pen line, drawing, makeup, etc.), or
   /// something that just isn't a wound at all.
   FreePassResult get freePassResult {
-    if (isBlurry || !hasWound || woundCount == 0) return FreePassResult.fail;
+    if (checkFailed || isUnclear || looksFake) return FreePassResult.fail;
+    if (!hasWound || woundCount == 0) return FreePassResult.fail;
     if (artificialMarkLikelihood == ArtificialMarkLikelihood.yes) {
       return FreePassResult.fail;
     }
@@ -400,6 +427,11 @@ class WoundAssessment {
   final List<OtcSuggestion> otcOptions;
   final bool needsProfessionalEvaluation;
   final List<String> uncertainties;
+
+  /// Tagalog versions of [firstAidSteps] and [uncertainties] (same order and
+  /// count), only when the request asked for Tagalog; empty otherwise.
+  final List<String> firstAidStepsTl;
+  final List<String> uncertaintiesTl;
   final String? error;
   // Only ever set for an injury that came from the multi-injury schema
   // (eg "left knee", "right forearm") — null for the single-wound path,
@@ -420,6 +452,8 @@ class WoundAssessment {
     required this.otcOptions,
     required this.needsProfessionalEvaluation,
     required this.uncertainties,
+    this.firstAidStepsTl = const [],
+    this.uncertaintiesTl = const [],
     this.error,
     this.location,
   });
@@ -506,6 +540,8 @@ WoundAssessment _woundAssessmentFromMap(Map<String, dynamic> map) {
     otcOptions: _parseOtcOptionsFromJson(map['otc_options']),
     needsProfessionalEvaluation: map['needs_professional_evaluation'] == true,
     uncertainties: _stringList(map['uncertainties']),
+    firstAidStepsTl: _stringList(map['first_aid_steps_tl']),
+    uncertaintiesTl: _stringList(map['uncertainties_tl']),
     error: map['error']?.toString(),
     location: map['location']?.toString(),
   );
@@ -524,6 +560,22 @@ String _stripCodeFences(String raw) {
   }
   return cleaned;
 }
+
+/// The part of the assessment request that passes the app's language on: for
+/// Tagalog, a request for the Tagalog steps and unclear details next to the
+/// English ones; nothing for English.
+String assessmentLanguageBlock({required bool tagalog}) => tagalog
+    ? 'LANGUAGE: the person reads Tagalog. Keep every field of the '
+          'schema exactly as specified, in English. In addition, add '
+          'these two keys: "first_aid_steps_tl": the same '
+          'first_aid_steps in plain, simple Tagalog, with the same '
+          'number of items in the same order, each written "Before: '
+          '<hakbang> — <dahilan>", "During: <hakbang> — <dahilan>" or '
+          '"After: <hakbang> — <dahilan>" (keep the English words '
+          'Before, During and After as the label, and the spaced em '
+          'dash); and "uncertainties_tl": the same uncertainties in '
+          'Tagalog. Do not change the meaning or add medical facts.\n\n'
+    : '';
 
 /// Parses the v2 assessment model's JSON response. Falls back to an
 /// uncertain/error result rather than crashing if the response isn't valid
@@ -552,7 +604,8 @@ class GeminiService {
   GenerativeModel _createDetectionModel() {
     return GenerativeModel(
       model: 'gemini-3.5-flash',
-      apiKey: ApiKeys.gemini,
+      apiKey: geminiProxyApiKey,
+      httpClient: geminiProxyClient,
       // 512 can cut the reply off once several wounds (each with a
       // description and a box line) are listed — the same failure that cut
       // off the assessment reply — so later wounds would silently vanish.
@@ -570,10 +623,9 @@ class GeminiService {
         'the mark you are looking at could be something OTHER than a real '
         'skin injury, such as: a pen or marker line drawn on skin, a '
         'drawn-on scratch, makeup or a temporary/decorative marking, a '
-        'printed photo or a screenshot of an image (not a live view of '
-        'skin), a shadow or lighting artifact, a fold or pattern in '
-        'clothing, a strand of hair, a scar that has already fully '
-        'healed, a tattoo, or dirt/stain. Genuine skin injuries usually '
+        'drawing, illustration, cartoon or computer-rendered picture, a '
+        'shadow or lighting artifact, a fold or pattern in clothing, a '
+        'strand of hair, a tattoo, or dirt/stain. Genuine skin injuries usually '
         'show irregular (not perfectly straight or geometric) edges, '
         'color variation consistent with a real tissue response (eg, '
         'redness, bruising tones, scabbing), some texture disruption of '
@@ -586,16 +638,35 @@ class GeminiService {
         'skin trauma or a real skin condition, say so honestly rather '
         'than guessing — it is much better to ask the user for a clearer '
         'photo than to confidently mislabel a pen mark as an injury.\n\n'
+        'ACCEPTED IMAGES: a live camera photo, a screenshot of an image, or '
+        'a photo taken of another screen (phone, monitor, TV) is VALID as '
+        'long as it shows a real wound or scar on real skin. Never reject an '
+        'image only because it is a screenshot or a photo of a screen — judge '
+        'only whether it depicts a real wound or scar on real skin. Scars '
+        '(superficial wounds, healed or old scars) are valid subjects.\n\n'
         'Answer ONLY in this exact plain-text format, one field per line, '
         'no extra commentary, no markdown:\n'
         'BLURRY: yes or no — yes only if the photo is so out of focus or '
         'shaky that a wound could not be assessed from it\n'
+        'TOO_DARK: yes or no — yes only if the photo is so dark (or so '
+        'over-exposed) that the skin cannot be made out\n'
+        'CROPPED: yes or no — yes if the affected area is cut off by the '
+        'edge of the photo, or is so small or far away that it cannot be '
+        'assessed\n'
+        'UNRECOGNIZABLE: yes or no — yes if the photo does not clearly show '
+        'human skin or a body part (an object, a wall, a room, a pet, '
+        'anything that is not a person\'s skin)\n'
+        'FAKE_IMAGE: yes or no — yes only if the picture is a drawing, '
+        'illustration, cartoon, 3D or computer render, or an AI-generated '
+        'or fabricated image, rather than a depiction of a real wound or '
+        'scar on real skin. A screenshot or a photo of a screen that shows '
+        'a real wound or scar is NOT fake: answer no\n'
         'WOUND_DETECTED: yes or no — yes only if you see genuine evidence '
-        'of a real wound, injury, burn, bite, rash, or other actual skin '
-        'condition (not just any mark on skin)\n'
+        'of a real wound, injury, burn, bite, rash, scar, or other actual '
+        'skin condition (not just any mark on skin)\n'
         'ARTIFICIAL_MARK_LIKELY: yes, no, or unsure — yes if the mark '
         'looks like a pen/marker line, drawn mark, makeup, temporary '
-        'marking, printed image, screenshot, shadow, clothing pattern, '
+        'marking, drawing, shadow, clothing pattern, '
         'hair strand, or other non-injury artifact rather than genuine '
         'skin trauma; unsure if you cannot tell either way; no only if '
         'you see clear evidence this is genuine skin trauma or a real '
@@ -631,7 +702,8 @@ class GeminiService {
   GenerativeModel _createChatModel() {
     return GenerativeModel(
       model: 'gemini-3.5-flash',
-      apiKey: ApiKeys.gemini,
+      apiKey: geminiProxyApiKey,
+      httpClient: geminiProxyClient,
       generationConfig: GenerationConfig(
         temperature: 0.3,
         maxOutputTokens: 2048,
@@ -649,6 +721,21 @@ class GeminiService {
         'turns of this conversation — treat later questions as continuing '
         'the same conversation about the same wound unless the user '
         'clearly changes topic.\n\n'
+        'A message may also contain a USER HEALTH PROFILE block: facts the '
+        'user already saved in the app (health conditions, allergies, '
+        'medicines, and their latest journal entries). Rules for it: use '
+        'ONLY what is written there, never invent or assume anything '
+        'about the user; use it to tailor an in-scope wound, injury or '
+        'skin answer (eg slower healing, infection risk, a medicine that '
+        'conflicts); it does NOT widen the SCOPE CHECK below. When the '
+        'question could be connected to something in that block (eg a '
+        'deficiency, condition or allergy), politely ask ONE short '
+        'clarifying question in your answer, such as: "I noticed an iron '
+        'deficiency in your health profile. Is your question related to '
+        'that?" - and still answer what you safely can. Ask it once in a '
+        'conversation, not on every message. If there is no such block, '
+        'behave as normal. The medical disclaimer and professional-'
+        'consultation advice stay exactly as described below.\n\n'
         'Follow this response priority order for every message:\n'
         '1. SCOPE CHECK — is this actually about a first aid/health '
         'concern (see below)?\n'
@@ -761,6 +848,8 @@ class GeminiService {
         'single reply; a short mention is enough the first time or when '
         'directly relevant. Never present guidance as a definitive '
         'diagnosis. '
+        'Use simple words a child could understand. Avoid medical or '
+        'technical terms. Say "slightly warm water", never "tepid water". '
         'IMPORTANT: Do not use any asterisks, bold markers, hashtags, or '
         'any markdown formatting in your response, and never mention the '
         'words "REFERENCE MATERIALS", "USER QUESTION", "CURRENT WOUND '
@@ -801,7 +890,8 @@ class GeminiService {
   GenerativeModel _createV2AssessmentModel() {
     return GenerativeModel(
       model: 'gemini-3.5-flash',
-      apiKey: ApiKeys.gemini,
+      apiKey: geminiProxyApiKey,
+      httpClient: geminiProxyClient,
       generationConfig: GenerationConfig(
         temperature: 0.2,
         // 2048 cut the JSON off mid-reply for serious wounds (long steps,
@@ -817,9 +907,9 @@ class GeminiService {
         'response must be valid, directly parseable JSON matching this '
         'schema exactly:\n\n'
         '{\n'
-        '  "is_wound": boolean,\n'
+        '  "is_wound": boolean,         // true for a real wound, injury, burn, bite, rash, skin condition or SCAR (also when the image is a screenshot or a photo of a screen showing one)\n'
         '  "confidence": number,        // 0.0-1.0\n'
-        '  "wound_type": string,        // e.g. "laceration", "abrasion", "puncture", "burn", "none"\n'
+        '  "wound_type": string,        // e.g. "laceration", "abrasion", "puncture", "burn", "scar", "none"\n'
         '  "visible_bleeding": string,  // "none" | "mild" | "moderate" | "severe"\n'
         '  "apparent_depth": string,    // "superficial" | "partial_thickness" | "deep" | "unknown"\n'
         '  "foreign_object_visible": boolean,\n'
@@ -845,7 +935,7 @@ class GeminiService {
         '- FIRST_AID_STEPS FORMAT: write 6-10 short items in this order: 1-2 '
         '"Before:" items (preparation — washing hands with soap and water, '
         'clean disposable gloves, and the materials needed such as clean '
-        'running water, clean gauze, and a sterile non-stick dressing), '
+        'running water, clean gauze, and a clean non-stick dressing), '
         '3-5 "During:" items (the actual care), then 2-3 "After:" items '
         '(monitoring, when to change the dressing, signs of infection to '
         'watch for, and when to seek help). Write every item exactly as '
@@ -856,10 +946,34 @@ class GeminiService {
         'invent medical facts.\n'
         '- Contraindications to respect in first_aid_steps where they '
         'apply: never put ice directly on skin (wrap it in cloth); do not '
-        'pour alcohol or hydrogen peroxide directly on a wound; do not '
+        'pour alcohol on a wound; do not '
         'put petroleum jelly on a wound that is still moist, weeping or '
         'bleeding; for burns, do not use butter, oil or toothpaste and do '
         'not pop blisters. Say so in a "During:" item when relevant.\n'
+        '- HYDROGEN PEROXIDE: for a laceration, cut, scratch, scrape, '
+        'puncture or other open wound (never a burn), include ONE '
+        '"During:" item that offers household hydrogen peroxide for the '
+        'first cleaning of the wound only, followed by a rinse with clean '
+        'running water. Never suggest using it again or repeatedly on the '
+        'same wound.\n'
+        '- SUPPLY ALTERNATIVES: whenever a "Before:" item names a supply, '
+        'also give a common substitute, for example "clean gauze, or a '
+        'clean cloth if you do not have gauze. For a small injury, an '
+        'adhesive bandage is fine."\n'
+        '- AIR-DRYING: for a rash or another skin condition that is not an '
+        'open wound, include a "During:" item to let the skin air-dry after '
+        'washing: do not rub it with a towel, and keep the area uncovered.\n'
+        '- PLAIN WORDS: Use simple words a child could understand. Avoid '
+        'medical or technical terms. Write short sentences. Say "slightly '
+        'warm water", never "tepid water"; "dirt", never "debris"; "put '
+        'on", never "apply"; "rinse", never "irrigate"; and "clean", not '
+        '"sterile", wherever that is safe to say.\n'
+        '- SEVERE CASES: if "triage" is "EMERGENCY", or "visible_bleeding" '
+        'is "severe", or "apparent_depth" is "deep" (for example exposed '
+        'flesh, heavy bleeding or a deep wound), this is an emergency and '
+        'not first aid: return "first_aid_steps": [] and "otc_options": [], '
+        'set "needs_professional_evaluation" to true, and give the reasons '
+        'in "red_flags".\n'
         '- Do not guess the body part in first_aid_steps unless it is clearly and '
         'unambiguously visible — use neutral phrasing like "the affected area" '
         'otherwise.\n'
@@ -871,7 +985,7 @@ class GeminiService {
         'indicated for this specific wound_type — it is not common first aid '
         'practice for most minor wounds (e.g. do not suggest it for an '
         'abrasion/scrape). Prefer standard care instead (cleaning, antiseptic, '
-        'a sterile non-stick dressing).\n'
+        'a clean non-stick dressing).\n'
         '- OTC_OPTIONS: populate "otc_options" per these rules (same rules '
         'used for follow-up chat suggestions, so both places match):\n'
         '$_otcContentRules',
@@ -884,10 +998,28 @@ class GeminiService {
   /// alongside the image, not as part of the fixed system instruction
   /// above). Returns a [WoundAssessment] parsed from the model's JSON
   /// response.
+  ///
+  /// [tagalog] passes the app's language to the request: the model then also
+  /// returns the steps and the unclear details in Tagalog
+  /// (`first_aid_steps_tl`, `uncertainties_tl`) next to the English ones the
+  /// app reads its Before / During / After labels and pictures from.
+  ///
+  /// [healthContext] (see data/health_context.dart) tells the model the
+  /// person's reported conditions, allergies and medicines, so the steps and
+  /// OTC suggestions can differ for someone with a health condition.
   Future<WoundAssessment> analyzeWoundV2(
     String imagePath, {
     String? referenceContext,
+    bool tagalog = false,
+    String? healthContext,
   }) async {
+    // One analysis at a time (a double-tap must not send a second request).
+    if (!AnalysisLock.tryAcquire()) {
+      debugPrint('Gemini analyzeWoundV2: an analysis is already running');
+      return WoundAssessment.errorFallback(
+        'An analysis is already running. Please wait.',
+      );
+    }
     try {
       final imageBytes = await File(imagePath).readAsBytes();
       final model = _createV2AssessmentModel();
@@ -899,12 +1031,17 @@ class GeminiService {
                 '$referenceContext\n\n'
           : '';
 
+      final languageBlock = assessmentLanguageBlock(tagalog: tagalog);
+      final healthBlock = healthContext != null && healthContext.isNotEmpty
+          ? healthContextPromptBlock(healthContext)
+          : '';
+
       final response = await model
           .generateContent([
             Content.multi([
               TextPart(
-                '${referenceBlock}Analyze this wound or skin condition '
-                'photo and respond per the schema.',
+                '$referenceBlock$healthBlock${languageBlock}Analyze this wound or skin '
+                'condition photo and respond per the schema.',
               ),
               DataPart('image/jpeg', imageBytes),
             ]),
@@ -915,10 +1052,13 @@ class GeminiService {
                 throw Exception('Analysis timed out. Please try again.'),
           );
 
+      GeminiUsageLog.instance.record('assessment', response.usageMetadata);
       return parseWoundAssessment(response.text ?? '{}');
     } catch (e) {
       debugPrint('Gemini analyzeWoundV2 error: $e');
       return WoundAssessment.errorFallback(e.toString());
+    } finally {
+      AnalysisLock.release();
     }
   }
 
@@ -940,7 +1080,8 @@ class GeminiService {
     try {
       final model = GenerativeModel(
         model: 'gemini-3.5-flash',
-        apiKey: ApiKeys.gemini,
+        apiKey: geminiProxyApiKey,
+        httpClient: geminiProxyClient,
         generationConfig: GenerationConfig(
           temperature: 0.2,
           maxOutputTokens: 2048,
@@ -948,7 +1089,8 @@ class GeminiService {
         systemInstruction: Content.system(
           'Translate each numbered line of first aid instructions into '
           'natural, clear Filipino (Tagalog) suitable for a first aid '
-          'app. Reply with ONLY the translated lines, one per line, in '
+          'app. Use simple words a child could understand and avoid '
+          'medical or technical terms. Reply with ONLY the translated lines, one per line, in '
           'the same order, each starting with the same number and a '
           'period (eg "1. ..."). Do not add any other text, headers, '
           'blank lines, or commentary.',
@@ -961,6 +1103,7 @@ class GeminiService {
       final response = await model
           .generateContent([Content.text(numbered)])
           .timeout(const Duration(seconds: 20));
+      GeminiUsageLog.instance.record('translation', response.usageMetadata);
 
       // Match each line by its OWN number rather than by position/count —
       // a strict "same number of lines in, same number out" check turned
@@ -1000,6 +1143,14 @@ class GeminiService {
     }
   }
 
+  /// True for a past user message that still holds the per-turn context
+  /// blocks that [trimChatHistory] cuts.
+  static bool _carriesContext(Content content) =>
+      content.role == 'user' &&
+      content.parts.any(
+        (p) => p is TextPart && !p.text.startsWith(chatQuestionMarker),
+      );
+
   void reset() {
     _chatSession = null;
     _chatModel = null;
@@ -1014,6 +1165,7 @@ class GeminiService {
     String message, {
     String? referenceContext,
     String? woundContext,
+    String? healthContext,
   }) async {
     try {
       if (_chatModel == null || _chatSession == null) {
@@ -1029,8 +1181,22 @@ class GeminiService {
           ? '\n\nCURRENT WOUND ANALYSIS:\n$woundContext'
           : '';
 
+      // What the person already saved in the app (see chatHealthContext).
+      final healthBlock =
+          healthContext != null && healthContext.trim().isNotEmpty
+          ? '\n\nUSER HEALTH PROFILE:\n$healthContext'
+          : '';
+
       final promptText =
-          '$referenceBlock$woundBlock\n\nUSER QUESTION: $message';
+          '$referenceBlock$woundBlock$healthBlock\n\n$chatQuestionMarker$message';
+
+      // Gemini resends the whole history every turn, so keep only the last
+      // few exchanges and drop the old turns' reference excerpts.
+      final history = _chatSession!.history.toList();
+      if (history.length > maxChatHistoryMessages ||
+          history.any(_carriesContext)) {
+        _chatSession = _chatModel!.startChat(history: trimChatHistory(history));
+      }
 
       final response = await _chatSession!
           .sendMessage(Content.text(promptText))
@@ -1040,6 +1206,7 @@ class GeminiService {
                 throw Exception('Request timed out. Please try again.'),
           );
 
+      GeminiUsageLog.instance.record('chat', response.usageMetadata);
       return response.text ??
           'I could not generate a response. Please try rephrasing.';
     } catch (e) {
@@ -1061,6 +1228,17 @@ class GeminiService {
   }
 
   Future<WoundDetectionResult> detectWounds(String imagePath) async {
+    // One analysis at a time (a double-tap must not send a second request).
+    if (!AnalysisLock.tryAcquire()) {
+      debugPrint('Gemini detectWounds: an analysis is already running');
+      return WoundDetectionResult(
+        isBlurry: false,
+        hasWound: false,
+        woundCount: 0,
+        woundDescriptions: const [],
+        checkFailed: true,
+      );
+    }
     try {
       final imageBytes = await File(imagePath).readAsBytes();
       final model = _createDetectionModel();
@@ -1069,9 +1247,10 @@ class GeminiService {
           .generateContent([
             Content.multi([
               TextPart(
-                'Check this photo for blur, count the distinct wounds or '
-                'skin conditions visible, and give a bounding box for each '
-                'one.',
+                'Check this photo for blur, darkness, cropping, whether it is '
+                'a genuine direct photo of skin, count the distinct wounds '
+                'or skin conditions visible, and give a bounding box for '
+                'each one.',
               ),
               DataPart('image/jpeg', imageBytes),
             ]),
@@ -1081,15 +1260,20 @@ class GeminiService {
             onTimeout: () => throw Exception('Wound detection timed out.'),
           );
 
-      return _parseDetectionResponse(response.text ?? '');
+      GeminiUsageLog.instance.record('detection', response.usageMetadata);
+      return parseDetectionResponse(response.text ?? '');
     } catch (e) {
       debugPrint('Gemini detectWounds error: $e');
+      // The photo could not be checked: do not let it through unchecked.
       return WoundDetectionResult(
         isBlurry: false,
-        hasWound: true,
-        woundCount: 1,
+        hasWound: false,
+        woundCount: 0,
         woundDescriptions: const [],
+        checkFailed: true,
       );
+    } finally {
+      AnalysisLock.release();
     }
   }
 
@@ -1110,8 +1294,15 @@ class GeminiService {
     return Rect.fromLTRB(xmin, ymin, xmax, ymax);
   }
 
-  WoundDetectionResult _parseDetectionResponse(String text) {
+  @visibleForTesting
+  WoundDetectionResult parseDetectionResponse(String text) {
     var isBlurry = false;
+    var isTooDark = false;
+    var isCropped = false;
+    var isUnrecognizable = false;
+    var looksFake = false;
+    // A reply without the wound verdict cannot be trusted either way.
+    var sawVerdict = false;
     var hasWound = true;
     var woundCount = 1;
     var confidence = DetectionConfidence.medium;
@@ -1132,8 +1323,26 @@ class GeminiService {
         isBlurry = value.toLowerCase().startsWith('y');
         continue;
       }
+      bool yes() => value.toLowerCase().startsWith('y');
+      if (key == 'TOO_DARK') {
+        isTooDark = yes();
+        continue;
+      }
+      if (key == 'CROPPED') {
+        isCropped = yes();
+        continue;
+      }
+      if (key == 'UNRECOGNIZABLE') {
+        isUnrecognizable = yes();
+        continue;
+      }
+      if (key == 'FAKE_IMAGE') {
+        looksFake = yes();
+        continue;
+      }
       if (key == 'WOUND_DETECTED') {
-        hasWound = value.toLowerCase().startsWith('y');
+        hasWound = yes();
+        sawVerdict = true;
         continue;
       }
       if (key == 'CONFIDENCE') {
@@ -1202,6 +1411,11 @@ class GeminiService {
       woundDescriptions: descriptions,
       confidence: confidence,
       artificialMarkLikelihood: artificialMark,
+      isTooDark: isTooDark,
+      isCropped: isCropped,
+      isUnrecognizable: isUnrecognizable,
+      looksFake: looksFake,
+      checkFailed: !sawVerdict,
       woundBoxes: boxes,
     );
   }

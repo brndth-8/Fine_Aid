@@ -61,8 +61,9 @@ class CalendarStrings {
       'Nobyembre',
       'Disyembre',
     ],
-    // Linggo, Lunes, Martes, Miyerkules, Huwebes, Biyernes, Sabado.
-    weekdays: ['Li', 'Lu', 'Ma', 'Mi', 'Hu', 'Bi', 'Sa'],
+    // The weekday headings stay in English in Tagalog too (the months are
+    // translated).
+    weekdays: ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'],
     today: 'Ngayon',
     jumpToToday: 'Bumalik sa ngayon',
   );

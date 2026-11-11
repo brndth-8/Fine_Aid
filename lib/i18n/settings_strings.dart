@@ -9,7 +9,6 @@ class SettingsStrings {
   final String personalization;
   final String aboutApplication;
   final String helpFaq;
-  final String rateApp;
   final String feedback;
   final String terms;
   final String signIn;
@@ -22,16 +21,31 @@ class SettingsStrings {
   final String logOutConfirmCancel;
   final String logOutConfirmButton;
   final String aboutLegalese;
+  final String closeButton;
   final String language;
   final String english;
   final String tagalog;
+  final String banner;
+  final String personalizationSub;
+  final String aboutApplicationSub;
+  final String aboutScanSub;
+  final String helpFaqSub;
+  final String languageSub;
+  final String feedbackSub;
+  final String termsSub;
+  // The small note above Log out (the website itself is never translated).
+  final String footerNote;
+  // The warning when the text size is set very large (Personalization).
+  final String textSizeWarnTitle;
+  final String textSizeWarnBody;
+  final String textSizeKeep;
+  final String textSizeRevert;
 
   const SettingsStrings({
     required this.title,
     required this.personalization,
     required this.aboutApplication,
     required this.helpFaq,
-    required this.rateApp,
     required this.feedback,
     required this.terms,
     required this.signIn,
@@ -43,9 +57,23 @@ class SettingsStrings {
     required this.logOutConfirmCancel,
     required this.logOutConfirmButton,
     required this.aboutLegalese,
+    required this.closeButton,
     required this.language,
     required this.english,
     required this.tagalog,
+    required this.banner,
+    required this.personalizationSub,
+    required this.aboutApplicationSub,
+    required this.aboutScanSub,
+    required this.helpFaqSub,
+    required this.languageSub,
+    required this.feedbackSub,
+    required this.termsSub,
+    required this.footerNote,
+    required this.textSizeWarnTitle,
+    required this.textSizeWarnBody,
+    required this.textSizeKeep,
+    required this.textSizeRevert,
   });
 
   static SettingsStrings of(BuildContext context) =>
@@ -56,7 +84,6 @@ class SettingsStrings {
     personalization: 'Personalization',
     aboutApplication: 'About Application',
     helpFaq: 'Help/FAQ',
-    rateApp: 'Rate this app',
     feedback: 'Feedback',
     terms: 'Terms and conditions',
     signIn: 'Sign in',
@@ -70,9 +97,27 @@ class SettingsStrings {
     aboutLegalese:
         'A multi-platform AI-integrated first aid guide for wounds, '
         'minor injuries, and skin issues assessment.',
+    closeButton: 'Close',
     language: 'Language',
     english: 'English',
     tagalog: 'Tagalog',
+    banner: 'Manage your preferences and app settings.',
+    personalizationSub: 'Customize your text size.',
+    aboutApplicationSub: 'App version and other information.',
+    aboutScanSub: 'Learn about AI scan accuracy.',
+    helpFaqSub: 'Find answer to common questions.',
+    languageSub: 'Choose your preferred language.',
+    feedbackSub: 'Send us your suggestions or report an issue.',
+    termsSub: 'Read our terms and policies.',
+    footerNote:
+        'For further concern, reach out to us for further information; '
+        'reach out on the official FineAid website.',
+    textSizeWarnTitle: 'Text size is very large',
+    textSizeWarnBody:
+        'The text size is set too large for optimal viewing. Some UI '
+        'elements may be clipped or overflow.',
+    textSizeKeep: 'Keep this size',
+    textSizeRevert: 'Go back',
   );
 
   static const tl = SettingsStrings(
@@ -80,7 +125,6 @@ class SettingsStrings {
     personalization: 'Personalisasyon',
     aboutApplication: 'Tungkol sa Application',
     helpFaq: 'Tulong/FAQ',
-    rateApp: 'I-rate ang app na ito',
     feedback: 'Feedback',
     terms: 'Mga tuntunin at kundisyon',
     signIn: 'Mag-sign in',
@@ -95,9 +139,29 @@ class SettingsStrings {
         'Isang multi-platform at AI-integrated na gabay sa first aid para '
         'sa pagsusuri ng mga sugat, maliliit na pinsala, at problema sa '
         'balat.',
+    closeButton: 'Isara',
     language: 'Wika',
     english: 'English',
     tagalog: 'Tagalog',
+    banner: 'Pamahalaan ang iyong mga kagustuhan at mga setting ng app.',
+    personalizationSub: 'I-customize ang laki ng iyong teksto.',
+    aboutApplicationSub: 'Bersyon ng app at iba pang impormasyon.',
+    aboutScanSub: 'Alamin ang katumpakan ng AI scan.',
+    helpFaqSub: 'Hanapin ang sagot sa mga karaniwang tanong.',
+    languageSub: 'Piliin ang gusto mong wika.',
+    feedbackSub: 'Ipadala ang iyong mungkahi o mag-ulat ng isyu.',
+    termsSub: 'Basahin ang aming mga tuntunin at patakaran.',
+    footerNote:
+        'Para sa iba pang alalahanin, makipag-ugnayan sa amin para sa '
+        'karagdagang impormasyon; makipag-ugnayan sa opisyal na website ng '
+        'FineAid.',
+    textSizeWarnTitle: 'Napakalaki ng laki ng teksto',
+    textSizeWarnBody:
+        'Masyadong malaki ang laki ng teksto para sa pinakamainam na '
+        'pagtingin. Maaaring maputol o lumampas sa screen ang ilang bahagi '
+        'ng app.',
+    textSizeKeep: 'Panatilihin ang laking ito',
+    textSizeRevert: 'Bumalik',
   );
 }
 

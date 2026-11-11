@@ -17,6 +17,9 @@ class ExportService {
     bool referredForConsultation = false,
     // The Evaluation text as shown in the app (null/blank = none).
     String? evaluation,
+    // From the Health Profile; an empty list is printed as "None listed".
+    List<String> healthConditions = const [],
+    List<String> medications = const [],
   }) async {
     final doc = pw.Document();
 
@@ -81,6 +84,26 @@ class ExportService {
               ),
               margin: pw.EdgeInsets.zero,
             ),
+            pw.SizedBox(height: 16),
+            pw.Text(
+              'Health Conditions',
+              style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold),
+            ),
+            pw.SizedBox(height: 4),
+            pw.Paragraph(
+              text: _pdfSafe(_listOrNone(healthConditions)),
+              margin: pw.EdgeInsets.zero,
+            ),
+            pw.SizedBox(height: 16),
+            pw.Text(
+              'Current Medications',
+              style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold),
+            ),
+            pw.SizedBox(height: 4),
+            pw.Paragraph(
+              text: _pdfSafe(_listOrNone(medications)),
+              margin: pw.EdgeInsets.zero,
+            ),
             if (referredForConsultation) ...[
               pw.SizedBox(height: 20),
               pw.Container(
@@ -134,6 +157,8 @@ class ExportService {
     required int monitoredDays,
     bool referredForConsultation = false,
     String? evaluation,
+    List<String> healthConditions = const [],
+    List<String> medications = const [],
   }) async {
     final bytes = await buildEntryPdf(
       title: title,
@@ -143,6 +168,8 @@ class ExportService {
       monitoredDays: monitoredDays,
       referredForConsultation: referredForConsultation,
       evaluation: evaluation,
+      healthConditions: healthConditions,
+      medications: medications,
     );
     final dir = await getTemporaryDirectory();
     final safeTitle = title.replaceAll(RegExp(r'[^\w\s-]'), '').trim();
@@ -158,6 +185,9 @@ class ExportService {
       ),
     );
   }
+
+  static String _listOrNone(List<String> items) =>
+      items.isEmpty ? 'None listed' : items.join(', ');
 
   /// The PDF's built-in font has no em/en dash (it drops them), so use a
   /// plain hyphen for those.

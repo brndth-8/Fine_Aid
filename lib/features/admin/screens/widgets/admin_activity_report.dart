@@ -1,9 +1,13 @@
 import '../../../../core/widgets/app_date_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import 'admin_file_download_stub.dart'
+    if (dart.library.js_interop) 'admin_file_download_web.dart';
 import 'admin_name_lookup.dart';
+import 'admin_report_pdf.dart';
 import 'admin_pagination.dart';
 import 'admin_shared_widgets.dart';
 
@@ -12,7 +16,7 @@ import 'admin_shared_widgets.dart';
 /// part of the Firestore query (not applied to a downloaded list), and the
 /// table pages with the same pager as the other admin screens.
 ///
-/// CSV export columns (nothing else is exported): Date/time, Admin, Action,
+/// PDF export columns (nothing else is exported): Date/time, Admin, Action,
 /// Target, Result. Admins and targets appear by name, never by raw id.
 class AdminActivityReport extends StatefulWidget {
   const AdminActivityReport({super.key});
@@ -24,7 +28,8 @@ class AdminActivityReport extends StatefulWidget {
 class _AdminActivityReportState extends State<AdminActivityReport> {
   static const _types = ['CREATE', 'UPDATE', 'DELETE', 'LOGIN'];
   static const _exportBatch = 500;
-  static const _exportCap = 20000;
+  // A PDF this long is already a lot to read, and quick enough to build.
+  static const _exportCap = 5000;
 
   late DateTimeRange _range = () {
     final today = DateUtils.dateOnly(DateTime.now());
@@ -142,8 +147,8 @@ class _AdminActivityReportState extends State<AdminActivityReport> {
     if (_exporting) return;
     setState(() => _exporting = true);
     try {
-      final fmt = DateFormat('yyyy-MM-dd HH:mm:ss');
-      final rows = <List<Object?>>[];
+      final fmt = DateFormat('MMM d, y h:mm a');
+      final rows = <List<String>>[];
       DocumentSnapshot<Map<String, dynamic>>? last;
       // Read in batches rather than one huge get(), and give the UI a turn
       // between batches so it doesn't freeze.
@@ -159,8 +164,8 @@ class _AdminActivityReportState extends State<AdminActivityReport> {
           rows.add([
             ts == null ? '' : fmt.format(ts.toLocal()),
             auditActorLabel(data, _names),
-            data['action'] ?? '',
-            data['targetName'] ?? '',
+            '${data['action'] ?? ''}',
+            '${data['targetName'] ?? ''}',
             _result(data),
           ]);
         }
@@ -168,23 +173,41 @@ class _AdminActivityReportState extends State<AdminActivityReport> {
         if (snap.docs.length < _exportBatch) break;
         await Future<void>.delayed(Duration.zero);
       }
-      await exportAdminCsv(
-        filename: 'fine_aid_admin_activity.csv',
+      final now = DateTime.now();
+      final cutOff = rows.length >= _exportCap;
+      final bytes = await buildAdminReportPdf(
+        title: 'Admin activity report',
+        subtitle:
+            '${DateFormat('MMM d, y').format(_range.start)} - '
+            '${DateFormat('MMM d, y').format(_range.end)}',
         headers: const ['Date/time', 'Admin', 'Action', 'Target', 'Result'],
+        columnFlex: const [2, 2, 4, 2, 1],
         rows: rows,
+        generatedAt: now,
+        generatedBy: FirebaseAuth.instance.currentUser?.email ?? 'an admin',
+        note: cutOff ? 'newest $_exportCap entries only' : null,
+      );
+      final name =
+          'fine_aid_admin_activity_${DateFormat('yyyy-MM-dd').format(now)}.pdf';
+      await downloadFile(
+        filename: name,
+        bytes: bytes,
+        mimeType: 'application/pdf',
       );
       logAdminAction(
         'Exported admin activity report',
         targetType: 'report',
         targetName: 'Admin activity report',
-        reason: 'csv_export',
+        reason: 'pdf_export',
       );
-      if (mounted && rows.length >= _exportCap) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Exported the newest $_exportCap entries. Narrow the date '
-              'range to export older ones.',
+              cutOff
+                  ? 'Downloaded $name (the newest $_exportCap entries). '
+                        'Narrow the date range to include older ones.'
+                  : 'Downloaded $name.',
             ),
           ),
         );
@@ -292,65 +315,75 @@ class _AdminActivityReportState extends State<AdminActivityReport> {
                               ),
                             )
                           : const Icon(Icons.download_outlined, size: 16),
-                      label: Text(_exporting ? 'Exporting…' : 'Export CSV'),
+                      label: Text(_exporting ? 'Creating PDF…' : 'Export PDF'),
                     ),
                   ],
                 ),
               ],
             ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            color: Colors.grey.shade50,
-            child: Row(
+          AdminHScroll(
+            minWidth: 760,
+            child: Column(
               children: [
-                _th(theme, 'Date & time', flex: 2),
-                _th(theme, 'Admin', flex: 2),
-                _th(theme, 'Action', flex: 4),
-                _th(theme, 'Target', flex: 2),
-                _th(theme, 'Result', flex: 1),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  color: Colors.grey.shade50,
+                  child: Row(
+                    children: [
+                      _th(theme, 'Date & time', flex: 2),
+                      _th(theme, 'Admin', flex: 2),
+                      _th(theme, 'Action', flex: 4),
+                      _th(theme, 'Target', flex: 2),
+                      _th(theme, 'Result', flex: 1),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                ListenableBuilder(
+                  listenable: _pager,
+                  builder: (context, _) {
+                    if (_pager.error != null && _pager.docs.isEmpty) {
+                      return SizedBox(
+                        height: 180,
+                        child: AdminPageError(
+                          error: _pager.error!,
+                          onRetry: _pager.retry,
+                        ),
+                      );
+                    }
+                    if (_pager.loading && _pager.docs.isEmpty) {
+                      return const Padding(
+                        padding: EdgeInsets.all(32),
+                        child: Center(child: CircularProgressIndicator()),
+                      );
+                    }
+                    if (_pager.docs.isEmpty) {
+                      return Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text(
+                          'No admin activity matches these filters.',
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      );
+                    }
+                    final fmt = DateFormat('MMM d, y h:mm a');
+                    return Column(
+                      children: [
+                        for (final doc in _pager.docs) ...[
+                          _row(theme, fmt, doc.data()),
+                          const Divider(height: 1),
+                        ],
+                        AdminPager(controller: _pager),
+                      ],
+                    );
+                  },
+                ),
               ],
             ),
-          ),
-          const Divider(height: 1),
-          ListenableBuilder(
-            listenable: _pager,
-            builder: (context, _) {
-              if (_pager.error != null && _pager.docs.isEmpty) {
-                return SizedBox(
-                  height: 180,
-                  child: AdminPageError(
-                    error: _pager.error!,
-                    onRetry: _pager.retry,
-                  ),
-                );
-              }
-              if (_pager.loading && _pager.docs.isEmpty) {
-                return const Padding(
-                  padding: EdgeInsets.all(32),
-                  child: Center(child: CircularProgressIndicator()),
-                );
-              }
-              if (_pager.docs.isEmpty) {
-                return Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Text(
-                    'No admin activity matches these filters.',
-                    style: theme.textTheme.bodySmall,
-                  ),
-                );
-              }
-              final fmt = DateFormat('MMM d, y h:mm a');
-              return Column(
-                children: [
-                  for (final doc in _pager.docs) ...[
-                    _row(theme, fmt, doc.data()),
-                    const Divider(height: 1),
-                  ],
-                  AdminPager(controller: _pager),
-                ],
-              );
-            },
           ),
         ],
       ),

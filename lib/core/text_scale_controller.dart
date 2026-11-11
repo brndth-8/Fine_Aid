@@ -15,6 +15,14 @@ class TextScaleController extends ChangeNotifier {
   static const double min = 0.8;
   static const double max = 1.6;
   static const double _defaultScale = 1.0;
+
+  /// From this scale up (120%; the slider goes from 80% to 160% in steps of
+  /// 10%) the text is large enough that parts of the screens can be clipped or
+  /// overflow, so Personalization warns the person (and lets them go back).
+  static const double largeThreshold = 1.2;
+
+  /// Whether [value] is a size the warning applies to.
+  static bool isLarge(double value) => value >= largeThreshold - 0.001;
   static const String _prefsKey = 'text_scale_factor';
 
   double _scale = _defaultScale;

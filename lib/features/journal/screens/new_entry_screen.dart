@@ -1,27 +1,34 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../services/firebase/storage_service.dart';
-import '../../../core/widgets/guest_gate_dialogs.dart';
 import '../../camera/screens/ai_camera_screen.dart';
 import '../../../core/photo_permission.dart';
 import '../../../i18n/photo_strings.dart';
 import '../../../services/image_compressor.dart';
 import '../../../services/firebase/notification_service.dart';
-import '../../../data/healing_durations.dart';
+import '../../../core/reminder_message.dart';
 import '../../../i18n/notification_strings.dart';
 import '../../../i18n/journal_entry_strings.dart';
+import '../../../i18n/assessment_strings.dart';
 import '../../../i18n/pain_strings.dart';
 import '../../../i18n/classification_strings.dart';
 import '../../../i18n/app_language.dart';
 import '../../../data/pain_assessment.dart';
 import '../../../core/widgets/category_info_dialog.dart';
+import '../../../core/widgets/icon_popup.dart';
+import '../../../i18n/offline_strings.dart';
+import '../../../i18n/guest_journal_strings.dart';
+import '../../../services/guest_journal_store.dart';
+import '../../../services/connectivity_service.dart';
 import '../../../core/widgets/app_date_picker.dart';
 import '../../../core/widgets/nearby_healthcare_sheet.dart';
 import '../../../i18n/nearby_strings.dart';
 import '../../../core/widgets/pain_scale_dialog.dart';
+import '../../../i18n/screen_text_strings.dart';
 
 class NewEntryScreen extends StatefulWidget {
   const NewEntryScreen({super.key});
@@ -37,11 +44,16 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
   final List<XFile> _pickedImages = [];
   String? _classification;
   String? _severity; // for Injury: Deep / Minor
-  bool _remindMe = false;
+  // On by default: the healing check-in is part of saving an entry. (It was
+  // off, so no reminder was ever set unless the box was found and ticked.)
+  bool _remindMe = true;
   // The date the entry is for (today unless the user picks another).
   DateTime _entryDate = DateUtils.dateOnly(DateTime.now());
   int? _painScore; // 0-5, required
+  int? _itchScore; // 0-5, skin issues only
   bool _isSaving = false;
+  // Opened without internet: only the text form (title, date, how you feel).
+  bool _offlineMode = false;
 
   // The four existing categories. The key is what is saved (unchanged);
   // what is shown comes from JournalEntryStrings.
@@ -56,7 +68,7 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _checkGuestWarning());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onOpened());
   }
 
   @override
@@ -64,6 +76,35 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
     _titleController.dispose();
     _descriptionController.dispose();
     super.dispose();
+  }
+
+  /// On opening: offline shows the offline pop-up (and no Guest Mode pop-up,
+  /// so the two never stack); online keeps the Guest Mode check as before.
+  Future<void> _onOpened() async {
+    // The app's offline strip keeps this up to date; unknown counts as online.
+    final online = ConnectivityService().lastKnownOnline ?? true;
+    if (!mounted) return;
+    if (online) {
+      await _checkGuestWarning();
+      return;
+    }
+    setState(() => _offlineMode = true);
+    final s = OfflineStrings.of(context);
+    final theme = Theme.of(context);
+    await showIconPopup(
+      context,
+      badge: const PopupBadge(icon: Icons.wifi_off),
+      title: s.popupTitle,
+      body: [
+        Text(
+          s.popupBody,
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodyMedium,
+        ),
+      ],
+      buttonLabel: s.proceed,
+      dismissible: false,
+    );
   }
 
   Future<bool> _checkGuestWarning() async {
@@ -75,20 +116,19 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        content: const Text(
-          'You are currently in Guest Mode. Notes and images entered here '
-          'are temporary and will not be saved.\n\nPlease create a secure account.',
+        content: Text(
+          GuestJournalStrings.of(context).warning,
           textAlign: TextAlign.center,
         ),
         actionsAlignment: MainAxisAlignment.center,
         actions: [
           ElevatedButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Continue as Guest'),
+            child: Text(ScreenText.of(context).continueAsGuest),
           ),
           OutlinedButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Sign up'),
+            child: Text(ScreenText.of(context).signUpShort),
           ),
         ],
       ),
@@ -279,15 +319,21 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
   }
 
   Future<void> _handleSave() async {
-    if (FirebaseAuth.instance.currentUser == null) {
-      await showGuestSaveGateDialog(context);
-      return;
-    }
-
+    // A guest has no account to save under: the entry is kept on this phone
+    // and moved into the account when they sign up or sign in.
+    final isGuest = FirebaseAuth.instance.currentUser == null;
     final strings = JournalEntryStrings.of(context);
     final messenger = ScaffoldMessenger.of(context);
     if (_titleController.text.trim().isEmpty) {
       messenger.showSnackBar(SnackBar(content: Text(strings.titleRequired)));
+      return;
+    }
+    if (_offlineMode) {
+      if (isGuest) {
+        await _saveGuestLocal();
+      } else {
+        await _saveOffline();
+      }
       return;
     }
     if (_classification == null) {
@@ -296,6 +342,14 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
     }
     if (_painScore == null) {
       messenger.showSnackBar(SnackBar(content: Text(strings.painRequired)));
+      return;
+    }
+    if (_isSkinIssue && _itchScore == null) {
+      messenger.showSnackBar(SnackBar(content: Text(strings.itchRequired)));
+      return;
+    }
+    if (isGuest) {
+      await _saveGuestLocal();
       return;
     }
 
@@ -332,6 +386,7 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
             'painScore': _painScore,
             // Marks the 0-5 scale (older entries were rated 1-10).
             'painScaleMax': kPainMax,
+            if (_isSkinIssue) 'itchScore': _itchScore,
             'remindMe': _remindMe,
             'imageUrls': imageUrls,
             'imageCount': _pickedImages.length,
@@ -345,26 +400,34 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
       // time of the chosen type. Types without a standard time get no
       // reminder (and the user is told) rather than an invented one.
       final noBenchmarkText = NotificationStrings.of(context).noBenchmark;
-      var noBenchmark = false;
+      String? reminderNote;
       if (_remindMe) {
-        final healingDays = healingDurationDays[_classification];
-        if (healingDays == null) {
-          noBenchmark = true;
-        } else {
-          await NotificationService().ensureHealingReminderPermission(context);
-          await NotificationService().scheduleHealingCheckIn(
+        // Ask for the notification permission first. The reminder is set
+        // either way (it shows up whenever notifications are on); when they
+        // are off the person is told, with a button to Settings.
+        final allowed = await NotificationService()
+            .ensureHealingReminderPermission(context);
+        final due = await NotificationService().scheduleForEntry(
+          entryId: docRef.id,
+          classification: _classification!,
+          severity: _severity,
+          from: _isBackdated ? _entryDateTime() : null,
+        );
+        if (due == null) {
+          reminderNote = noBenchmarkText;
+        } else if (allowed && mounted) {
+          reminderNote = await announceReminderSet(
+            context,
             entryId: docRef.id,
-            classification: _classification!,
-            healingDays: healingDays,
-            from: _isBackdated ? _entryDateTime() : null,
+            due: due,
           );
         }
       }
 
       if (!mounted) return;
       Navigator.pop(context);
-      if (noBenchmark) {
-        messenger.showSnackBar(SnackBar(content: Text(noBenchmarkText)));
+      if (reminderNote != null) {
+        messenger.showSnackBar(SnackBar(content: Text(reminderNote)));
       }
     } catch (e) {
       if (!mounted) return;
@@ -376,9 +439,68 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
     }
   }
 
+  /// Guest Mode: the entry is kept on this phone only (no photos). It is
+  /// moved into the account when the person signs up or signs in.
+  Future<void> _saveGuestLocal() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final note = GuestJournalStrings.of(context).savedOnDevice;
+    final isSkin = !_offlineMode && _isSkinIssue;
+    await GuestJournalStore.instance.add(
+      title: _titleController.text.trim(),
+      description: _descriptionController.text.trim(),
+      classification: _offlineMode ? null : _classification,
+      severity: _offlineMode ? null : _severity,
+      painScore: _offlineMode ? null : _painScore,
+      painScaleMax: _offlineMode ? null : kPainMax,
+      itchScore: isSkin ? _itchScore : null,
+      createdAt: _entryDateTime(),
+    );
+    if (!mounted) return;
+    Navigator.pop(context);
+    messenger.showSnackBar(SnackBar(content: Text(note)));
+  }
+
+  /// An entry written offline: title, date and text only. It is written to
+  /// the device's own Firestore cache and the existing sync sends it once the
+  /// phone is online again, so nothing here waits for the server.
+  Future<void> _saveOffline() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final note = OfflineStrings.of(context).savedOffline;
+    final doc = FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('journalEntries')
+        .doc();
+    // Not awaited: offline, the future only completes after the server
+    // acknowledges the write. The local write is already done.
+    unawaited(
+      doc
+          .set({
+            'title': _titleController.text.trim(),
+            'description': _descriptionController.text.trim(),
+            'classification': null,
+            'severity': null,
+            'painScore': null,
+            'remindMe': false,
+            'imageUrls': <String>[],
+            'imageCount': 0,
+            'createdAt': _createdAtValue(),
+          })
+          .catchError((Object e) => debugPrint('Offline entry sync: $e')),
+    );
+    if (!mounted) return;
+    Navigator.pop(context);
+    messenger.showSnackBar(SnackBar(content: Text(note)));
+  }
+
   /// Tapping a category opens its explanation; only Confirm selects it. For
   /// Injury, Confirm is followed by the required Deep / Minor choice. Closing
   /// either pop-up any other way selects nothing.
+  /// The "Skin Issues" category: it also asks how itchy it is.
+  bool get _isSkinIssue => _classification == 'Skin Issues';
+
   Future<void> _onCategoryTap(String key) async {
     final strings = JournalEntryStrings.of(context);
     final tagalog = AppLanguageScope.isTagalog(context);
@@ -406,7 +528,7 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
           CategoryOption(
             value: 'Deep',
             title: strings.deep,
-            description: info?.seriousSigns ?? '',
+            description: strings.deepDescription,
           ),
         ],
       );
@@ -417,10 +539,45 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
     setState(() {
       _classification = key;
       _severity = subType;
+      // The itchiness scale is only for a skin issue.
+      if (!_isSkinIssue) _itchScore = null;
     });
+
+    // A deep injury: recommend professional care (only Injury > Deep).
+    if (subType == 'Deep') await _showProfessionalCareNotice();
 
     // An animal scratch needs a doctor: say so right away.
     if (key == 'Animal Scratch') await _showAnimalScratchNotice();
+  }
+
+  /// "Professional care recommended": shown after Injury > Deep is confirmed.
+  /// "Continue to journal" just closes it; the selection is kept.
+  Future<void> _showProfessionalCareNotice() {
+    if (!mounted) return Future.value();
+    final s = JournalEntryStrings.of(context);
+    final theme = Theme.of(context);
+    return showIconPopup(
+      context,
+      badge: const PopupBadge(icon: Icons.add, color: Color(0xFFD32F2F)),
+      title: s.careTitle,
+      body: [
+        Text(
+          s.careBody,
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodyMedium,
+        ),
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 10),
+          child: Divider(height: 1),
+        ),
+        Text(
+          s.careNote,
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodySmall,
+        ),
+      ],
+      buttonLabel: s.careContinue,
+    );
   }
 
   /// Urgent notice for an animal scratch (rabies, tetanus, infection risk),
@@ -460,7 +617,8 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
             Icon(icon, size: 18, color: theme.colorScheme.onSurfaceVariant),
             const SizedBox(width: 6),
           ],
-          Text(text, style: theme.textTheme.bodyMedium),
+          // Flexible: a long label wraps instead of overflowing.
+          Flexible(child: Text(text, style: theme.textTheme.bodyMedium)),
         ],
       ),
     );
@@ -534,6 +692,15 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
     );
   }
 
+  /// The offline notes box: what is left of the screen after the top bar, the
+  /// notice, Title, Date and the two buttons (never under 180, so it still
+  /// scrolls with the keyboard open).
+  double _offlineNotesHeight(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final room = media.size.height - media.viewInsets.bottom - 520;
+    return room < 180 ? 180 : room;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -586,86 +753,109 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Add Image: a dashed box.
-                  InkWell(
-                    borderRadius: BorderRadius.circular(20),
-                    onTap: _handleAddImage,
-                    child: CustomPaint(
-                      painter: _DashedBorderPainter(color: primary),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 18),
-                        decoration: BoxDecoration(
-                          color: soft,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Column(
-                          children: [
-                            Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                Icon(
-                                  Icons.image_outlined,
-                                  size: 64,
-                                  color: primary.withValues(alpha: 0.6),
-                                ),
-                                Positioned(
-                                  right: -10,
-                                  bottom: -4,
-                                  child: CircleAvatar(
-                                    radius: 14,
-                                    backgroundColor: primary.withValues(
-                                      alpha: 0.7,
-                                    ),
-                                    child: const Icon(
-                                      Icons.add,
-                                      size: 20,
-                                      color: Colors.white,
+                  if (!_offlineMode) ...[
+                    // Add Image: a dashed box.
+                    InkWell(
+                      borderRadius: BorderRadius.circular(20),
+                      onTap: _handleAddImage,
+                      child: CustomPaint(
+                        painter: _DashedBorderPainter(color: primary),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 18),
+                          decoration: BoxDecoration(
+                            color: soft,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Column(
+                            children: [
+                              Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  Icon(
+                                    Icons.image_outlined,
+                                    size: 64,
+                                    color: primary.withValues(alpha: 0.6),
+                                  ),
+                                  Positioned(
+                                    right: -10,
+                                    bottom: -4,
+                                    child: CircleAvatar(
+                                      radius: 14,
+                                      backgroundColor: primary.withValues(
+                                        alpha: 0.7,
+                                      ),
+                                      child: const Icon(
+                                        Icons.add,
+                                        size: 20,
+                                        color: Colors.white,
+                                      ),
                                     ),
                                   ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              photo.addImage,
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
+                                ],
                               ),
-                            ),
-                            Text(
-                              strings.addImageSubtitle,
-                              style: theme.textTheme.bodySmall,
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  if (_pickedImages.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      height: 70,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: _pickedImages.length,
-                        separatorBuilder: (_, _) => const SizedBox(width: 8),
-                        itemBuilder: (context, index) => GestureDetector(
-                          onTap: () => _showPreview(index),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: Image.file(
-                              File(_pickedImages[index].path),
-                              width: 70,
-                              height: 70,
-                              fit: BoxFit.cover,
-                            ),
+                              const SizedBox(height: 8),
+                              Text(
+                                photo.addImage,
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Text(
+                                strings.addImageSubtitle,
+                                style: theme.textTheme.bodySmall,
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
                           ),
                         ),
                       ),
                     ),
+                    if (_pickedImages.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        height: 70,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: _pickedImages.length,
+                          separatorBuilder: (_, _) => const SizedBox(width: 8),
+                          itemBuilder: (context, index) => GestureDetector(
+                            onTap: () => _showPreview(index),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.file(
+                                File(_pickedImages[index].path),
+                                width: 70,
+                                height: 70,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
                   ],
-                  const SizedBox(height: 16),
+
+                  // Offline: a pink note on what this journal is.
+                  if (_offlineMode) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFBE0E3),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        OfflineStrings.of(context).journalNotice,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: Colors.black,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
 
                   // Title / date / how are you feeling.
                   Container(
@@ -723,157 +913,224 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
                         ),
                         const SizedBox(height: 12),
                         _label(theme, Icons.edit_note, strings.feelingLabel),
-                        TextField(
-                          controller: _descriptionController,
-                          minLines: 7,
-                          maxLines: 12,
-                          decoration: _fieldDecoration(strings.feelingHint),
-                        ),
+                        if (_offlineMode)
+                          // Offline: a tall box that fills the screen.
+                          SizedBox(
+                            height: _offlineNotesHeight(context),
+                            child: TextField(
+                              controller: _descriptionController,
+                              expands: true,
+                              minLines: null,
+                              maxLines: null,
+                              textAlignVertical: TextAlignVertical.top,
+                              decoration: _fieldDecoration(strings.feelingHint),
+                            ),
+                          )
+                        else
+                          TextField(
+                            controller: _descriptionController,
+                            minLines: 7,
+                            maxLines: 12,
+                            decoration: _fieldDecoration(strings.feelingHint),
+                          ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 20),
 
-                  // Category tiles.
-                  Text(
-                    strings.categoryHeading,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
+                  if (!_offlineMode) ...[
+                    // Category tiles.
+                    Text(
+                      strings.categoryHeading,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  for (var row = 0; row < _categories.length; row += 2) ...[
-                    IntrinsicHeight(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                    const SizedBox(height: 8),
+                    for (var row = 0; row < _categories.length; row += 2) ...[
+                      IntrinsicHeight(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            for (var i = row; i < row + 2; i++) ...[
+                              if (i > row) const SizedBox(width: 10),
+                              Expanded(
+                                child: i < _categories.length
+                                    ? _categoryTile(
+                                        theme,
+                                        strings,
+                                        _categories[i].$1,
+                                        _categories[i].$2,
+                                      )
+                                    : const SizedBox.shrink(),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                    ],
+                    if (_classification != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(
+                          strings.selectedFormat.replaceFirst(
+                            '{category}',
+                            (strings.categoryNames[_classification] ??
+                                    _classification!) +
+                                (_severity == null
+                                    ? ''
+                                    : ' — ${strings.subTypeName(_severity)}'),
+                          ),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: primary,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 14),
+
+                    // Pain rating 0-5, in the same card style as the pain dialog.
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFDEEEC),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          for (var i = row; i < row + 2; i++) ...[
-                            if (i > row) const SizedBox(width: 10),
-                            Expanded(
-                              child: i < _categories.length
-                                  ? _categoryTile(
-                                      theme,
-                                      strings,
-                                      _categories[i].$1,
-                                      _categories[i].$2,
-                                    )
-                                  : const SizedBox.shrink(),
+                          Text(
+                            pain.dialogTitle,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            pain.dialogBody,
+                            style: theme.textTheme.bodySmall,
+                          ),
+                          const SizedBox(height: 12),
+                          PainScaleSelector(
+                            monochrome: true,
+                            value: _painScore,
+                            onChanged: (n) => setState(() => _painScore = n),
+                          ),
+                          if (_painScore != null) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              pain.rating(_painScore!).message,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                fontStyle: FontStyle.italic,
+                              ),
                             ),
                           ],
                         ],
                       ),
                     ),
-                    const SizedBox(height: 10),
-                  ],
-                  if (_classification != null)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Text(
-                        strings.selectedFormat.replaceFirst(
-                          '{category}',
-                          (strings.categoryNames[_classification] ??
-                                  _classification!) +
-                              (_severity == null
-                                  ? ''
-                                  : ' — ${strings.subTypeName(_severity)}'),
+                    // Itchiness 0-5 for a skin issue, styled like the pain card.
+                    if (_isSkinIssue) ...[
+                      const SizedBox(height: 14),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFDEEEC),
+                          borderRadius: BorderRadius.circular(20),
                         ),
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: primary,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  const SizedBox(height: 14),
-
-                  // Pain rating 0-5, in the same card style as the pain dialog.
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFDEEEC),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          pain.dialogTitle,
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(pain.dialogBody, style: theme.textTheme.bodySmall),
-                        const SizedBox(height: 12),
-                        PainScaleSelector(
-                          monochrome: true,
-                          value: _painScore,
-                          onChanged: (n) => setState(() => _painScore = n),
-                        ),
-                        if (_painScore != null) ...[
-                          const SizedBox(height: 8),
-                          Text(
-                            pain.rating(_painScore!).message,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              fontStyle: FontStyle.italic,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              AssessmentStrings.of(context).itchTitle,
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-
-                  // Guests get no notifications, so no reminder option.
-                  if (!isGuest)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: soft,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 17,
-                            backgroundColor: primary.withValues(alpha: 0.2),
-                            child: Icon(
-                              Icons.notifications_none,
-                              size: 18,
-                              color: primary,
+                            const SizedBox(height: 4),
+                            Text(
+                              AssessmentStrings.of(context).itchBody,
+                              style: theme.textTheme.bodySmall,
                             ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  NotificationStrings.of(context).remindMeTitle,
-                                  style: theme.textTheme.titleSmall?.copyWith(
-                                    fontWeight: FontWeight.bold,
+                            const SizedBox(height: 12),
+                            PainScaleSelector(
+                              monochrome: true,
+                              value: _itchScore,
+                              labels: AssessmentStrings.of(context).itchLabels,
+                              onChanged: (n) => setState(() => _itchScore = n),
+                            ),
+                            if (_itchScore != null) ...[
+                              const SizedBox(height: 8),
+                              Text(
+                                AssessmentStrings.of(
+                                  context,
+                                ).itchLabels[_itchScore!],
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 20),
+
+                    // Guests get no notifications, so no reminder option.
+                    if (!isGuest)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: soft,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 17,
+                              backgroundColor: primary.withValues(alpha: 0.2),
+                              child: Icon(
+                                Icons.notifications_none,
+                                size: 18,
+                                color: primary,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    NotificationStrings.of(
+                                      context,
+                                    ).remindMeTitle,
+                                    style: theme.textTheme.titleSmall?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
-                                ),
-                                Text(
-                                  NotificationStrings.of(
-                                    context,
-                                  ).remindMeSubtitle,
-                                  style: theme.textTheme.bodySmall,
-                                ),
-                              ],
+                                  Text(
+                                    NotificationStrings.of(
+                                      context,
+                                    ).remindMeSubtitle,
+                                    style: theme.textTheme.bodySmall,
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                          Switch(
-                            value: _remindMe,
-                            onChanged: (v) => setState(() => _remindMe = v),
-                          ),
-                        ],
+                            Switch(
+                              value: _remindMe,
+                              onChanged: (v) => setState(() => _remindMe = v),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  const SizedBox(height: 20),
+                    const SizedBox(height: 20),
+                  ],
 
                   ElevatedButton(
                     onPressed: _isSaving ? null : _handleSave,

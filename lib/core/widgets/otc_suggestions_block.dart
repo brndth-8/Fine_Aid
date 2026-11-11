@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../i18n/chat_strings.dart';
 import '../../services/api/gemini_service.dart'
     show OtcSuggestion, OtcSuggestionCategory;
 
@@ -21,12 +22,21 @@ import '../../services/api/gemini_service.dart'
 class OtcSuggestionsBlock extends StatelessWidget {
   final List<OtcSuggestion> suggestions;
 
-  const OtcSuggestionsBlock({super.key, required this.suggestions});
+  /// The AI result screen's look (a pink card with white rows, maroon
+  /// headings); the chat keeps the original look.
+  final bool cardStyle;
+
+  const OtcSuggestionsBlock({
+    super.key,
+    required this.suggestions,
+    this.cardStyle = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     if (suggestions.isEmpty) return const SizedBox.shrink();
     final theme = Theme.of(context);
+    final text = ChatStrings.of(context);
 
     final products = suggestions
         .where((s) => s.category == OtcSuggestionCategory.product)
@@ -39,11 +49,15 @@ class OtcSuggestionsBlock extends StatelessWidget {
       margin: const EdgeInsets.only(top: 8),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: theme.colorScheme.secondaryContainer.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: theme.colorScheme.secondary.withValues(alpha: 0.4),
-        ),
+        color: cardStyle
+            ? const Color(0xFFFFF0F0)
+            : theme.colorScheme.secondaryContainer.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(cardStyle ? 14 : 10),
+        border: cardStyle
+            ? null
+            : Border.all(
+                color: theme.colorScheme.secondary.withValues(alpha: 0.4),
+              ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -53,22 +67,23 @@ class OtcSuggestionsBlock extends StatelessWidget {
             _buildGroup(
               theme,
               icon: Icons.medication_outlined,
-              title: 'Suggested OTC products',
+              title: text.suggestedProducts,
               items: products,
+              cardStyle: cardStyle,
             ),
           if (supplies.isNotEmpty) ...[
             if (products.isNotEmpty) const SizedBox(height: 10),
             _buildGroup(
               theme,
               icon: Icons.inventory_2_outlined,
-              title: 'Suggested supplies',
+              title: text.suggestedSupplies,
               items: supplies,
+              cardStyle: cardStyle,
             ),
           ],
           const SizedBox(height: 8),
           Text(
-            "If symptoms don't improve or get worse, consult a doctor "
-            'or pharmacist.',
+            text.seeDoctorNote,
             style: theme.textTheme.labelSmall?.copyWith(
               fontStyle: FontStyle.italic,
               color: theme.colorScheme.onSurfaceVariant,
@@ -84,6 +99,7 @@ class OtcSuggestionsBlock extends StatelessWidget {
     required IconData icon,
     required String title,
     required List<OtcSuggestion> items,
+    bool cardStyle = false,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -91,19 +107,29 @@ class OtcSuggestionsBlock extends StatelessWidget {
       children: [
         Row(
           children: [
-            Icon(icon, size: 14, color: theme.colorScheme.secondary),
+            Icon(
+              icon,
+              size: cardStyle ? 16 : 14,
+              color: cardStyle
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.secondary,
+            ),
             const SizedBox(width: 6),
             Text(
               title,
               style: theme.textTheme.labelSmall?.copyWith(
                 fontWeight: FontWeight.bold,
-                color: theme.colorScheme.secondary,
+                fontSize: cardStyle ? 11.5 : null,
+                color: cardStyle
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.secondary,
               ),
             ),
           ],
         ),
         const SizedBox(height: 6),
-        for (final item in items) _CollapsibleSuggestion(suggestion: item),
+        for (final item in items)
+          _CollapsibleSuggestion(suggestion: item, cardStyle: cardStyle),
       ],
     );
   }
@@ -111,7 +137,11 @@ class OtcSuggestionsBlock extends StatelessWidget {
 
 class _CollapsibleSuggestion extends StatefulWidget {
   final OtcSuggestion suggestion;
-  const _CollapsibleSuggestion({required this.suggestion});
+  final bool cardStyle;
+  const _CollapsibleSuggestion({
+    required this.suggestion,
+    this.cardStyle = false,
+  });
 
   @override
   State<_CollapsibleSuggestion> createState() => _CollapsibleSuggestionState();
@@ -132,8 +162,10 @@ class _CollapsibleSuggestionState extends State<_CollapsibleSuggestion> {
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(8),
+        color: widget.cardStyle
+            ? Colors.white
+            : theme.colorScheme.surface.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(widget.cardStyle ? 14 : 8),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -173,11 +205,24 @@ class _CollapsibleSuggestionState extends State<_CollapsibleSuggestion> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (s.ageLimit.isNotEmpty) _detail(theme, 'Age', s.ageLimit),
+                  if (s.ageLimit.isNotEmpty)
+                    _detail(
+                      theme,
+                      ChatStrings.of(context).detailAge,
+                      s.ageLimit,
+                    ),
                   if (s.allergyPrecaution.isNotEmpty)
-                    _detail(theme, 'Allergy precaution', s.allergyPrecaution),
+                    _detail(
+                      theme,
+                      ChatStrings.of(context).detailAllergy,
+                      s.allergyPrecaution,
+                    ),
                   if (s.howToUse.isNotEmpty)
-                    _detail(theme, 'How to use', s.howToUse),
+                    _detail(
+                      theme,
+                      ChatStrings.of(context).detailHowToUse,
+                      s.howToUse,
+                    ),
                 ],
               ),
             ),

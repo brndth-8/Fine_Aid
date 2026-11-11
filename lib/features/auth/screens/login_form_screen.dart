@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import '../../../core/theme/app_theme.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../services/firebase/auth_service.dart';
+import '../../../services/firebase/login_lockout_config.dart';
 import '../../../services/api/gemini_service.dart';
 import '../../admin/screens/admin_dashboard_screen.dart';
+import '../../../i18n/screen_text_strings.dart';
 
 class LoginFormScreen extends StatefulWidget {
   const LoginFormScreen({super.key});
@@ -31,6 +34,11 @@ class _LoginFormScreenState extends State<LoginFormScreen> {
 
   Future<String?> _checkLockout(String username) async {
     try {
+      // The admin's failed-login lockout setting (on/off, how many wrong
+      // passwords, how long), read fresh before every attempt.
+      final config = await LoginLockoutConfig.load();
+      if (!config.enabled) return null;
+
       final doc = await FirebaseFirestore.instance
           .collection('loginAttempts')
           .doc(username.toLowerCase())
@@ -54,17 +62,17 @@ class _LoginFormScreenState extends State<LoginFormScreen> {
         }
       }
 
-      if (attempts >= 5) {
+      if (config.shouldLock(attempts)) {
         await FirebaseFirestore.instance
             .collection('loginAttempts')
             .doc(username.toLowerCase())
             .update({
               'lockedUntil': Timestamp.fromDate(
-                DateTime.now().add(const Duration(minutes: 15)),
+                DateTime.now().add(config.lockDuration),
               ),
             });
         return 'Too many failed attempts. '
-            'Account locked for 15 minutes.';
+            'Account locked for ${config.minutes} minutes.';
       }
 
       return null;
@@ -168,9 +176,7 @@ class _LoginFormScreenState extends State<LoginFormScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Something went wrong. Please try again.'),
-        ),
+        SnackBar(content: Text(ScreenText.of(context).somethingWentWrong)),
       );
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -198,189 +204,197 @@ class _LoginFormScreenState extends State<LoginFormScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    // The design is light (white page, grey fields), so this screen always uses
+    // the light theme, even when the phone is in dark mode.
+    final theme = AppTheme.lightTheme;
     const maroon = Color(0xFF8B0000);
     final label = theme.textTheme.titleMedium?.copyWith(
       fontWeight: FontWeight.bold,
       color: Colors.black,
     );
 
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Align(
-                      alignment: Alignment.topLeft,
-                      child: IconButton(
-                        icon: const Icon(
-                          Icons.arrow_back_ios,
-                          size: 22,
-                          color: maroon,
-                        ),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Center(
-                      child: Image.asset(
-                        'assets/images/FINE_AID_Logo.png',
-                        width: 250,
-                      ),
-                    ),
-                    const SizedBox(height: 36),
-
-                    // Username
-                    Text('Username', style: label),
-                    const SizedBox(height: 8),
-                    TextFormField(
-                      controller: _usernameController,
-                      decoration: _pillDecoration(
-                        hint: 'Enter Username',
-                        icon: Icons.person_outline,
-                      ),
-                      validator: (value) =>
-                          (value == null || value.trim().isEmpty)
-                          ? 'Username is required'
-                          : null,
-                    ),
-                    const SizedBox(height: 18),
-
-                    // Password
-                    Text('Password', style: label),
-                    const SizedBox(height: 8),
-                    TextFormField(
-                      controller: _passwordController,
-                      obscureText: _obscurePassword,
-                      decoration: _pillDecoration(
-                        hint: 'Enter Password',
-                        icon: Icons.lock_outline,
-                        suffix: IconButton(
-                          icon: Icon(
-                            _obscurePassword
-                                ? Icons.visibility_outlined
-                                : Icons.visibility_off_outlined,
-                            color: Colors.grey.shade700,
+    return Theme(
+      data: theme,
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Align(
+                        alignment: Alignment.topLeft,
+                        child: IconButton(
+                          icon: const Icon(
+                            Icons.arrow_back_ios,
+                            size: 22,
+                            color: maroon,
                           ),
-                          onPressed: () => setState(
-                            () => _obscurePassword = !_obscurePassword,
-                          ),
+                          onPressed: () => Navigator.pop(context),
                         ),
                       ),
-                      validator: (value) => (value == null || value.isEmpty)
-                          ? 'Password is required'
-                          : null,
-                    ),
-                    const SizedBox(height: 10),
-
-                    Row(
-                      children: [
-                        Checkbox(
-                          value: _keepSignedIn,
-                          activeColor: maroon,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(5),
-                          ),
-                          onChanged: (value) =>
-                              setState(() => _keepSignedIn = value ?? false),
+                      const SizedBox(height: 16),
+                      Center(
+                        child: Image.asset(
+                          'assets/images/FINE_AID_Logo.png',
+                          width: 250,
                         ),
-                        const Text('Keep me signed in'),
-                      ],
-                    ),
-                    const SizedBox(height: 36),
-
-                    // Login button
-                    ElevatedButton(
-                      onPressed: _isLoading ? null : _handleLogin,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: maroon,
-                        foregroundColor: Colors.white,
-                        minimumSize: const Size.fromHeight(54),
-                        shape: const StadiumBorder(),
                       ),
-                      child: _isLoading
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : Text(
-                              'Log In',
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                              ),
+                      const SizedBox(height: 36),
+
+                      // Username
+                      Text(ScreenText.of(context).username, style: label),
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        controller: _usernameController,
+                        decoration: _pillDecoration(
+                          hint: 'Enter Username',
+                          icon: Icons.person_outline,
+                        ),
+                        validator: (value) =>
+                            (value == null || value.trim().isEmpty)
+                            ? 'Username is required'
+                            : null,
+                      ),
+                      const SizedBox(height: 18),
+
+                      // Password
+                      Text(ScreenText.of(context).password, style: label),
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        controller: _passwordController,
+                        obscureText: _obscurePassword,
+                        decoration: _pillDecoration(
+                          hint: 'Enter Password',
+                          icon: Icons.lock_outline,
+                          suffix: IconButton(
+                            icon: Icon(
+                              _obscurePassword
+                                  ? Icons.visibility_outlined
+                                  : Icons.visibility_off_outlined,
+                              color: Colors.grey.shade700,
                             ),
-                    ),
-                    const SizedBox(height: 8),
-
-                    // Forgot password
-                    Center(
-                      child: TextButton(
-                        onPressed: () =>
-                            Navigator.pushNamed(context, '/forgot-password'),
-                        child: Text(
-                          'Forgot Password?',
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            color: const Color(0xFF780000),
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-
-                    const Row(
-                      children: [
-                        Expanded(child: Divider(color: Colors.grey)),
-                        Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 12),
-                          child: Text(
-                            'or',
-                            style: TextStyle(color: Colors.grey),
-                          ),
-                        ),
-                        Expanded(child: Divider(color: Colors.grey)),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-
-                    // Register link
-                    Center(
-                      child: TextButton(
-                        onPressed: () =>
-                            Navigator.pushNamed(context, '/registration'),
-                        child: RichText(
-                          text: TextSpan(
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: Colors.black,
+                            onPressed: () => setState(
+                              () => _obscurePassword = !_obscurePassword,
                             ),
-                            children: [
-                              const TextSpan(text: "Don't have an account? "),
-                              TextSpan(
-                                text: 'Register here',
-                                style: TextStyle(
+                          ),
+                        ),
+                        validator: (value) => (value == null || value.isEmpty)
+                            ? 'Password is required'
+                            : null,
+                      ),
+                      const SizedBox(height: 10),
+
+                      Row(
+                        children: [
+                          Checkbox(
+                            value: _keepSignedIn,
+                            activeColor: maroon,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(5),
+                            ),
+                            onChanged: (value) =>
+                                setState(() => _keepSignedIn = value ?? false),
+                          ),
+                          // Flexible: a long label wraps instead of overflowing.
+                          Flexible(
+                            child: Text(ScreenText.of(context).keepSignedIn),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 36),
+
+                      // Login button
+                      ElevatedButton(
+                        onPressed: _isLoading ? null : _handleLogin,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: maroon,
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size.fromHeight(54),
+                          shape: const StadiumBorder(),
+                        ),
+                        child: _isLoading
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : Text(
+                                'Log In',
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  color: Colors.white,
                                   fontWeight: FontWeight.bold,
-                                  color: const Color(0xFF780000),
                                 ),
                               ),
-                            ],
+                      ),
+                      const SizedBox(height: 8),
+
+                      // Forgot password
+                      Center(
+                        child: TextButton(
+                          onPressed: () =>
+                              Navigator.pushNamed(context, '/forgot-password'),
+                          child: Text(
+                            'Forgot Password?',
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              color: const Color(0xFF780000),
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 4),
+
+                      const Row(
+                        children: [
+                          Expanded(child: Divider(color: Colors.grey)),
+                          Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 12),
+                            child: Text(
+                              'or',
+                              style: TextStyle(color: Colors.grey),
+                            ),
+                          ),
+                          Expanded(child: Divider(color: Colors.grey)),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+
+                      // Register link
+                      Center(
+                        child: TextButton(
+                          onPressed: () =>
+                              Navigator.pushNamed(context, '/registration'),
+                          child: RichText(
+                            text: TextSpan(
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: Colors.black,
+                              ),
+                              children: [
+                                const TextSpan(text: "Don't have an account? "),
+                                TextSpan(
+                                  text: 'Register here',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: const Color(0xFF780000),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

@@ -3,6 +3,7 @@ import 'package:fine_aid/features/dashboard/screens/dashboard_screen.dart';
 import 'package:fine_aid/features/journal/screens/journal_list_screen.dart';
 import 'package:fine_aid/features/journal/screens/new_entry_screen.dart';
 import 'package:fine_aid/i18n/app_language.dart';
+import 'package:fine_aid/i18n/screen_text_strings.dart';
 import 'package:fine_aid/i18n/calendar_strings.dart';
 import 'package:fine_aid/i18n/date_picker_strings.dart';
 import 'package:fine_aid/i18n/journal_entry_strings.dart';
@@ -11,6 +12,8 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_core_platform_interface/test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'date_boxes_helpers.dart';
 
 void _ignoreListTileInkWarning() {
   final original = FlutterError.onError;
@@ -66,11 +69,7 @@ void main() {
       await pump(tester, const NewEntryScreen(), language: language);
       // the guest notice shown on entry
       await tester.tap(
-        find.text(
-          language == AppLanguage.en
-              ? 'Continue as Guest'
-              : 'Continue as Guest',
-        ),
+        find.text(ScreenText.forLanguage(language).continueAsGuest),
       );
       await tester.pumpAndSettle();
     }
@@ -88,8 +87,9 @@ void main() {
       await tester.tap(find.text(journal.formatDate(today)));
       await tester.pumpAndSettle();
       final earlier = today.subtract(const Duration(days: 3));
-      await tester.enterText(
-        find.byKey(const ValueKey('start-field')),
+      await enterDate(
+        tester,
+        'start',
         formatDateInput(earlier).replaceAll('/', ''),
       );
       await tester.pump();
@@ -103,8 +103,9 @@ void main() {
       await tester.tap(find.text(journal.formatDate(today)));
       await tester.pumpAndSettle();
       final later = today.add(const Duration(days: 3));
-      await tester.enterText(
-        find.byKey(const ValueKey('start-field')),
+      await enterDate(
+        tester,
+        'start',
         formatDateInput(later).replaceAll('/', ''),
       );
       await tester.pump();
@@ -122,8 +123,9 @@ void main() {
       await tester.tap(find.text(journal.formatDate(today)));
       await tester.pumpAndSettle();
       final old = today.subtract(const Duration(days: 500));
-      await tester.enterText(
-        find.byKey(const ValueKey('start-field')),
+      await enterDate(
+        tester,
+        'start',
         formatDateInput(old).replaceAll('/', ''),
       );
       await tester.pump();
@@ -150,9 +152,10 @@ void main() {
       await tester.tap(find.text(tlJournal.formatDate(today)));
       await tester.pumpAndSettle();
       expect(find.text(DatePickerStrings.tl.titleSingle), findsOneWidget);
+      // Month names stay in English, even in Filipino.
       expect(
         find.text(
-          '${CalendarStrings.tl.months[today.month - 1]} ${today.year}',
+          '${CalendarStrings.en.months[today.month - 1]} ${today.year}',
         ),
         findsOneWidget,
       );
@@ -165,7 +168,7 @@ void main() {
     ) async {
       await pump(tester, const DashboardScreen());
       // A guest sees the Help Tour first; skip it.
-      final skip = find.text('Skip Tour');
+      final skip = find.byTooltip('Skip Tour');
       if (skip.evaluate().isNotEmpty) {
         await tester.tap(skip);
         await tester.pumpAndSettle();
@@ -177,10 +180,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text(en.titleSingle), findsOneWidget);
 
-      await tester.enterText(
-        find.byKey(const ValueKey('start-field')),
-        '03152026',
-      );
+      await enterDate(tester, 'start', '03152026');
       await tester.pump();
       await tester.tap(find.text(en.ok));
       await tester.pumpAndSettle();
@@ -204,14 +204,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text(en.titleRange), findsOneWidget);
 
-      await tester.enterText(
-        find.byKey(const ValueKey('start-field')),
-        '01012026',
-      );
-      await tester.enterText(
-        find.byKey(const ValueKey('end-field')),
-        '01312026',
-      );
+      await enterDate(tester, 'start', '01012026');
+      await enterDate(tester, 'end', '01312026');
       await tester.pump();
       await tester.tap(find.text(en.ok));
       await tester.pumpAndSettle();

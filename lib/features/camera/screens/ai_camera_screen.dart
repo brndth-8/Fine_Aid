@@ -1,5 +1,9 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../../../core/widgets/guest_gate_dialogs.dart';
+import '../../../core/widgets/guest_usage_badge.dart';
+import '../../../services/guest_usage_service.dart';
 import '../../../services/api/gemini_service.dart';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
@@ -10,6 +14,7 @@ import 'multi_injury_screen.dart';
 import '../../../services/connectivity_service.dart';
 import '../../../services/image_compressor.dart';
 import '../../dashboard/first_aid_kit_screen.dart';
+import '../../../i18n/screen_text_strings.dart';
 
 class AiCameraScreen extends StatefulWidget {
   /// When true this is just a camera: it returns the captured photo's path
@@ -69,6 +74,8 @@ class _AiCameraScreenState extends State<AiCameraScreen>
   // it automatically instead of making the user tap "Try Again".
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    // The flashlight never stays on when the app is not in front.
+    if (state != AppLifecycleState.resumed) _turnTorchOff();
     if (state == AppLifecycleState.resumed && _cameraDenied) {
       _setupCamera();
     }
@@ -211,10 +218,22 @@ class _AiCameraScreenState extends State<AiCameraScreen>
         _torchOn = false;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Flashlight is not available on this camera.'),
-        ),
+        SnackBar(content: Text(ScreenText.of(context).flashlightUnavailable)),
       );
+    }
+  }
+
+  /// Switches the flashlight off (and the button with it) when it is on:
+  /// after a capture, when the scan ends, when the screen is left or the app
+  /// goes to the background. Never throws.
+  Future<void> _turnTorchOff() async {
+    if (!_torchOn) return;
+    final controller = _controller;
+    if (mounted) setState(() => _torchOn = false);
+    try {
+      await controller?.setFlashMode(FlashMode.off);
+    } catch (e) {
+      debugPrint('Could not switch the flashlight off: $e');
     }
   }
 
@@ -261,7 +280,19 @@ class _AiCameraScreenState extends State<AiCameraScreen>
     WidgetsBinding.instance.removeObserver(this);
     _progressTimer?.cancel();
     _focusRingTimer?.cancel();
-    _controller?.dispose();
+    // Leaving the screen (back, cancel, a finished scan): the flashlight goes
+    // off before the camera is released.
+    final controller = _controller;
+    if (controller != null && _torchOn) {
+      unawaited(
+        controller
+            .setFlashMode(FlashMode.off)
+            .catchError((Object _) {})
+            .whenComplete(controller.dispose),
+      );
+    } else {
+      controller?.dispose();
+    }
     super.dispose();
   }
 
@@ -277,11 +308,21 @@ class _AiCameraScreenState extends State<AiCameraScreen>
         await _showOfflineDialog();
         return;
       }
+      // A guest has a daily allowance of AI scans; once it is used up the
+      // photo is not even taken (see GuestUsageService).
+      if (FirebaseAuth.instance.currentUser == null &&
+          await GuestUsageService.instance.hasReachedLimit()) {
+        if (!mounted) return;
+        await showGuestUsageLimitDialog(context);
+        return;
+      }
     }
 
     setState(() => _isCapturing = true);
     try {
       final image = await _controller!.takePicture();
+      // The photo is taken: the flashlight is not needed any more.
+      await _turnTorchOff();
       if (!mounted) return;
       if (widget.captureOnly) {
         final path = await compressImageFile(image.path);
@@ -300,12 +341,12 @@ class _AiCameraScreenState extends State<AiCameraScreen>
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not capture image. Please try again.'),
-        ),
+        SnackBar(content: Text(ScreenText.of(context).couldNotCapture)),
       );
     } finally {
       _stopScanProgress();
+      // Also when the capture failed or the scan ended some other way.
+      await _turnTorchOff();
       if (mounted) {
         setState(() {
           _isCapturing = false;
@@ -357,8 +398,24 @@ class _AiCameraScreenState extends State<AiCameraScreen>
     await Future.delayed(const Duration(milliseconds: 350));
     if (!mounted) return;
 
-    if (detection.isBlurry) {
-      await _showBlurryDialog();
+    // Nothing is analysed unless the photo passed every check; each problem
+    // says what is wrong and lets the person try again.
+    final t = ScreenText.of(context);
+    if (detection.checkFailed) {
+      await _showImageProblemDialog(
+        t.imageCheckFailedTitle,
+        t.imageCheckFailedBody,
+      );
+      return;
+    }
+    if (detection.looksFake) {
+      // A drawing, illustration, render or other fake picture: the existing
+      // "no real wound" message.
+      await _showNoWoundDialog(artificialMarkSuspected: true);
+      return;
+    }
+    if (detection.isUnclear) {
+      await _showImageProblemDialog(t.imageUnclearTitle, t.imageUnclearBody);
       return;
     }
 
@@ -378,8 +435,10 @@ class _AiCameraScreenState extends State<AiCameraScreen>
     if (!mounted) return;
 
     // Multiple wounds detected
+    // The camera is replaced by the next screen (not left under it), so Back
+    // from the result goes to the Dashboard, never to this camera.
     if (detection.woundCount > 1) {
-      await Navigator.push(
+      await Navigator.pushReplacement(
         context,
         MaterialPageRoute(
           builder: (context) => MultiInjuryScreen(
@@ -393,7 +452,7 @@ class _AiCameraScreenState extends State<AiCameraScreen>
     }
 
     // Single wound — automatically selected, go straight to assessment
-    await Navigator.push(
+    await Navigator.pushReplacement(
       context,
       MaterialPageRoute(
         builder: (context) => AssessmentResultScreen(
@@ -418,40 +477,32 @@ class _AiCameraScreenState extends State<AiCameraScreen>
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('No Internet Connection'),
-        content: const Text(
-          'AI wound analysis requires an internet connection. Please check '
-          'your connection and try again, or use the offline First Aid '
-          'Health Kit instead.',
-        ),
+        content: Text(ScreenText.of(context).offlineAiBody),
         actions: [
           OutlinedButton(
             onPressed: _goToOfflineKit,
-            child: const Text('Offline First Aid Kit'),
+            child: Text(ScreenText.of(context).offlineFirstAidKit),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Retry'),
+            child: Text(ScreenText.of(context).retry),
           ),
         ],
       ),
     );
   }
 
-  Future<void> _showBlurryDialog() async {
+  Future<void> _showImageProblemDialog(String title, String body) async {
     await showDialog(
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Image Too Blurry'),
-        content: const Text(
-          'This photo is too blurry to assess safely. Please ensure the '
-          'area is well-lit and your camera is in focus, hold steady, and '
-          'try again.',
-        ),
+        title: Text(title),
+        content: Text(body),
         actions: [
           ElevatedButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Retake Photo'),
+            child: Text(ScreenText.of(context).retakePhoto),
           ),
         ],
       ),
@@ -465,22 +516,16 @@ class _AiCameraScreenState extends State<AiCameraScreen>
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('No Wound Detected'),
+        title: Text(ScreenText.of(context).noWoundTitle),
         content: Text(
           artificialMarkSuspected
-              ? 'Fine Aid could not confirm a real wound or skin condition '
-                    'in this image — the mark shown may not be an actual '
-                    'injury (eg, a drawing, marking, or something else on '
-                    'the skin). Please retake a photo of a real wound or '
-                    'skin issue if you have one.'
-              : 'Fine Aid could not detect a wound or skin condition in '
-                    'this image. Please retake a clearer photo of the '
-                    'affected area.',
+              ? ScreenText.of(context).noWoundMarkBody
+              : ScreenText.of(context).noWoundBody,
         ),
         actions: [
           ElevatedButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Retake Photo'),
+            child: Text(ScreenText.of(context).retakePhoto),
           ),
         ],
       ),
@@ -493,20 +538,15 @@ class _AiCameraScreenState extends State<AiCameraScreen>
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Unable to Confidently Analyze'),
-        content: const Text(
-          'This image is too unclear or ambiguous for Fine Aid to '
-          'confidently identify a wound. To avoid misleading guidance, '
-          'we won\'t proceed with this photo. Please retake a clearer '
-          'photo, or use the offline First Aid Health Kit.',
-        ),
+        content: Text(ScreenText.of(context).lowConfidenceBody),
         actions: [
           OutlinedButton(
             onPressed: _goToOfflineKit,
-            child: const Text('Offline Kit'),
+            child: Text(ScreenText.of(context).offlineKit),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Retake'),
+            child: Text(ScreenText.of(context).retake),
           ),
         ],
       ),
@@ -551,8 +591,8 @@ class _AiCameraScreenState extends State<AiCameraScreen>
                   width: double.infinity,
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: theme.colorScheme.primary,
-                    borderRadius: BorderRadius.circular(16),
+                    color: const Color(0xFFFFE797),
+                    borderRadius: BorderRadius.circular(14),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -561,24 +601,23 @@ class _AiCameraScreenState extends State<AiCameraScreen>
                         children: [
                           const Icon(
                             Icons.warning_amber_rounded,
-                            color: Colors.white,
-                            size: 18,
+                            color: Color(0xFF695300),
+                            size: 16,
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 6),
                           Text(
-                            'MEDICAL DISCLAIMER',
-                            style: theme.textTheme.labelLarge?.copyWith(
-                              color: Colors.white,
+                            ScreenText.of(context).cameraDisclaimerTitle,
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              color: const Color(0xFF695300),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 2),
                       Text(
-                        'This is only for initial assessment and not a diagnostic. '
-                        'Seek professional help.',
+                        ScreenText.of(context).cameraDisclaimerBody,
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: Colors.white,
+                          color: const Color(0xFF695300),
                         ),
                       ),
                     ],
@@ -591,6 +630,17 @@ class _AiCameraScreenState extends State<AiCameraScreen>
                 child: _buildCameraPreview(),
               ),
             ),
+            // A guest sees how many AI scans are left today (nothing for a
+            // signed-in user, or for the plain photo camera).
+            if (!widget.captureOnly && !_isAnalyzing)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: GuestUsageBadge(
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: Colors.white70,
+                  ),
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.all(24),
               child: _isAnalyzing

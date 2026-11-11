@@ -120,16 +120,42 @@ class _PermissionScreenState extends State<PermissionScreen>
                       style: theme.textTheme.headlineSmall,
                       textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 16),
-                    Text(s.intro, style: theme.textTheme.bodyMedium),
-                    const SizedBox(height: 16),
-                    Text(s.whyTitle, style: theme.textTheme.titleSmall),
-                    const SizedBox(height: 8),
-                    Text(s.why, style: theme.textTheme.bodyMedium),
-                    const SizedBox(height: 16),
-                    Text(s.privacyTitle, style: theme.textTheme.titleSmall),
-                    const SizedBox(height: 8),
-                    Text(s.privacy, style: theme.textTheme.bodyMedium),
+                    for (final section in s.sections) ...[
+                      const SizedBox(height: 16),
+                      Text(section.heading, style: theme.textTheme.titleSmall),
+                      const SizedBox(height: 8),
+                      if (section.paragraph != null)
+                        Text(
+                          section.paragraph!,
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                      for (final point in section.points)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('•  ', style: theme.textTheme.bodyMedium),
+                              Expanded(
+                                child: Text.rich(
+                                  TextSpan(
+                                    style: theme.textTheme.bodyMedium,
+                                    children: [
+                                      TextSpan(
+                                        text: '${point.label} ',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      TextSpan(text: point.text),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
                     const SizedBox(height: 16),
                     CheckboxListTile(
                       value: _allowCamera,

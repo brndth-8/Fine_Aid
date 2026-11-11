@@ -5,11 +5,11 @@ import 'health_kit_locale.dart';
 /// later English wording change can't silently break the Tagalog lookup.
 class HealthKitStrings {
   static const Map<String, String> _en = {
-    'bannerBody':
-        'A pre-loaded library for basic first aid guidance. Works '
-        'completely offline - no Wi-Fi or data needed.',
+    'bannerTitle': 'A preloaded library for basic first-aid guidance.',
+    'bannerSubtitle': 'Works completely offline - no Wi-Fi or data needed.',
     'categoryPrompt': 'What type of injury do you need help with?',
-    'categoryHint': 'Select an injury type',
+    'categorySubtitle':
+        'Select a condition below to view step-by-step first aid guidance.',
     'concernLabel': 'Describe your concern (optional)',
     'concernHint': 'eg, "The scratch is still painful after three days."',
     'startQuestions': 'Start Questions',
@@ -44,16 +44,18 @@ class HealthKitStrings {
         'internet connection.',
     'followUpHint': 'Ask a follow-up question...',
     'chooseDifferentInjury': 'Choose a Different Injury',
-    'languageToggleLabel': 'Language',
   };
 
   static const Map<String, String> _tl = {
-    'bannerBody':
-        'Isang naka-preload na sanggunian para sa pangunahing first aid. '
+    'bannerTitle':
+        'Isang naka-preload na sanggunian para sa pangunahing first aid.',
+    'bannerSubtitle':
         'Gumagana nang lubusang offline - hindi kailangan ng Wi-Fi o data.',
     'categoryPrompt':
         'Anong uri ng sugat o problema ang kailangan mo ng tulong?',
-    'categoryHint': 'Pumili ng uri ng sugat',
+    'categorySubtitle':
+        'Pumili ng kondisyon sa ibaba para makita ang hakbang-hakbang na '
+        'gabay sa first aid.',
     'concernLabel': 'Ilarawan ang iyong alalahanin (opsyonal)',
     'concernHint':
         'hal, "Masakit pa rin ang kalmot kahit tatlong araw na ang nakalipas."',
@@ -91,7 +93,6 @@ class HealthKitStrings {
         'para makakuha ng sagot.',
     'followUpHint': 'Magtanong ng karagdagang tanong...',
     'chooseDifferentInjury': 'Pumili ng Ibang Sugat',
-    'languageToggleLabel': 'Wika',
   };
 
   static String of(String key, HealthKitLocale locale) {

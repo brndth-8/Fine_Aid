@@ -133,7 +133,7 @@ class _HelpBlocksViewState extends State<HelpBlocksView> {
                 block.text,
                 style: theme.textTheme.titleSmall?.copyWith(
                   color: theme.colorScheme.primary,
-                  fontWeight: FontWeight.bold,
+                  fontSize: 11.5,
                 ),
               ),
             ),
@@ -141,27 +141,11 @@ class _HelpBlocksViewState extends State<HelpBlocksView> {
               padding: const EdgeInsets.only(bottom: 8),
               child: _labelled(theme, block.label, block.text),
             ),
+            // A notice is plain text too (no box); its lead words, up to the
+            // first colon, are bold.
             HelpCallout() => Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerHigh,
-                  border: Border.all(
-                    color: theme.colorScheme.primary,
-                    width: 1.2,
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  block.text,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    height: 1.4,
-                  ),
-                ),
-              ),
+              child: _notice(theme, block.text),
             ),
             HelpList() => Padding(
               padding: const EdgeInsets.only(bottom: 8),
@@ -187,8 +171,32 @@ class _HelpBlocksViewState extends State<HelpBlocksView> {
     );
   }
 
+  Widget _notice(ThemeData theme, String text) {
+    final base = theme.textTheme.bodyMedium?.copyWith(
+      fontSize: 11.5,
+      height: 1.4,
+    );
+    final colon = text.indexOf(':');
+    if (colon < 0 || colon > 48) return Text(text, style: base);
+    return Text.rich(
+      TextSpan(
+        style: base,
+        children: [
+          TextSpan(
+            text: text.substring(0, colon + 1),
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          TextSpan(text: text.substring(colon + 1)),
+        ],
+      ),
+    );
+  }
+
   Widget _labelled(ThemeData theme, String? label, String text) {
-    final base = theme.textTheme.bodyMedium?.copyWith(height: 1.4);
+    final base = theme.textTheme.bodyMedium?.copyWith(
+      fontSize: 11.5,
+      height: 1.4,
+    );
     return Text.rich(
       TextSpan(
         style: base,

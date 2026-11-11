@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../services/firebase/auth_service.dart';
+import '../admin_access.dart';
+import '../admin_two_step.dart';
 import 'admin_dashboard_screen.dart';
+import 'admin_two_step_setup_screen.dart';
 
 class AdminLoginScreen extends StatefulWidget {
   /// Neutral message shown above the form, e.g. after an idle sign-out.
@@ -16,7 +19,12 @@ class AdminLoginScreen extends StatefulWidget {
 class _AdminLoginScreenState extends State<AdminLoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _codeController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
+
+  /// Set when the password was right but this admin has an authenticator app:
+  /// the screen then asks for the 6-digit code to finish signing in.
+  MultiFactorResolver? _resolver;
 
   bool _isLoading = false;
   bool _obscurePassword = true;
@@ -34,6 +42,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _codeController.dispose();
     super.dispose();
   }
 
@@ -51,27 +60,20 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
         password: _passwordController.text,
       );
 
-      final admin = await AuthService().isAdmin(credential.user!.uid);
-
-      if (!admin) {
-        await FirebaseAuth.instance.signOut();
-        if (mounted) {
-          setState(() {
-            _errorMessage = 'This account does not have admin access.';
-            _isLoading = false;
-          });
-        }
-        return;
-      }
-
+      await _finishSignIn(credential);
+    } on FirebaseAuthMultiFactorException catch (e) {
+      // Right password, and this admin has an authenticator app: ask for the
+      // code before anything else.
       if (mounted) {
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (_) => const AdminDashboardScreen()),
-          (_) => false,
-        );
+        setState(() {
+          _resolver = e.resolver;
+          _codeController.clear();
+          _isLoading = false;
+        });
       }
     } on FirebaseAuthException catch (e) {
+      // Logged only if this email is an admin's (the server decides).
+      recordAdminSignInFailure(_emailController.text, e.code);
       String message;
       switch (e.code) {
         case 'user-not-found':
@@ -102,6 +104,173 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
         });
       }
     }
+  }
+
+  /// Everything after a completed sign-in (password only, or password plus
+  /// authenticator code): check admin access, log it, and go in.
+  Future<void> _finishSignIn(UserCredential credential) async {
+    // An admin is listed in `admins` AND carries the server-set admin
+    // claim in their token (refreshed here so a freshly granted claim is
+    // picked up).
+    final user = credential.user!;
+    final listed = await AuthService().isAdmin(user.uid);
+    final claimed = listed && await hasAdminClaim(user);
+    // The server logs the sign-in and decides success vs refused itself.
+    await recordAdminSignIn();
+
+    if (!claimed) {
+      await FirebaseAuth.instance.signOut();
+      if (mounted) {
+        setState(() {
+          _errorMessage = listed
+              ? "Admin access isn't active on this account yet. "
+                    'Please contact the system owner.'
+              : 'This account does not have admin access.';
+          _isLoading = false;
+        });
+      }
+      return;
+    }
+
+    // When admins must use an authenticator code and this sign-in had none
+    // (an admin who hasn't set one up yet), the only way on is to set it up.
+    if (!await twoStepSatisfied(user)) {
+      if (mounted) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const AdminTwoStepSetupScreen()),
+          (_) => false,
+        );
+      }
+      return;
+    }
+
+    if (mounted) {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const AdminDashboardScreen()),
+        (_) => false,
+      );
+    }
+  }
+
+  /// Second step of sign-in: the 6-digit code from the authenticator app.
+  Future<void> _verifyCode() async {
+    final resolver = _resolver;
+    if (resolver == null || _isLoading) return;
+    final code = _codeController.text.replaceAll(RegExp(r'\s'), '');
+    if (!isValidAuthenticatorCode(code)) {
+      setState(() => _errorMessage = 'Enter the 6-digit code from your app.');
+      return;
+    }
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+    try {
+      final hint = resolver.hints.firstWhere(
+        (h) => h.factorId == 'totp',
+        orElse: () => resolver.hints.first,
+      );
+      final assertion = await TotpMultiFactorGenerator.getAssertionForSignIn(
+        hint.uid,
+        code,
+      );
+      final credential = await resolver.resolveSignIn(assertion);
+      await _finishSignIn(credential);
+    } on FirebaseAuthException catch (e) {
+      // Logged only if this email is an admin's (the server decides).
+      recordAdminSignInFailure(_emailController.text, e.code);
+      if (mounted) {
+        setState(() {
+          _errorMessage = describeTwoStepError(e);
+          _isLoading = false;
+          if (e.code != 'invalid-verification-code') {
+            // The sign-in attempt itself has expired: start again.
+            if (e.code == 'code-expired' ||
+                e.code == 'session-expired' ||
+                e.code == 'totp-challenge-timeout') {
+              _resolver = null;
+            }
+          }
+          _codeController.clear();
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'An unexpected error occurred. Please try again.';
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  void _cancelCode() {
+    setState(() {
+      _resolver = null;
+      _errorMessage = null;
+      _codeController.clear();
+      _passwordController.clear();
+    });
+  }
+
+  /// The form shown instead of email + password while the code is asked for.
+  List<Widget> _codeStep(BuildContext context) {
+    final theme = Theme.of(context);
+    return [
+      Text(
+        'Two-step verification',
+        style: theme.textTheme.titleMedium?.copyWith(
+          fontWeight: FontWeight.w700,
+          color: const Color(0xFF333333),
+        ),
+      ),
+      const SizedBox(height: 8),
+      Text(
+        'Enter the 6-digit code from your authenticator app.',
+        textAlign: TextAlign.center,
+        style: theme.textTheme.bodySmall?.copyWith(color: Colors.black54),
+      ),
+      const SizedBox(height: 18),
+      AuthenticatorCodeField(
+        controller: _codeController,
+        enabled: !_isLoading,
+        onSubmit: _verifyCode,
+      ),
+      const SizedBox(height: 20),
+      SizedBox(
+        width: double.infinity,
+        height: 48,
+        child: ElevatedButton(
+          onPressed: _isLoading ? null : _verifyCode,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: _accentColor,
+            foregroundColor: Colors.white,
+            disabledBackgroundColor: _accentColor.withValues(alpha: 0.5),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+            ),
+            elevation: 0,
+          ),
+          child: _isLoading
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Text('Verify'),
+        ),
+      ),
+      const SizedBox(height: 8),
+      TextButton(
+        onPressed: _isLoading ? null : _cancelCode,
+        child: const Text('Back to sign in'),
+      ),
+    ];
   }
 
   Future<void> _showForgotPasswordDialog() async {
@@ -346,119 +515,125 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                           ),
                           const SizedBox(height: 16),
                         ],
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            'Email Address',
-                            style: _labelStyle(context),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        TextFormField(
-                          controller: _emailController,
-                          keyboardType: TextInputType.emailAddress,
-                          autocorrect: false,
-                          decoration: _inputDecoration(
-                            hint: 'Enter Admin Email',
-                          ),
-                          validator: (v) {
-                            if (v == null || v.trim().isEmpty) {
-                              return 'Please enter your admin email.';
-                            }
-                            if (!v.contains('@')) {
-                              return 'Enter a valid email address.';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 18),
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text('Password', style: _labelStyle(context)),
-                        ),
-                        const SizedBox(height: 6),
-                        TextFormField(
-                          controller: _passwordController,
-                          obscureText: _obscurePassword,
-                          decoration: _inputDecoration(
-                            hint: 'Enter Password',
-                            suffix: IconButton(
-                              icon: Icon(
-                                _obscurePassword
-                                    ? Icons.visibility_outlined
-                                    : Icons.visibility_off_outlined,
-                                color: Colors.black38,
-                                size: 18,
-                              ),
-                              onPressed: () => setState(
-                                () => _obscurePassword = !_obscurePassword,
-                              ),
-                            ),
-                          ),
-                          validator: (v) {
-                            if (v == null || v.isEmpty) {
-                              return 'Please enter your password.';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 8),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton(
-                            onPressed: _isLoading
-                                ? null
-                                : _showForgotPasswordDialog,
-                            style: TextButton.styleFrom(
-                              padding: EdgeInsets.zero,
-                              minimumSize: const Size(0, 32),
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            ),
+                        if (_resolver != null)
+                          ..._codeStep(context)
+                        else ...[
+                          Align(
+                            alignment: Alignment.centerLeft,
                             child: Text(
-                              'Forgot password?',
-                              style: Theme.of(context).textTheme.labelMedium
-                                  ?.copyWith(color: _accentColor),
+                              'Email Address',
+                              style: _labelStyle(context),
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 20),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 48,
-                          child: ElevatedButton(
-                            onPressed: _isLoading ? null : _signIn,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: _accentColor,
-                              foregroundColor: Colors.white,
-                              disabledBackgroundColor: _accentColor.withValues(
-                                alpha: 0.5,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(24),
-                              ),
-                              elevation: 0,
+                          const SizedBox(height: 6),
+                          TextFormField(
+                            controller: _emailController,
+                            keyboardType: TextInputType.emailAddress,
+                            autocorrect: false,
+                            decoration: _inputDecoration(
+                              hint: 'Enter Admin Email',
                             ),
-                            child: _isLoading
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
+                            validator: (v) {
+                              if (v == null || v.trim().isEmpty) {
+                                return 'Please enter your admin email.';
+                              }
+                              if (!v.contains('@')) {
+                                return 'Enter a valid email address.';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 18),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              'Password',
+                              style: _labelStyle(context),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          TextFormField(
+                            controller: _passwordController,
+                            obscureText: _obscurePassword,
+                            decoration: _inputDecoration(
+                              hint: 'Enter Password',
+                              suffix: IconButton(
+                                icon: Icon(
+                                  _obscurePassword
+                                      ? Icons.visibility_outlined
+                                      : Icons.visibility_off_outlined,
+                                  color: Colors.black38,
+                                  size: 18,
+                                ),
+                                onPressed: () => setState(
+                                  () => _obscurePassword = !_obscurePassword,
+                                ),
+                              ),
+                            ),
+                            validator: (v) {
+                              if (v == null || v.isEmpty) {
+                                return 'Please enter your password.';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 8),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: _isLoading
+                                  ? null
+                                  : _showForgotPasswordDialog,
+                              style: TextButton.styleFrom(
+                                padding: EdgeInsets.zero,
+                                minimumSize: const Size(0, 32),
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              child: Text(
+                                'Forgot password?',
+                                style: Theme.of(context).textTheme.labelMedium
+                                    ?.copyWith(color: _accentColor),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 48,
+                            child: ElevatedButton(
+                              onPressed: _isLoading ? null : _signIn,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: _accentColor,
+                                foregroundColor: Colors.white,
+                                disabledBackgroundColor: _accentColor
+                                    .withValues(alpha: 0.5),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(24),
+                                ),
+                                elevation: 0,
+                              ),
+                              child: _isLoading
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : Text(
+                                      'Login',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelLarge
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.white,
+                                          ),
                                     ),
-                                  )
-                                : Text(
-                                    'Login',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .labelLarge
-                                        ?.copyWith(
-                                          fontWeight: FontWeight.w600,
-                                          color: Colors.white,
-                                        ),
-                                  ),
+                            ),
                           ),
-                        ),
+                        ],
                       ],
                     ),
                   ),

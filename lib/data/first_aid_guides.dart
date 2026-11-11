@@ -51,32 +51,42 @@ const Map<String, List<GuideStep>> firstAidGuides = {
     _handsGloves,
     GuideStep(
       GuidePhase.before,
-      'Get clean running water, clean gauze or cloth, and a sterile '
-          'non-stick dressing ready.',
-      'Having supplies ready lets you cover the wound quickly and keep it '
-          'clean.',
+      'Get clean running water, clean gauze (or a clean cloth if '
+          'you do not have gauze), and a clean non-stick dressing '
+          'ready. For a small cut, a small adhesive bandage is fine.',
+      'Having supplies ready lets you cover the wound quickly and '
+          'keep it clean.',
     ),
     GuideStep(
       GuidePhase.during,
-      'Apply gentle, firm pressure with clean gauze or cloth to control '
+      'Press firmly but gently with clean gauze or cloth to control '
           'bleeding.',
-      'Pressure helps the blood clot and slows the bleeding.',
+      'Pressure helps the bleeding slow down and stop.',
     ),
     GuideStep(
       GuidePhase.during,
-      'Rinse the wound with clean running water once bleeding slows.',
+      'If you have it, you may pour a little hydrogen peroxide on '
+          'the wound for the first cleaning only, then rinse it off '
+          'with clean water. Do not use it again on the same wound.',
+      'It helps clean a fresh wound once. Using it again can '
+          'irritate the skin and slow healing.',
+    ),
+    GuideStep(
+      GuidePhase.during,
+      'Rinse the wound well with clean running water once bleeding '
+          'slows. Rinse off any hydrogen peroxide too.',
       'Washes out dirt and germs that can cause infection.',
     ),
     GuideStep(
       GuidePhase.during,
-      'Do not put alcohol, hydrogen peroxide, or petroleum jelly directly '
-          'on a fresh or bleeding wound.',
-      'Alcohol and hydrogen peroxide can irritate and damage healing '
-          'tissue, and petroleum jelly can trap moisture on a wet wound.',
+      'Do not put alcohol or petroleum jelly directly on a fresh or'
+          ' bleeding wound.',
+      'Alcohol can irritate and damage healing skin, and petroleum '
+          'jelly can trap moisture on a wet wound.',
     ),
     GuideStep(
       GuidePhase.during,
-      'Cover with a sterile bandage or dressing.',
+      'Cover with a clean bandage or dressing.',
       'Protects the wound from dirt and germs.',
     ),
     GuideStep(
@@ -91,9 +101,17 @@ const Map<String, List<GuideStep>> firstAidGuides = {
     _handsGloves,
     GuideStep(
       GuidePhase.before,
-      'Get clean running water, a clean cloth, and a small adhesive '
-          'bandage ready.',
+      'Get clean running water, a clean cloth or gauze, and a small'
+          ' adhesive bandage ready.',
       'Lets you clean and cover the cut right away.',
+    ),
+    GuideStep(
+      GuidePhase.during,
+      'If you have it, you may pour a little hydrogen peroxide on '
+          'the cut for the first cleaning only, then rinse it off with '
+          'clean water. Do not use it again on the same cut.',
+      'It helps clean a fresh wound once. Using it again can '
+          'irritate the skin and slow healing.',
     ),
     GuideStep(
       GuidePhase.during,
@@ -102,15 +120,15 @@ const Map<String, List<GuideStep>> firstAidGuides = {
     ),
     GuideStep(
       GuidePhase.during,
-      'Apply gentle pressure with a clean cloth if it\'s bleeding.',
+      'Press gently with a clean cloth if it\'s bleeding.',
       'Pressure helps the bleeding stop.',
     ),
     GuideStep(
       GuidePhase.during,
-      'Apply an antiseptic if available, as directed on the label. Do not '
-          'pour alcohol or hydrogen peroxide on the cut.',
-      'An antiseptic lowers the germs on the skin; alcohol and hydrogen '
-          'peroxide can damage healing tissue.',
+      'Put on an antiseptic if you have one, as directed on the label. '
+          'Do not pour alcohol on the cut.',
+      'An antiseptic lowers the germs on the skin; alcohol can '
+          'damage healing skin.',
     ),
     GuideStep(
       GuidePhase.during,
@@ -128,9 +146,17 @@ const Map<String, List<GuideStep>> firstAidGuides = {
   'scratch': [
     GuideStep(
       GuidePhase.before,
-      'Wash your hands with soap and water. Have mild soap, clean water, '
-          'and a clean bandage ready.',
+      'Wash your hands with soap and water. Have mild soap, clean '
+          'water, and a clean bandage (or a small adhesive bandage) ready.',
       'Keeps germs from your hands out of the scratch.',
+    ),
+    GuideStep(
+      GuidePhase.during,
+      'If you have it, you may pour a little hydrogen peroxide on '
+          'the scratch for the first cleaning only, then rinse it off '
+          'with clean water. Do not use it again on the same scratch.',
+      'It helps clean a fresh wound once. Using it again can '
+          'irritate the skin and slow healing.',
     ),
     GuideStep(
       GuidePhase.during,
@@ -139,14 +165,13 @@ const Map<String, List<GuideStep>> firstAidGuides = {
     ),
     GuideStep(
       GuidePhase.during,
-      'Apply an antiseptic if available, as directed on the label. Do not '
-          'pour alcohol or hydrogen peroxide on the scratch.',
-      'An antiseptic lowers germs; alcohol and hydrogen peroxide can '
-          'irritate the skin.',
+      'Put on an antiseptic if you have one, as directed on the label. '
+          'Do not pour alcohol on the scratch.',
+      'An antiseptic lowers germs; alcohol can irritate the skin.',
     ),
     GuideStep(
       GuidePhase.during,
-      'Cover with a clean bandage if it\'s in an area prone to friction.',
+      'Cover with a clean bandage if the spot gets rubbed a lot.',
       'Stops clothing or movement from rubbing the scratch.',
     ),
     GuideStep(
@@ -165,8 +190,18 @@ const Map<String, List<GuideStep>> firstAidGuides = {
     _handsGloves,
     GuideStep(
       GuidePhase.before,
-      'Get clean running water and a sterile non-stick dressing ready.',
+      'Get clean running water and a clean non-stick dressing '
+          'ready. If you do not have one, use clean gauze or a clean '
+          'cloth with tape.',
       'You will need them right after rinsing.',
+    ),
+    GuideStep(
+      GuidePhase.during,
+      'If you have it, you may pour a little hydrogen peroxide on '
+          'the scrape for the first cleaning only, then rinse it off '
+          'with clean water. Do not use it again on the same scrape.',
+      'It helps clean a fresh wound once. Using it again can '
+          'irritate the skin and slow healing.',
     ),
     GuideStep(
       GuidePhase.during,
@@ -175,24 +210,24 @@ const Map<String, List<GuideStep>> firstAidGuides = {
     ),
     GuideStep(
       GuidePhase.during,
-      'Remove any loose, visible debris carefully.',
+      'Carefully take out any loose dirt you can see.',
       'Dirt left in the wound raises the risk of infection.',
     ),
     GuideStep(
       GuidePhase.during,
-      'Do not pour alcohol or hydrogen peroxide on the scrape, and do not '
-          'apply petroleum jelly while it is still moist or weeping.',
-      'They can irritate or damage healing tissue, and a greasy layer on '
-          'a wet wound can trap moisture.',
+      'Do not pour alcohol on the scrape, and do not put '
+          'petroleum jelly on it while it is still wet or oozing.',
+      'Alcohol can irritate or damage healing skin, and a greasy '
+          'layer on a wet wound can trap moisture.',
     ),
     GuideStep(
       GuidePhase.during,
-      'Apply antiseptic ointment if available, as directed on the label.',
+      'Put on antiseptic ointment if you have it, as directed on the label.',
       'Helps lower the germs on the scraped skin.',
     ),
     GuideStep(
       GuidePhase.during,
-      'Cover with a sterile, non-stick dressing.',
+      'Cover with a clean, non-stick dressing.',
       'Protects the wound and does not tear it open when removed.',
     ),
     GuideStep(
@@ -205,16 +240,25 @@ const Map<String, List<GuideStep>> firstAidGuides = {
       GuidePhase.after,
       'Check the area each day for spreading redness, warmth, swelling, '
           'pus, or fever. See a healthcare professional if any appear, or if '
-          'debris will not rinse out.',
-      'Debris and infection need professional care.',
+          'dirt will not rinse out.',
+      'Dirt left in the wound and infection need care from a professional.',
     ),
   ],
   'puncture_wound': [
     _handsGloves,
     GuideStep(
       GuidePhase.before,
-      'Get soap, clean water, clean gauze, and a clean bandage ready.',
+      'Get soap, clean water, clean gauze (or a clean cloth), and a'
+          ' clean bandage ready.',
       'Lets you clean and cover the wound promptly.',
+    ),
+    GuideStep(
+      GuidePhase.during,
+      'If you have it, you may pour a little hydrogen peroxide on '
+          'the wound for the first cleaning only, then rinse it off '
+          'with clean water. Do not use it again on the same wound.',
+      'It helps clean a fresh wound once. Using it again can '
+          'irritate the skin and slow healing.',
     ),
     GuideStep(
       GuidePhase.during,
@@ -224,11 +268,11 @@ const Map<String, List<GuideStep>> firstAidGuides = {
     GuideStep(
       GuidePhase.during,
       'Do not push on the wound to make it bleed "to clean it out."',
-      'Pressing can damage the tissue and does not clean the wound.',
+      'Pressing can hurt the skin and does not clean the wound.',
     ),
     GuideStep(
       GuidePhase.during,
-      'Apply gentle pressure with clean gauze if it\'s bleeding.',
+      'Press gently with clean gauze if it\'s bleeding.',
       'Pressure helps the bleeding stop.',
     ),
     GuideStep(
@@ -257,10 +301,11 @@ const Map<String, List<GuideStep>> firstAidGuides = {
     ),
     GuideStep(
       GuidePhase.before,
-      'Remove jewelry or tight items near the burned area, and get cool '
-          'running water and a clean, non-stick dressing ready.',
-      'The area may swell, which makes rings and tight items hard to '
-          'remove later.',
+      'Remove jewelry or tight items near the burned area, and get '
+          'cool running water and a clean, non-stick dressing ready (or'
+          ' a clean, lint-free cloth if you do not have one).',
+      'The area may swell, which makes rings and tight items hard '
+          'to remove later.',
     ),
     GuideStep(
       GuidePhase.during,
@@ -270,7 +315,7 @@ const Map<String, List<GuideStep>> firstAidGuides = {
     ),
     GuideStep(
       GuidePhase.during,
-      'Do not apply ice directly to the burn.',
+      'Do not put ice directly on the burn.',
       'Ice can damage the skin even more.',
     ),
     GuideStep(
@@ -300,7 +345,9 @@ const Map<String, List<GuideStep>> firstAidGuides = {
   'bruise': [
     GuideStep(
       GuidePhase.before,
-      'Get a clean cloth or towel and a cold pack or ice ready.',
+      'Get a clean cloth or towel and a cold pack or ice ready. If '
+          'you have no cold pack, use a bag of ice or frozen vegetables'
+          ' wrapped in the cloth.',
       'The cold must be wrapped, never placed straight on the skin.',
     ),
     GuideStep(
@@ -310,18 +357,18 @@ const Map<String, List<GuideStep>> firstAidGuides = {
     ),
     GuideStep(
       GuidePhase.during,
-      'Apply a cold compress (wrapped, not directly on skin) for 15-20 '
+      'Put a cold pack on the area (wrapped in cloth, not directly on skin) for 15-20 '
           'minutes.',
       'Cold reduces swelling and pain, and direct ice can injure the skin.',
     ),
     GuideStep(
       GuidePhase.during,
-      'Elevate the area above heart level if possible.',
+      'Raise the area above your heart if you can.',
       'Helps fluid drain away from the area.',
     ),
     GuideStep(
       GuidePhase.after,
-      'After 48 hours, a warm compress can help with healing.',
+      'After 48 hours, a warm, damp cloth can help with healing.',
       'Warmth increases blood flow, which helps clear the bruise.',
     ),
     GuideStep(
@@ -332,14 +379,16 @@ const Map<String, List<GuideStep>> firstAidGuides = {
     GuideStep(
       GuidePhase.after,
       'See a healthcare professional if swelling or pain increases, or if '
-          'the area becomes numb or hard to move.',
+          'the area loses feeling or is hard to move.',
       'These can be signs of a deeper injury.',
     ),
   ],
   'swelling': [
     GuideStep(
       GuidePhase.before,
-      'Get a clean cloth or towel and a cold pack or ice ready.',
+      'Get a clean cloth or towel and a cold pack or ice ready. If '
+          'you have no cold pack, use a bag of ice or frozen vegetables'
+          ' wrapped in the cloth.',
       'The cold must be wrapped, never placed straight on the skin.',
     ),
     GuideStep(
@@ -349,14 +398,14 @@ const Map<String, List<GuideStep>> firstAidGuides = {
     ),
     GuideStep(
       GuidePhase.during,
-      'Apply a cold compress (wrapped, not directly on skin) for 15-20 '
+      'Put a cold pack on the area (wrapped in cloth, not directly on skin) for 15-20 '
           'minutes.',
       'Cold helps reduce swelling and pain, and direct ice can injure the '
           'skin.',
     ),
     GuideStep(
       GuidePhase.during,
-      'Elevate the area above heart level if possible.',
+      'Raise the area above your heart if you can.',
       'Helps fluid drain away from the area.',
     ),
     GuideStep(
@@ -383,19 +432,40 @@ const Map<String, List<GuideStep>> firstAidGuides = {
       'Keeps germs from your hands away from irritated skin.',
     ),
     GuideStep(
+      GuidePhase.before,
+      'Prepare clean, lukewarm water and a soft, clean towel (or a '
+          'clean soft cloth).',
+      'Gentle water and a soft towel are kinder to irritated skin.',
+    ),
+    GuideStep(
       GuidePhase.during,
       'Avoid scratching the affected area.',
       'Scratching can break the skin and lead to infection.',
     ),
     GuideStep(
       GuidePhase.during,
-      'Wash the area gently with mild soap and cool water.',
-      'Removes irritants without drying out the skin.',
+      'Wash the affected area gently with mild soap and lukewarm '
+          'water. Remove any surface dirt.',
+      'Removes irritants and dirt without drying out the skin.',
     ),
     GuideStep(
       GuidePhase.during,
-      'Apply a fragrance-free moisturizer or soothing lotion if available.',
+      'After washing, let the skin air-dry. Do not rub it with a '
+          'towel, and keep the area uncovered.',
+      'Rubbing can make the rash worse, and an uncovered area can '
+          'dry on its own.',
+    ),
+    GuideStep(
+      GuidePhase.during,
+      'Put on a mild, fragrance-free moisturizer or soothing lotion '
+          'if available.',
       'Soothes dry, itchy skin without adding more irritants.',
+    ),
+    GuideStep(
+      GuidePhase.during,
+      'Protect the face from direct sunlight, and cover other '
+          'affected skin with loose clothing.',
+      'Sun can irritate skin that is already sensitive.',
     ),
     GuideStep(
       GuidePhase.during,
@@ -404,14 +474,20 @@ const Map<String, List<GuideStep>> firstAidGuides = {
     ),
     GuideStep(
       GuidePhase.after,
-      'Keep track of when the rash started and anything new you were '
-          'exposed to.',
+      'Keep track of when the rash started and anything new you '
+          'were exposed to.',
       'Helps you and a health professional find the cause.',
     ),
     GuideStep(
       GuidePhase.after,
-      'Get medical help right away if the rash spreads quickly or comes '
-          'with trouble breathing or facial swelling.',
+      'Consult a doctor for formal evaluation if the rash does not '
+          'get better in a few days or keeps coming back.',
+      'A doctor can find the cause and give the right treatment.',
+    ),
+    GuideStep(
+      GuidePhase.after,
+      'Get medical help right away if the rash spreads quickly or '
+          'comes with trouble breathing or facial swelling.',
       'These can be signs of a severe allergic reaction.',
     ),
   ],
@@ -423,14 +499,20 @@ const Map<String, List<GuideStep>> firstAidGuides = {
       'Keeps germs from your hands away from the affected skin.',
     ),
     GuideStep(
+      GuidePhase.before,
+      'Prepare clean, lukewarm water and a soft, clean towel (or a '
+          'clean soft cloth).',
+      'Gentle water and a soft towel are kinder to irritated skin.',
+    ),
+    GuideStep(
       GuidePhase.during,
       'Keep the affected area clean.',
       'Clean skin is less likely to get infected.',
     ),
     GuideStep(
       GuidePhase.during,
-      'Apply gentle first aid appropriate to what you\'re seeing '
-          '(cleaning, cold compress wrapped in cloth, or rest as needed).',
+      'Give gentle first aid that fits what you see '
+          '(cleaning, a cold pack wrapped in cloth, or rest as needed).',
       'Gentle care avoids making an unknown problem worse.',
     ),
     GuideStep(
@@ -445,8 +527,9 @@ const Map<String, List<GuideStep>> firstAidGuides = {
     ),
     GuideStep(
       GuidePhase.after,
-      'If unsure what you\'re dealing with, treat cautiously and watch '
-          'closely, and see a healthcare professional if it worsens.',
+      'If you are unsure what you are dealing with, treat it gently'
+          ' and watch closely. Consult a doctor for formal evaluation '
+          'if it gets worse or does not improve.',
       'An unclear problem is safest checked by a professional.',
     ),
   ],

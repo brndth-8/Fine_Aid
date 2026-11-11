@@ -120,6 +120,14 @@ async function main() {
     }
   }
 
+  // The admin role is the admins/{uid} doc AND this server-set claim (rules
+  // and Cloud Functions check both). Idempotent; other claims are kept.
+  await auth.setCustomUserClaims(userRecord.uid, {
+    ...(userRecord.customClaims || {}),
+    admin: true,
+  });
+  console.log('Set the admin custom claim.');
+
   console.log('\n✔ Admin account is ready.');
   console.log(`  Email: ${ADMIN_EMAIL}`);
   if (isNewUser) {

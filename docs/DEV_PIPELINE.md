@@ -11,7 +11,7 @@ If your machine dies, these cannot be recovered from the repo.
 |---|---|---|---|
 | Android signing keystore | `android/app/release.keystore` | Lose it = can never update the published app | Password manager / encrypted drive |
 | Keystore alias + passwords | `android/app/build.gradle.kts` (`signingConfigs`) | Needed to sign releases | Password manager |
-| Gemini + Semaphore keys | `lib/core/constants/api_keys.dart` (gitignored) | App won't compile without this file | Password manager |
+| Gemini + Semaphore keys | Secret Manager (`firebase functions:secrets:set GEMINI_API_KEY` / `SEMAPHORE_API_KEY`) | The app holds no keys; the Cloud Functions do | Password manager |
 | Android Firebase config | `android/app/google-services.json` (gitignored) | Android build fails without it | Re-download from Firebase console |
 | Firebase Admin key | `seed_firestore/serviceAccountKey*.json` (gitignored) | Full DB admin access — used by the seeder | Password manager; delete the `(2)` duplicate |
 | Cloud Functions secrets | Firebase Secret Manager: `SEMAPHORE_API_KEY`, `SMTP_USER`, `SMTP_PASS` | SMS/email OTP stops working | Password manager |
@@ -36,10 +36,9 @@ cd functions && npm ci && cd ..
 ```
 
 Then restore the gitignored files from section 1:
-1. Create `lib/core/constants/api_keys.dart` with `ApiKeys.gemini` and `ApiKeys.semaphore` constants.
-2. Put `google-services.json` in `android/app/`.
-3. Put `release.keystore` in `android/app/`.
-4. (Only for seeding) put `serviceAccountKey.json` in `seed_firestore/`.
+1. Put `google-services.json` in `android/app/`.
+2. Put `release.keystore` in `android/app/`.
+3. (Only for seeding) put `serviceAccountKey.json` in `seed_firestore/`.
 
 ## 4. The pipeline
 
@@ -77,7 +76,7 @@ code  ->  analyze/test  ->  build  ->  deploy  ->  verify
 ## 6. Known gotchas / security to-dos
 
 - Keystore passwords are hardcoded in tracked `build.gradle.kts`. Move them to a gitignored `key.properties` and **rotate** them.
-- `api_keys.dart` compiles API keys into the app binary; anyone can extract them. Restrict the keys in Google Cloud / Semaphore, or proxy calls through Cloud Functions.
+- The Gemini and Semaphore keys live only in Secret Manager (used by `geminiProxy` and `sendAccountVerificationOtpSms`); never put a key back into the app. Rotate a key by creating a new one at the provider and running `firebase functions:secrets:set <NAME>`, then redeploy the functions.
 - `seed_firestore/serviceAccountKey*.json` gives full admin access. Rotate if ever shared; keep out of screenshots and chat logs.
 - Domain `fineaid.com` is a placeholder (`web/robots.txt`, `web/sitemap.xml`).
 - `build/`, `.dart_tool/`, and `node_modules/` are safe to delete and regenerate.

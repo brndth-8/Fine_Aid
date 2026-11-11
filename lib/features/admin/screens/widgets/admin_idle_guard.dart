@@ -23,6 +23,7 @@ class AdminIdleGuard extends StatefulWidget {
     super.key,
     required this.child,
     required this.onIdleTimeout,
+    this.enabled = true,
     this.timeout = kAdminIdleTimeout,
     this.warning = kAdminIdleWarning,
     this.clock = DateTime.now,
@@ -30,6 +31,11 @@ class AdminIdleGuard extends StatefulWidget {
 
   final Widget child;
   final Future<void> Function() onIdleTimeout;
+
+  /// The System Security switch. While off nothing is timed or shown; turning
+  /// it back on starts a fresh idle period. Read on every tick, so a change
+  /// made on the Security page applies straight away.
+  final bool enabled;
   final Duration timeout;
   final Duration warning;
 
@@ -94,6 +100,12 @@ class _AdminIdleGuardState extends State<AdminIdleGuard> {
 
   void _tick() {
     if (!mounted || _fired) return;
+    if (!widget.enabled) {
+      // Switched off: no countdown, and a fresh period when it comes back.
+      _closeWarning();
+      _lastActivity = widget.clock();
+      return;
+    }
     final idle = widget.clock().difference(_lastActivity);
     if (idle >= widget.timeout) {
       _fired = true;
@@ -105,6 +117,9 @@ class _AdminIdleGuardState extends State<AdminIdleGuard> {
     if (untilLogout <= widget.warning) {
       _secondsLeft.value = untilLogout.inSeconds + 1;
       if (!_warningOpen) _showWarning();
+    } else if (_warningOpen) {
+      // The timeout was lengthened while the warning was showing.
+      _closeWarning();
     }
   }
 

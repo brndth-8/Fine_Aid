@@ -3,16 +3,27 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import '../../../services/export_service.dart';
+import '../../../services/connectivity_service.dart';
+import '../../../i18n/offline_strings.dart';
 import '../../../services/firebase/notification_service.dart';
 import '../../../i18n/notification_strings.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/evaluation_card.dart';
+import '../../../core/widgets/first_aid_step_list.dart';
+import '../../../data/first_aid_guides.dart' show GuidePhase;
+import '../../../i18n/health_kit_locale.dart';
+import '../../../i18n/health_kit_ui_strings.dart';
+import '../../../i18n/journal_edit_strings.dart';
 import '../../../data/journal_evaluation.dart';
 import '../../../i18n/app_language.dart';
+import '../../../data/health_profile_summary.dart';
 import '../../../data/healing_durations.dart';
+import '../../../i18n/checklist_strings.dart';
+import '../../../services/health_profile_service.dart';
 import '../../../core/widgets/nearby_healthcare_sheet.dart';
-import '../../../core/widgets/classification_info_button.dart';
 import '../../chatbot/screens/chatbot_screen.dart';
-import 'journal_list_screen.dart';
+import 'journal_entry_menu.dart';
+import '../../../i18n/screen_text_strings.dart';
 
 class EntryDetailScreen extends StatefulWidget {
   final String entryId;
@@ -51,8 +62,10 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
   }
 
   int? _standardDuration() {
-    final classification = widget.data['classification'] as String?;
-    return healingDurationDays[classification];
+    return healingDaysFor(
+      widget.data['classification'] as String?,
+      severity: widget.data['severity'] as String?,
+    );
   }
 
   Future<void> _maybeShowMilestone() async {
@@ -141,6 +154,59 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
     } catch (_) {
       // Non-critical; if this fails, the dialog may reappear next visit
     }
+  }
+
+  Widget _buildPhotoStrip(ThemeData theme, List<String> imageUrls) {
+    final s = JournalEditStrings.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          s.photosCountFormat(imageUrls.length),
+          style: theme.textTheme.titleSmall,
+        ),
+        const SizedBox(height: 6),
+        SizedBox(
+          height: 72,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: imageUrls.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 8),
+            itemBuilder: (_, i) => GestureDetector(
+              onTap: () => showDialog<void>(
+                context: context,
+                builder: (dialogContext) => Dialog(
+                  child: InteractiveViewer(
+                    child: Image.network(
+                      imageUrls[i],
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, _, _) => const Padding(
+                        padding: EdgeInsets.all(32),
+                        child: Icon(Icons.cloud_off_outlined, size: 48),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Image.network(
+                  imageUrls[i],
+                  width: 72,
+                  height: 72,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => const SizedBox(
+                    width: 72,
+                    height: 72,
+                    child: ColoredBox(color: Colors.black12),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildConversationSection(ThemeData theme) {
@@ -302,91 +368,246 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
 
     final progress = (monitored / standard).clamp(0.0, 1.0);
     final isComplete = monitored >= standard;
+    final primary = theme.colorScheme.primary;
 
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFCEDED),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: primary, width: 1),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Flexible(
+                    child: Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(
+                            text: 'Healing Progress',
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              color: Colors.black,
+                            ),
+                          ),
+                          TextSpan(
+                            text: ' (Estimate)',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: Colors.black,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    isComplete
+                        ? 'Milestone reached!'
+                        : 'Day $monitored of $standard',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: isComplete ? Colors.green[700] : Colors.black,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: LinearProgressIndicator(
+                  value: progress,
+                  minHeight: 14,
+                  backgroundColor: const Color(0xFFFBD3D3),
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    isComplete ? Colors.green : primary,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Day 0', style: theme.textTheme.bodySmall),
+                  Text(
+                    'Day $standard\n(Standard)',
+                    style: theme.textTheme.bodySmall,
+                    textAlign: TextAlign.right,
+                  ),
+                ],
+              ),
+              if (isComplete) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.check_circle,
+                      color: Colors.green[700],
+                      size: 16,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'You\'ve reached the standard healing timeframe.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: Colors.green[700],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'This is a general estimate based on typical recovery '
+          'timelines, not a guaranteed recovery date. Actual healing '
+          'varies by person — consult a doctor if it isn\'t improving.',
+          style: AppTheme.noteStyle(),
+        ),
+      ],
+    );
+  }
+
+  /// An AI-scan entry's saved text, split back into its facts (Wound type,
+  /// Triage, Pain score...) and anything else it says. Null for an entry that
+  /// was written by hand.
+  ({List<(String, String)> facts, String rest})? _aiParts(String description) {
+    if (widget.data['source'] != 'ai_camera') return null;
+    final facts = <(String, String)>[];
+    final rest = <String>[];
+    var inSteps = false;
+    var inFacts = true;
+    for (final raw in description.split('\n')) {
+      final line = raw.trimRight();
+      if (inFacts) {
+        final m = RegExp(r'^([A-Za-z ]{2,24}):\s*(.+)$').firstMatch(line);
+        if (m != null) {
+          final label = m.group(1)!;
+          facts.add((label, m.group(2)!));
+          continue;
+        }
+        inFacts = false;
+      }
+      if (line.trim().toUpperCase() == 'FIRST AID STEPS:') {
+        inSteps = true;
+        continue;
+      }
+      if (inSteps) {
+        if (line.trim().isEmpty) {
+          inSteps = false;
+        }
+        continue; // the steps are drawn from the saved list
+      }
+      rest.add(line);
+    }
+    if (facts.isEmpty) return null;
+    return (facts: facts, rest: rest.join('\n').trim());
+  }
+
+  /// The blue box of facts: bold label, then its value.
+  Widget _factsBox(ThemeData theme, List<(String, String)> facts) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(16),
+        color: const Color(0xFFDCEBFA),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFF3F6DB3), width: 1),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Healing Progress (Estimate)',
-                style: theme.textTheme.titleSmall,
-              ),
-              Text(
-                isComplete
-                    ? 'Milestone reached!'
-                    : 'Day $monitored of $standard',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: isComplete
-                      ? Colors.green[700]
-                      : theme.colorScheme.primary,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: LinearProgressIndicator(
-              value: progress,
-              minHeight: 12,
-              backgroundColor: theme.colorScheme.primary.withValues(
-                alpha: 0.15,
-              ),
-              valueColor: AlwaysStoppedAnimation<Color>(
-                isComplete ? Colors.green : theme.colorScheme.primary,
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Day 0', style: theme.textTheme.bodySmall),
-              Text(
-                'Day $standard\n(Standard)',
-                style: theme.textTheme.bodySmall,
-                textAlign: TextAlign.right,
-              ),
-            ],
-          ),
-          if (isComplete) ...[
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Icon(Icons.check_circle, color: Colors.green[700], size: 16),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    'You\'ve reached the standard healing timeframe.',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: Colors.green[700],
-                    ),
+          for (final f in facts)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 5),
+              child: Text.rich(
+                TextSpan(
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: Colors.black,
                   ),
+                  children: [
+                    TextSpan(
+                      text: '${f.$1}: ',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    TextSpan(text: f.$2),
+                  ],
                 ),
-              ],
+              ),
             ),
-          ],
-          const SizedBox(height: 8),
-          Text(
-            'This is a general estimate based on typical recovery '
-            'timelines, not a guaranteed recovery date. Actual healing '
-            'varies by person — consult a doctor if it isn\'t improving.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: Colors.grey.shade600,
-              fontStyle: FontStyle.italic,
-            ),
-          ),
         ],
       ),
+    );
+  }
+
+  /// "First Aid Steps": Before / During / After, numbered on from one to the
+  /// next. Empty when the entry saved no steps.
+  List<Widget> _stepsSection(ThemeData theme) {
+    final saved = (widget.data['firstAidSteps'] as List?)?.cast<String>() ?? [];
+    if (saved.isEmpty) return const [];
+    final locale = AppLanguageScope.isTagalog(context)
+        ? HealthKitLocale.tl
+        : HealthKitLocale.en;
+    return [
+      const SizedBox(height: 14),
+      Text(
+        'First Aid Steps',
+        style: theme.textTheme.titleMedium?.copyWith(
+          color: theme.colorScheme.primary,
+        ),
+      ),
+      const SizedBox(height: 4),
+      FirstAidStepList(
+        steps: [
+          for (final step in phasedStepsFromAi(saved))
+            PhasedStep(phase: step.phase, text: step.text),
+        ],
+        phaseLabel: (GuidePhase phase) =>
+            HealthKitStrings.of('phase_${phase.name}', locale),
+        whyLabel: '',
+        numbered: true,
+        phaseStyle: theme.textTheme.titleSmall?.copyWith(color: Colors.black),
+      ),
+    ];
+  }
+
+  /// Exports this entry as a PDF, with the Health Profile's conditions and
+  /// current medications (read when exporting, so they are up to date).
+  Future<void> _exportEntry({
+    required String title,
+    required String description,
+    required String classification,
+    required Timestamp? timestamp,
+    required int monitoredDays,
+  }) async {
+    final tagalog = AppLanguageScope.isTagalog(context);
+    Map<String, dynamic>? profile;
+    try {
+      profile = await HealthProfileService().getHealthProfile();
+    } catch (_) {
+      // No profile (offline, guest): printed as "None listed".
+    }
+    await ExportService().exportEntryAsPdf(
+      title: title,
+      description: description,
+      classification: classification,
+      createdAt: timestamp?.toDate() ?? DateTime.now(),
+      monitoredDays: monitoredDays,
+      referredForConsultation: _showingReferral,
+      evaluation: _evaluationText(widget.data, monitoredDays),
+      healthConditions: profileConditionLabels(
+        profile,
+        tagalog ? ChecklistStrings.tl : ChecklistStrings.en,
+      ),
+      medications: profileMedications(profile),
     );
   }
 
@@ -398,6 +619,133 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
         tagalog: AppLanguageScope.isTagalog(context),
         monitoredDays: monitoredDays,
       );
+
+  /// A text-only entry: title, date and notes. Offline it also carries the
+  /// yellow notice and the big "Offline Mode" mark.
+  Widget _buildTextOnly(
+    ThemeData theme,
+    PreferredSizeWidget appBar, {
+    required String title,
+    required String dateText,
+    required String description,
+    required Timestamp? timestamp,
+    required int monitoredDays,
+  }) {
+    final s = OfflineStrings.of(context);
+    final offline = ConnectivityService().lastKnownOnline == false;
+    const maroon = Color(0xFF7A0000);
+    return Scaffold(
+      backgroundColor: const Color(0xFFFAF1F1),
+      appBar: appBar,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                color: const Color(0xFFFAF9FF),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        color: maroon,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      dateText,
+                      style: theme.textTheme.bodySmall?.copyWith(color: maroon),
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      constraints: const BoxConstraints(minHeight: 200),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade400),
+                      ),
+                      child: Text(
+                        description,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: Colors.black,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFE797),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(
+                        Icons.warning_amber_rounded,
+                        color: Color(0xFF483900),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          s.healingNotice,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: const Color(0xFF483900),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (offline)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 40),
+                  child: Column(
+                    children: [
+                      const Icon(Icons.wifi_off, size: 120, color: maroon),
+                      const SizedBox(height: 8),
+                      Text(
+                        s.offlineModeLabel,
+                        style: theme.textTheme.headlineMedium?.copyWith(
+                          color: maroon,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else ...[
+                // Back online: the usual ways to get more help.
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+                  child: OutlinedButton(
+                    onPressed: () => _exportEntry(
+                      title: title,
+                      description: description,
+                      classification: 'Unspecified',
+                      timestamp: timestamp,
+                      monitoredDays: monitoredDays,
+                    ),
+                    child: Text(ScreenText.of(context).exportLog),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -415,53 +763,78 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
     final imageCount = data['imageCount'] as int? ?? imageUrls.length;
     final monitoredDays = _monitoredDays() ?? 0;
 
+    final ai = _aiParts(description);
+
+    final appBar = AppBar(
+      centerTitle: true,
+      title: const Text('Health Journal'),
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back_ios, size: 18),
+        onPressed: () => Navigator.pop(context),
+      ),
+      actions: [
+        JournalEntryMenu(
+          entryId: widget.entryId,
+          data: widget.data,
+          iconColor: Colors.white,
+          // Show the edited entry straight away.
+          onEdited: (changes) => Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => EntryDetailScreen(
+                entryId: widget.entryId,
+                data: {...widget.data, ...changes},
+              ),
+            ),
+          ),
+          onDeleted: () => Navigator.pop(context),
+        ),
+      ],
+    );
+
+    // An entry with no category (written offline or as a guest): just the
+    // notes, no healing timeline or evaluation.
+    if (data['classification'] == null) {
+      return _buildTextOnly(
+        theme,
+        appBar,
+        title: title,
+        dateText: dateText,
+        description: description,
+        timestamp: timestamp,
+        monitoredDays: monitoredDays,
+      );
+    }
+
     return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: appBar,
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back_ios, size: 18),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                  Expanded(
-                    child: Text(
-                      'Health Journal',
-                      style: theme.textTheme.titleSmall,
-                    ),
-                  ),
-                  IconButton(
-                    icon: Icon(
-                      Icons.delete_outline,
-                      color: Colors.grey.shade700,
-                    ),
-                    tooltip: 'Delete entry',
-                    onPressed: () async {
-                      final deleted =
-                          await JournalListScreen.confirmAndDeleteEntry(
-                            context,
-                            widget.entryId,
-                          );
-                      if (deleted && context.mounted) {
-                        Navigator.pop(context);
-                      }
-                    },
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
               if (imageUrls.isNotEmpty)
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(18),
                   child: Image.network(
                     imageUrls.first,
                     height: 220,
                     width: double.infinity,
                     fit: BoxFit.cover,
+                    // Offline (or a photo that is gone): a quiet placeholder,
+                    // never an error message.
+                    errorBuilder: (_, _, _) => Container(
+                      height: 220,
+                      width: double.infinity,
+                      color: theme.colorScheme.surfaceContainerHighest,
+                      child: const Icon(
+                        Icons.cloud_off_outlined,
+                        size: 40,
+                        color: Colors.grey,
+                      ),
+                    ),
                   ),
                 )
               else
@@ -492,46 +865,41 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
                     ),
                   ),
                 ),
-              const SizedBox(height: 16),
+              // Every photo of this entry: new ones added over time make a
+              // visual progress log.
+              if (imageUrls.length > 1) ...[
+                const SizedBox(height: 8),
+                _buildPhotoStrip(theme, imageUrls),
+              ],
+              const SizedBox(height: 12),
               Text(
                 title,
-                style: theme.textTheme.headlineSmall?.copyWith(
+                style: theme.textTheme.titleMedium?.copyWith(
                   color: theme.colorScheme.primary,
-                  fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(height: 4),
-              Text(dateText, style: theme.textTheme.bodySmall),
-              const SizedBox(height: 12),
-              Text(description, style: theme.textTheme.bodyMedium),
+              Text(
+                dateText,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (ai != null) ...[
+                _factsBox(theme, ai.facts),
+                ..._stepsSection(theme),
+                if (ai.rest.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text(ai.rest, style: theme.textTheme.bodyMedium),
+                ],
+              ] else
+                Text(description, style: theme.textTheme.bodyMedium),
 
-              const SizedBox(height: 16),
+              const SizedBox(height: 14),
               _buildHealingTimeline(theme),
-              const SizedBox(height: 16),
+              const SizedBox(height: 14),
               EvaluationCard(data: data, monitoredDays: monitoredDays),
 
-              const SizedBox(height: 20),
-              Row(
-                children: [
-                  Text('Classification: ', style: theme.textTheme.bodyMedium),
-                  Text(
-                    classification,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.primary,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  ClassificationInfoButton(
-                    classification: classification,
-                    color: theme.colorScheme.primary,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Monitored: $monitoredDays Day${monitoredDays == 1 ? '' : 's'}',
-                style: theme.textTheme.bodyMedium,
-              ),
               _buildConversationSection(theme),
               if (_showingReferral) ...[
                 const SizedBox(height: 20),
@@ -571,22 +939,20 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
                       ElevatedButton.icon(
                         onPressed: () => showNearbyHealthcareSheet(context),
                         icon: const Icon(Icons.local_hospital_outlined),
-                        label: const Text('Find Nearby Healthcare'),
+                        label: Text(
+                          ScreenText.of(context).findNearbyHealthcare,
+                        ),
                       ),
                       const SizedBox(height: 8),
                       OutlinedButton(
-                        onPressed: () {
-                          ExportService().exportEntryAsPdf(
-                            title: title,
-                            description: description,
-                            classification: classification,
-                            createdAt: timestamp?.toDate() ?? DateTime.now(),
-                            monitoredDays: monitoredDays,
-                            referredForConsultation: _showingReferral,
-                            evaluation: _evaluationText(data, monitoredDays),
-                          );
-                        },
-                        child: const Text('Export Log'),
+                        onPressed: () => _exportEntry(
+                          title: title,
+                          description: description,
+                          classification: classification,
+                          timestamp: timestamp,
+                          monitoredDays: monitoredDays,
+                        ),
+                        child: Text(ScreenText.of(context).exportLog),
                       ),
                     ],
                   ),
@@ -610,22 +976,18 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
                 style: ElevatedButton.styleFrom(
                   minimumSize: const Size.fromHeight(50),
                 ),
-                child: const Text('Need More Help'),
+                child: Text(ScreenText.of(context).needMoreHelp),
               ),
               const SizedBox(height: 12),
               OutlinedButton(
-                onPressed: () {
-                  ExportService().exportEntryAsPdf(
-                    title: title,
-                    description: description,
-                    classification: classification,
-                    createdAt: timestamp?.toDate() ?? DateTime.now(),
-                    monitoredDays: monitoredDays,
-                    referredForConsultation: _showingReferral,
-                    evaluation: _evaluationText(data, monitoredDays),
-                  );
-                },
-                child: const Text('Export Log'),
+                onPressed: () => _exportEntry(
+                  title: title,
+                  description: description,
+                  classification: classification,
+                  timestamp: timestamp,
+                  monitoredDays: monitoredDays,
+                ),
+                child: Text(ScreenText.of(context).exportLog),
               ),
             ],
           ),

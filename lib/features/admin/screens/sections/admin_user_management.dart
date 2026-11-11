@@ -1,11 +1,7 @@
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:intl/intl.dart';
-import '../../../../services/firebase/auth_service.dart';
 import '../../../../services/firebase/email_reservation.dart';
 import '../widgets/admin_pagination.dart';
 import '../widgets/admin_shared_widgets.dart';
@@ -152,348 +148,268 @@ class _AdminUserManagementState extends State<AdminUserManagement> {
     }
   }
 
-  /// Saves the contact details the admin edited. The email is the user's real
-  /// (recovery) address, stored trimmed and lower-case, and reserved in the
-  /// same transaction so two accounts can never share one. Throws
-  /// [EmailTakenException] if another account already uses it.
-  Future<void> _saveContact(
+  /// Sends the edited fields to the server, which validates them, keeps the
+  /// username and email unique (moving their reservations) and audit-logs
+  /// which fields changed. Only fields that differ are sent. Returns the
+  /// names of the fields that were saved. Throws a readable message.
+  Future<List<String>> _saveProfile(
     String uid,
-    Map<String, dynamic> data, {
-    required String email,
-    required String phone,
-  }) async {
-    final firestore = FirebaseFirestore.instance;
-    final newEmail = normalizeEmail(email);
-    final oldEmail = data['recoveryEmail'] as String? ?? '';
-    final emailChanged = newEmail != normalizeEmail(oldEmail);
-    await firestore.runTransaction((tx) async {
-      final applyEmail = emailChanged
-          ? await EmailReservation.prepare(
-              tx,
-              firestore,
-              uid: uid,
-              newEmail: newEmail,
-              oldEmail: oldEmail,
-            )
-          : () {};
-      tx.update(firestore.collection('users').doc(uid), {
-        'phoneNumber': phone.trim(),
-        if (emailChanged)
-          'recoveryEmail': newEmail.isEmpty ? FieldValue.delete() : newEmail,
-      });
-      applyEmail();
-    });
+    Map<String, Object?> changes,
+  ) async {
+    try {
+      final result = await FirebaseFunctions.instance
+          .httpsCallable('updateUserProfile')
+          .call<Map<Object?, Object?>>({'uid': uid, 'changes': changes});
+      return [...(result.data['updated'] as List? ?? const []).cast<String>()];
+    } on FirebaseFunctionsException catch (e) {
+      throw e.message ?? "Couldn't save the changes (${e.code}).";
+    }
   }
 
+  /// Edit dialog: every field an admin may change — username, first and last
+  /// name, date of birth, gender, email and phone. (The underage
+  /// acknowledgment, registration date and account type are records, not
+  /// settings, so they stay read-only in View details.)
   Future<void> _editUser(
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
     Map<String, dynamic> data,
   ) async {
-    final emailController = TextEditingController(
-      text: data['recoveryEmail'] as String? ?? '',
+    String text(String key) => (data[key] as String?)?.trim() ?? '';
+    final username = TextEditingController(text: text('username'));
+    final firstName = TextEditingController(text: text('firstName'));
+    final lastName = TextEditingController(text: text('lastName'));
+    final email = TextEditingController(text: text('recoveryEmail'));
+    final phone = TextEditingController(text: text('phoneNumber'));
+    DateTime? dob = (data['dateOfBirth'] as Timestamp?)?.toDate();
+    final dobOriginal = dob;
+    final dobField = TextEditingController(
+      text: dob == null ? '' : DateFormat('MMM d, y').format(dob),
     );
-    final phoneController = TextEditingController(
-      text: data['phoneNumber'] as String? ?? '',
-    );
+    String? gender = const {'male', 'female', 'other'}.contains(data['gender'])
+        ? data['gender'] as String
+        : null;
+    final genderOriginal = gender;
     final formKey = GlobalKey<FormState>();
     var saving = false;
     String? error;
+
+    String? nameRule(String? v, String label) {
+      final t = (v ?? '').trim();
+      if (t.isEmpty) return null; // untouched / not set
+      return RegExp(r"^[\p{L}][\p{L} .'\-]*$", unicode: true).hasMatch(t)
+          ? null
+          : '$label: letters, spaces, - \' . only';
+    }
 
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          title: Text('Edit ${data['username'] ?? 'user'}'),
-          content: Form(
-            key: formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextFormField(
-                  controller: emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(
-                    labelText: 'Email (optional)',
-                  ),
-                  onChanged: (_) {
-                    if (error != null) setDialogState(() => error = null);
-                  },
-                  validator: (v) {
-                    final text = (v ?? '').trim();
-                    if (text.isEmpty) return null;
-                    return RegExp(
-                          r'^[^@\s/]+@[^@\s/]+\.[^@\s/]+$',
-                        ).hasMatch(text)
-                        ? null
-                        : 'Enter a valid email';
-                  },
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: phoneController,
-                  decoration: const InputDecoration(labelText: 'Phone number'),
-                ),
-                if (error != null) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    error!,
-                    style: const TextStyle(
-                      color: Colors.redAccent,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: saving
-                  ? null
-                  : () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: saving
-                  ? null
-                  : () async {
-                      if (!formKey.currentState!.validate()) return;
-                      setDialogState(() {
-                        saving = true;
-                        error = null;
-                      });
-                      try {
-                        await _saveContact(
-                          doc.id,
-                          data,
-                          email: emailController.text,
-                          phone: phoneController.text,
-                        );
-                        logAdminAction(
-                          'Edited user ${data['username'] ?? doc.id}',
-                          targetType: 'user',
-                          targetId: doc.id,
-                          targetName: data['username'] as String?,
-                        );
-                        if (dialogContext.mounted) {
-                          Navigator.of(dialogContext).pop();
-                        }
-                      } on EmailTakenException {
-                        setDialogState(() {
-                          saving = false;
-                          error = 'This email is already registered.';
-                        });
-                      } catch (e) {
-                        setDialogState(() {
-                          saving = false;
-                          error = "Couldn't save: ${adminErrorMessage(e)}";
-                        });
-                      }
-                    },
-              child: Text(saving ? 'Saving…' : 'Save'),
-            ),
-          ],
-        ),
-      ),
-    );
+        builder: (dialogContext, setDialogState) {
+          Future<void> pickDob() async {
+            final now = DateTime.now();
+            final picked = await showDatePicker(
+              context: dialogContext,
+              initialDate: dob ?? DateTime(now.year - 18, now.month, now.day),
+              firstDate: DateTime(1900),
+              lastDate: DateUtils.dateOnly(now),
+            );
+            if (picked == null) return;
+            setDialogState(() {
+              dob = picked;
+              dobField.text = DateFormat('MMM d, y').format(picked);
+              error = null;
+            });
+          }
 
-    emailController.dispose();
-    phoneController.dispose();
-  }
+          Future<void> save() async {
+            if (!formKey.currentState!.validate()) return;
+            // Send only what changed.
+            final changes = <String, Object?>{};
+            void diff(String key, String now, String before) {
+              if (now.trim() != before) changes[key] = now.trim();
+            }
 
-  String _generateTempPassword() {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
-    final rand = Random.secure();
-    return List.generate(10, (_) => chars[rand.nextInt(chars.length)]).join();
-  }
+            diff('username', username.text, text('username'));
+            diff('firstName', firstName.text, text('firstName'));
+            diff('lastName', lastName.text, text('lastName'));
+            diff('phone', phone.text, text('phoneNumber'));
+            if (normalizeEmail(email.text) !=
+                normalizeEmail(text('recoveryEmail'))) {
+              changes['email'] = email.text.trim();
+            }
+            if (dob != null && dob != dobOriginal) {
+              changes['dateOfBirthMs'] = dob!.millisecondsSinceEpoch;
+            }
+            if (gender != null && gender != genderOriginal) {
+              changes['gender'] = gender;
+            }
+            if (changes.isEmpty) {
+              Navigator.of(dialogContext).pop();
+              return;
+            }
+            setDialogState(() {
+              saving = true;
+              error = null;
+            });
+            try {
+              final saved = await _saveProfile(doc.id, changes);
+              if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+              _snack(
+                saved.isEmpty ? 'Nothing needed saving.' : 'User updated.',
+              );
+            } catch (e) {
+              setDialogState(() {
+                saving = false;
+                error = e.toString();
+              });
+            }
+          }
 
-  /// Creates the Auth account on a throwaway secondary [FirebaseApp]
-  /// instance instead of the default one — calling
-  /// createUserWithEmailAndPassword on the default app signs the caller in
-  /// as the newly created user, which would kick the admin out of their own
-  /// session.
-  Future<void> _createUserAccount({
-    required String username,
-    required String phoneNumber,
-    required String password,
-  }) async {
-    final exactUsername = username.trim();
-
-    final taken = await AuthService().isUsernameTaken(exactUsername);
-    if (taken) {
-      throw 'That username is already taken.';
-    }
-
-    // The generated Auth email just needs to be a valid, stable address —
-    // lowercasing it here is unrelated to username case-sensitivity, which
-    // is enforced by the `usernames` doc ID below.
-    final generatedEmail = '${exactUsername.toLowerCase()}@fineaid.app';
-
-    final secondaryApp = await Firebase.initializeApp(
-      name: 'admin_create_user_${DateTime.now().millisecondsSinceEpoch}',
-      options: Firebase.app().options,
-    );
-    try {
-      final secondaryAuth = FirebaseAuth.instanceFor(app: secondaryApp);
-      final credential = await secondaryAuth.createUserWithEmailAndPassword(
-        email: generatedEmail,
-        password: password,
-      );
-      final uid = credential.user!.uid;
-
-      final secondaryFirestore = FirebaseFirestore.instanceFor(
-        app: secondaryApp,
-      );
-      // One batch: the profile and the username are saved together or not at
-      // all, and `registrationComplete` is what lists the user in the portal.
-      final batch = secondaryFirestore.batch();
-      batch.set(secondaryFirestore.collection('users').doc(uid), {
-        'username': exactUsername,
-        'email': generatedEmail,
-        'phoneNumber': phoneNumber,
-        'verificationMethod': 'phone',
-        'createdAt': FieldValue.serverTimestamp(),
-        'phoneVerified': false,
-        'onboardingComplete': false,
-        'createdByAdmin': true,
-        'registrationComplete': true,
-      });
-      batch.set(secondaryFirestore.collection('usernames').doc(exactUsername), {
-        'email': generatedEmail,
-        'uid': uid,
-        'usernameExact': exactUsername,
-      });
-      await batch.commit();
-
-      await secondaryAuth.signOut();
-    } finally {
-      await secondaryApp.delete();
-    }
-
-    logAdminAction('Created user "$username"', type: 'CREATE');
-  }
-
-  Future<void> _addUser() async {
-    final usernameController = TextEditingController();
-    final phoneController = TextEditingController();
-    final passwordController = TextEditingController(
-      text: _generateTempPassword(),
-    );
-    final formKey = GlobalKey<FormState>();
-    bool isSaving = false;
-    String? error;
-
-    await showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          title: const Text('Add user'),
-          content: Form(
-            key: formKey,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  TextFormField(
-                    controller: usernameController,
-                    decoration: const InputDecoration(labelText: 'Username'),
-                    validator: (v) =>
-                        (v == null || v.trim().isEmpty) ? 'Required' : null,
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: phoneController,
-                    decoration: const InputDecoration(
-                      labelText: 'Phone number',
-                    ),
-                    validator: (v) =>
-                        (v == null || v.trim().isEmpty) ? 'Required' : null,
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: passwordController,
-                    decoration: const InputDecoration(
-                      labelText: 'Temporary password',
-                      helperText: 'Share this with the user directly.',
-                    ),
-                    validator: (v) => (v == null || v.length < 6)
-                        ? 'At least 6 characters'
-                        : null,
-                  ),
-                  if (error != null) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      error!,
-                      style: const TextStyle(
-                        color: Colors.redAccent,
-                        fontSize: 12,
+          return AlertDialog(
+            title: Text('Edit ${data['username'] ?? 'user'}'),
+            content: SizedBox(
+              width: 420,
+              child: SingleChildScrollView(
+                child: Form(
+                  key: formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextFormField(
+                        controller: username,
+                        decoration: const InputDecoration(
+                          labelText: 'Username',
+                          helperText:
+                              'Changing it changes what they sign in with.',
+                        ),
+                        validator: (v) =>
+                            RegExp(
+                              r'^[A-Za-z0-9_.]{3,30}$',
+                            ).hasMatch((v ?? '').trim())
+                            ? null
+                            : '3-30 characters: letters, numbers, _ and .',
                       ),
-                    ),
-                  ],
-                ],
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              controller: firstName,
+                              decoration: const InputDecoration(
+                                labelText: 'First name',
+                              ),
+                              validator: (v) => nameRule(v, 'First name'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextFormField(
+                              controller: lastName,
+                              decoration: const InputDecoration(
+                                labelText: 'Last name',
+                              ),
+                              validator: (v) => nameRule(v, 'Last name'),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: dobField,
+                        readOnly: true,
+                        onTap: saving ? null : pickDob,
+                        decoration: const InputDecoration(
+                          labelText: 'Date of birth',
+                          suffixIcon: Icon(
+                            Icons.calendar_today_outlined,
+                            size: 18,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        initialValue: gender,
+                        decoration: const InputDecoration(labelText: 'Gender'),
+                        items: const [
+                          DropdownMenuItem(value: 'male', child: Text('Male')),
+                          DropdownMenuItem(
+                            value: 'female',
+                            child: Text('Female'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'other',
+                            child: Text('Other / Prefer not to say'),
+                          ),
+                        ],
+                        onChanged: saving
+                            ? null
+                            : (v) => setDialogState(() => gender = v),
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: email,
+                        keyboardType: TextInputType.emailAddress,
+                        decoration: const InputDecoration(
+                          labelText: 'Email (optional)',
+                        ),
+                        onChanged: (_) {
+                          if (error != null) setDialogState(() => error = null);
+                        },
+                        validator: (v) {
+                          final t = (v ?? '').trim();
+                          if (t.isEmpty) return null;
+                          return RegExp(
+                                r'^[^@\s/]+@[^@\s/]+\.[^@\s/]+$',
+                              ).hasMatch(t)
+                              ? null
+                              : 'Enter a valid email';
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: phone,
+                        keyboardType: TextInputType.phone,
+                        decoration: const InputDecoration(
+                          labelText: 'Phone number',
+                          helperText: 'e.g. +63 917 123 4567',
+                        ),
+                      ),
+                      if (error != null) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          error!,
+                          style: const TextStyle(
+                            color: Colors.redAccent,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
               ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: isSaving
-                  ? null
-                  : () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: isSaving
-                  ? null
-                  : () async {
-                      if (!formKey.currentState!.validate()) return;
-                      setDialogState(() {
-                        isSaving = true;
-                        error = null;
-                      });
-                      try {
-                        await _createUserAccount(
-                          username: usernameController.text.trim(),
-                          phoneNumber: phoneController.text.trim(),
-                          password: passwordController.text,
-                        );
-                        if (dialogContext.mounted) {
-                          Navigator.of(dialogContext).pop();
-                        }
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'User "${usernameController.text.trim()}" created.',
-                              ),
-                            ),
-                          );
-                        }
-                      } catch (e) {
-                        setDialogState(() {
-                          isSaving = false;
-                          error = e.toString();
-                        });
-                      }
-                    },
-              child: isSaving
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('Create'),
-            ),
-          ],
-        ),
+            actions: [
+              TextButton(
+                onPressed: saving
+                    ? null
+                    : () => Navigator.of(dialogContext).pop(),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: saving ? null : save,
+                child: Text(saving ? 'Saving…' : 'Save'),
+              ),
+            ],
+          );
+        },
       ),
     );
 
-    usernameController.dispose();
-    phoneController.dispose();
-    passwordController.dispose();
+    for (final c in [username, firstName, lastName, email, phone, dobField]) {
+      c.dispose();
+    }
   }
 
   @override
@@ -502,22 +418,17 @@ class _AdminUserManagementState extends State<AdminUserManagement> {
 
     return Column(
       children: [
-        AdminHeader(
+        const AdminHeader(
           title: 'User management',
           subtitle:
               'View, modify, or deactivate user accounts as needed for security or policy compliance.',
-          action: ElevatedButton.icon(
-            onPressed: _addUser,
-            icon: const Icon(Icons.add, size: 16),
-            label: const Text('Add user'),
-          ),
         ),
         Expanded(
           child: AdminPagedList(
             controller: _pager,
             builder: (context, docs) {
               return SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
+                padding: EdgeInsets.all(adminIsNarrow(context) ? 16 : 24),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -536,288 +447,340 @@ class _AdminUserManagementState extends State<AdminUserManagement> {
                       ),
                       child: Column(
                         children: [
-                          // Table header
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade50,
-                              borderRadius: const BorderRadius.only(
-                                topLeft: Radius.circular(12),
-                                topRight: Radius.circular(12),
-                              ),
-                            ),
-                            child: Row(
+                          AdminHScroll(
+                            minWidth: 900,
+                            child: Column(
                               children: [
-                                _tableHeader(context, 'Name', flex: 2),
-                                _tableHeader(context, 'Email', flex: 3),
-                                _tableHeader(context, 'Account type'),
-                                _tableHeader(context, 'Created'),
-                                _tableHeader(context, 'Status', flex: 2),
-                                _tableHeader(context, 'Actions', flex: 2),
-                              ],
-                            ),
-                          ),
-                          const Divider(height: 1),
-                          ...docs.map((doc) {
-                            final data = doc.data();
-                            final username =
-                                data['username'] as String? ?? 'Unknown';
-                            // The user's real (recovery) email. The `email`
-                            // field is only the generated sign-in address
-                            // (username@fineaid.app), which isn't useful here.
-                            final email =
-                                (data['recoveryEmail'] as String?)
-                                        ?.trim()
-                                        .isNotEmpty ==
-                                    true
-                                ? data['recoveryEmail'] as String
-                                : 'N/A';
-                            final fullName =
-                                '${data['firstName'] ?? ''} ${data['lastName'] ?? ''}'
-                                    .trim();
-                            final displayName = fullName.isEmpty
-                                ? username
-                                : fullName;
-                            final ts = data['createdAt'] as Timestamp?;
-                            final joined = ts != null
-                                ? DateFormat('MMM d, y').format(ts.toDate())
-                                : 'N/A';
-                            // Deactivated outright, or past its scheduled date
-                            // (the app already blocks sign-in at that point;
-                            // the hourly job just catches the flag up).
-                            final deactivateAt =
-                                (data['deactivateAt'] as Timestamp?)?.toDate();
-                            final isDeactivated =
-                                data['deactivated'] == true ||
-                                (deactivateAt != null &&
-                                    !deactivateAt.isAfter(DateTime.now()));
-                            final isScheduled =
-                                !isDeactivated && deactivateAt != null;
-                            final busy = _busyUsers.contains(doc.id);
-
-                            return Column(
-                              children: [
-                                Padding(
+                                // Table header
+                                Container(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 16,
                                     vertical: 12,
                                   ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade50,
+                                    borderRadius: const BorderRadius.only(
+                                      topLeft: Radius.circular(12),
+                                      topRight: Radius.circular(12),
+                                    ),
+                                  ),
                                   child: Row(
                                     children: [
-                                      Expanded(
-                                        flex: 2,
+                                      _tableHeader(context, 'Name', flex: 2),
+                                      _tableHeader(context, 'Email', flex: 3),
+                                      _tableHeader(context, 'Account type'),
+                                      _tableHeader(context, 'Created'),
+                                      _tableHeader(context, 'Status', flex: 2),
+                                      _tableHeader(context, 'Actions', flex: 2),
+                                    ],
+                                  ),
+                                ),
+                                const Divider(height: 1),
+                                ...docs.map((doc) {
+                                  final data = doc.data();
+                                  final username =
+                                      data['username'] as String? ?? 'Unknown';
+                                  // The user's real (recovery) email. The `email`
+                                  // field is only the generated sign-in address
+                                  // (username@fineaid.app), which isn't useful here.
+                                  final email =
+                                      (data['recoveryEmail'] as String?)
+                                              ?.trim()
+                                              .isNotEmpty ==
+                                          true
+                                      ? data['recoveryEmail'] as String
+                                      : 'N/A';
+                                  final fullName =
+                                      '${data['firstName'] ?? ''} ${data['lastName'] ?? ''}'
+                                          .trim();
+                                  final displayName = fullName.isEmpty
+                                      ? username
+                                      : fullName;
+                                  final ts = data['createdAt'] as Timestamp?;
+                                  final joined = ts != null
+                                      ? DateFormat(
+                                          'MMM d, y',
+                                        ).format(ts.toDate())
+                                      : 'N/A';
+                                  // Deactivated outright, or past its scheduled date
+                                  // (the app already blocks sign-in at that point;
+                                  // the hourly job just catches the flag up).
+                                  final deactivateAt =
+                                      (data['deactivateAt'] as Timestamp?)
+                                          ?.toDate();
+                                  final isDeactivated =
+                                      data['deactivated'] == true ||
+                                      (deactivateAt != null &&
+                                          !deactivateAt.isAfter(
+                                            DateTime.now(),
+                                          ));
+                                  final isScheduled =
+                                      !isDeactivated && deactivateAt != null;
+                                  final busy = _busyUsers.contains(doc.id);
+
+                                  return Column(
+                                    children: [
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 16,
+                                          vertical: 12,
+                                        ),
                                         child: Row(
                                           children: [
-                                            CircleAvatar(
-                                              radius: 16,
-                                              backgroundColor:
-                                                  theme.colorScheme.primary,
-                                              child: Text(
-                                                displayName.isNotEmpty
-                                                    ? displayName[0]
-                                                          .toUpperCase()
-                                                    : '?',
-                                                style: theme.textTheme.bodySmall
-                                                    ?.copyWith(
-                                                      color: Colors.white,
-                                                    ),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
                                             Expanded(
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
+                                              flex: 2,
+                                              child: Row(
                                                 children: [
-                                                  Text(
-                                                    displayName,
-                                                    style: theme
-                                                        .textTheme
-                                                        .labelSmall
-                                                        ?.copyWith(
-                                                          fontWeight:
-                                                              FontWeight.bold,
-                                                          color: Colors.black,
-                                                        ),
-                                                  ),
-                                                  if (fullName.isNotEmpty)
-                                                    Text(
-                                                      username,
+                                                  CircleAvatar(
+                                                    radius: 16,
+                                                    backgroundColor: theme
+                                                        .colorScheme
+                                                        .primary,
+                                                    child: Text(
+                                                      displayName.isNotEmpty
+                                                          ? displayName[0]
+                                                                .toUpperCase()
+                                                          : '?',
                                                       style: theme
                                                           .textTheme
                                                           .bodySmall
                                                           ?.copyWith(
-                                                            color: Colors.grey,
+                                                            color: Colors.white,
                                                           ),
                                                     ),
+                                                  ),
+                                                  const SizedBox(width: 8),
+                                                  Expanded(
+                                                    child: Column(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .start,
+                                                      children: [
+                                                        Text(
+                                                          displayName,
+                                                          style: theme
+                                                              .textTheme
+                                                              .labelSmall
+                                                              ?.copyWith(
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .bold,
+                                                                color: Colors
+                                                                    .black,
+                                                              ),
+                                                        ),
+                                                        if (fullName.isNotEmpty)
+                                                          Text(
+                                                            username,
+                                                            style: theme
+                                                                .textTheme
+                                                                .bodySmall
+                                                                ?.copyWith(
+                                                                  color: Colors
+                                                                      .grey,
+                                                                ),
+                                                          ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            Expanded(
+                                              flex: 3,
+                                              child: Text(
+                                                email,
+                                                style: theme
+                                                    .textTheme
+                                                    .labelMedium
+                                                    ?.copyWith(
+                                                      color: Colors.black87,
+                                                    ),
+                                              ),
+                                            ),
+                                            // Every profile in `users` is a registered
+                                            // account; guests have no account to list.
+                                            Expanded(
+                                              child: Align(
+                                                alignment: Alignment.centerLeft,
+                                                child: Container(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 3,
+                                                      ),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.blue.shade50,
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          20,
+                                                        ),
+                                                  ),
+                                                  child: Text(
+                                                    'Registered',
+                                                    style: theme
+                                                        .textTheme
+                                                        .labelSmall
+                                                        ?.copyWith(
+                                                          color: Colors
+                                                              .blue
+                                                              .shade800,
+                                                        ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                            Expanded(
+                                              child: Text(
+                                                joined,
+                                                style: theme
+                                                    .textTheme
+                                                    .labelSmall
+                                                    ?.copyWith(
+                                                      color: Colors.black87,
+                                                    ),
+                                              ),
+                                            ),
+                                            Expanded(
+                                              flex: 2,
+                                              child: Align(
+                                                alignment: Alignment.centerLeft,
+                                                child: Container(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 3,
+                                                      ),
+                                                  decoration: BoxDecoration(
+                                                    color: isDeactivated
+                                                        ? Colors.grey.shade100
+                                                        : isScheduled
+                                                        ? Colors.orange.shade50
+                                                        : Colors.green.shade50,
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          20,
+                                                        ),
+                                                  ),
+                                                  child: Text(
+                                                    isDeactivated
+                                                        ? 'Inactive'
+                                                        : isScheduled
+                                                        ? 'Deactivates ${DateFormat('MMM d').format(deactivateAt)}'
+                                                        : 'Active',
+                                                    style: theme
+                                                        .textTheme
+                                                        .labelSmall
+                                                        ?.copyWith(
+                                                          color: isDeactivated
+                                                              ? Colors
+                                                                    .grey
+                                                                    .shade700
+                                                              : isScheduled
+                                                              ? Colors
+                                                                    .orange
+                                                                    .shade800
+                                                              : Colors
+                                                                    .green
+                                                                    .shade800,
+                                                        ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                            Expanded(
+                                              flex: 2,
+                                              child: Row(
+                                                children: [
+                                                  TextButton(
+                                                    onPressed: busy
+                                                        ? null
+                                                        : () => isDeactivated
+                                                              ? _activate(
+                                                                  doc.id,
+                                                                  username,
+                                                                )
+                                                              : isScheduled
+                                                              ? _cancelDeactivation(
+                                                                  doc.id,
+                                                                  username,
+                                                                )
+                                                              : _confirmDeactivate(
+                                                                  doc.id,
+                                                                  username,
+                                                                ),
+                                                    child: Text(
+                                                      busy
+                                                          ? 'Working…'
+                                                          : isDeactivated
+                                                          ? 'Activate'
+                                                          : isScheduled
+                                                          ? 'Cancel'
+                                                          : 'Deactivate',
+                                                      style: theme
+                                                          .textTheme
+                                                          .bodySmall
+                                                          ?.copyWith(
+                                                            color: isDeactivated
+                                                                ? Colors
+                                                                      .green
+                                                                      .shade800
+                                                                : isScheduled
+                                                                ? Colors
+                                                                      .orange
+                                                                      .shade800
+                                                                : Colors
+                                                                      .red
+                                                                      .shade700,
+                                                          ),
+                                                    ),
+                                                  ),
+                                                  // View details / Edit. There is no
+                                                  // Delete: the admin portal has no
+                                                  // way to delete accounts.
+                                                  PopupMenuButton<String>(
+                                                    tooltip: 'More actions',
+                                                    icon: const Icon(
+                                                      Icons.more_vert,
+                                                      size: 18,
+                                                    ),
+                                                    onSelected: (value) {
+                                                      if (value == 'details') {
+                                                        showAdminUserInfo(
+                                                          context,
+                                                          data,
+                                                        );
+                                                      } else if (value ==
+                                                          'edit') {
+                                                        _editUser(doc, data);
+                                                      }
+                                                    },
+                                                    itemBuilder: (_) => const [
+                                                      PopupMenuItem(
+                                                        value: 'details',
+                                                        child: Text(
+                                                          'View details',
+                                                        ),
+                                                      ),
+                                                      PopupMenuItem(
+                                                        value: 'edit',
+                                                        child: Text('Edit'),
+                                                      ),
+                                                    ],
+                                                  ),
                                                 ],
                                               ),
                                             ),
                                           ],
                                         ),
                                       ),
-                                      Expanded(
-                                        flex: 3,
-                                        child: Text(
-                                          email,
-                                          style: theme.textTheme.labelMedium
-                                              ?.copyWith(color: Colors.black87),
-                                        ),
-                                      ),
-                                      // Every profile in `users` is a registered
-                                      // account; guests have no account to list.
-                                      Expanded(
-                                        child: Align(
-                                          alignment: Alignment.centerLeft,
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 8,
-                                              vertical: 3,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: Colors.blue.shade50,
-                                              borderRadius:
-                                                  BorderRadius.circular(20),
-                                            ),
-                                            child: Text(
-                                              'Registered',
-                                              style: theme.textTheme.labelSmall
-                                                  ?.copyWith(
-                                                    color: Colors.blue.shade800,
-                                                  ),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      Expanded(
-                                        child: Text(
-                                          joined,
-                                          style: theme.textTheme.labelSmall
-                                              ?.copyWith(color: Colors.black87),
-                                        ),
-                                      ),
-                                      Expanded(
-                                        flex: 2,
-                                        child: Align(
-                                          alignment: Alignment.centerLeft,
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 8,
-                                              vertical: 3,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: isDeactivated
-                                                  ? Colors.grey.shade100
-                                                  : isScheduled
-                                                  ? Colors.orange.shade50
-                                                  : Colors.green.shade50,
-                                              borderRadius:
-                                                  BorderRadius.circular(20),
-                                            ),
-                                            child: Text(
-                                              isDeactivated
-                                                  ? 'Inactive'
-                                                  : isScheduled
-                                                  ? 'Deactivates ${DateFormat('MMM d').format(deactivateAt)}'
-                                                  : 'Active',
-                                              style: theme.textTheme.labelSmall
-                                                  ?.copyWith(
-                                                    color: isDeactivated
-                                                        ? Colors.grey.shade700
-                                                        : isScheduled
-                                                        ? Colors.orange.shade800
-                                                        : Colors.green.shade800,
-                                                  ),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      Expanded(
-                                        flex: 2,
-                                        child: Row(
-                                          children: [
-                                            TextButton(
-                                              onPressed: busy
-                                                  ? null
-                                                  : () => isDeactivated
-                                                        ? _activate(
-                                                            doc.id,
-                                                            username,
-                                                          )
-                                                        : isScheduled
-                                                        ? _cancelDeactivation(
-                                                            doc.id,
-                                                            username,
-                                                          )
-                                                        : _confirmDeactivate(
-                                                            doc.id,
-                                                            username,
-                                                          ),
-                                              child: Text(
-                                                busy
-                                                    ? 'Working…'
-                                                    : isDeactivated
-                                                    ? 'Activate'
-                                                    : isScheduled
-                                                    ? 'Cancel'
-                                                    : 'Deactivate',
-                                                style: theme.textTheme.bodySmall
-                                                    ?.copyWith(
-                                                      color: isDeactivated
-                                                          ? Colors
-                                                                .green
-                                                                .shade800
-                                                          : isScheduled
-                                                          ? Colors
-                                                                .orange
-                                                                .shade800
-                                                          : Colors.red.shade700,
-                                                    ),
-                                              ),
-                                            ),
-                                            // View details / Edit. There is no
-                                            // Delete: the admin portal has no
-                                            // way to delete accounts.
-                                            PopupMenuButton<String>(
-                                              tooltip: 'More actions',
-                                              icon: const Icon(
-                                                Icons.more_vert,
-                                                size: 18,
-                                              ),
-                                              onSelected: (value) {
-                                                if (value == 'details') {
-                                                  showAdminUserInfo(
-                                                    context,
-                                                    data,
-                                                  );
-                                                } else if (value == 'edit') {
-                                                  _editUser(doc, data);
-                                                }
-                                              },
-                                              itemBuilder: (_) => const [
-                                                PopupMenuItem(
-                                                  value: 'details',
-                                                  child: Text('View details'),
-                                                ),
-                                                PopupMenuItem(
-                                                  value: 'edit',
-                                                  child: Text('Edit'),
-                                                ),
-                                              ],
-                                            ),
-                                          ],
-                                        ),
-                                      ),
+                                      const Divider(height: 1),
                                     ],
-                                  ),
-                                ),
-                                const Divider(height: 1),
+                                  );
+                                }),
                               ],
-                            );
-                          }),
+                            ),
+                          ),
                           AdminPager(controller: _pager),
                         ],
                       ),

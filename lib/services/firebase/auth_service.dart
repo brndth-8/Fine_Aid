@@ -81,7 +81,9 @@ class AuthService {
   Future<void> registerWithUsername({
     required String username,
     required String password,
-    required String phoneNumber,
+    // Phone or email: each optional on its own, one is required (see
+    // RegistrationFlow).
+    String? phoneNumber,
     // Optional — a real address the user can additionally use for account
     // recovery via Forgot Password's email option. Never used as the
     // Firebase Auth login email itself (that's always the generated

@@ -15,6 +15,9 @@ class AdminTheme {
   static const Color maroonDark = Color(0xFF330000);
   static const Color accentBright = Color(0xFFE5484D);
 
+  /// The chosen segment of a segmented selector (time ranges).
+  static const Color segmentSelected = Color(0xFFE0E0E0);
+
   static TextTheme get _textTheme {
     return TextTheme(
       // Page title, e.g. "Dashboard".
@@ -126,6 +129,22 @@ class AdminTheme {
         style: TextButton.styleFrom(
           foregroundColor: maroon,
           textStyle: GoogleFonts.inter(fontWeight: FontWeight.w600),
+        ),
+      ),
+      // Time-range selectors (Last 7 days / 30 days / 12 months, and any other
+      // segmented choice in the admin): the chosen segment is gray, not the
+      // theme's pink tint.
+      segmentedButtonTheme: SegmentedButtonThemeData(
+        style: ButtonStyle(
+          backgroundColor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+                ? segmentSelected
+                : Colors.white,
+          ),
+          foregroundColor: const WidgetStatePropertyAll(Color(0xFF222222)),
+          side: const WidgetStatePropertyAll(
+            BorderSide(color: Color(0xFFBDBDBD)),
+          ),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(

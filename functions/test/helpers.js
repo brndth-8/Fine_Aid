@@ -35,7 +35,14 @@ async function makeAdmin(uid = "admin1", extra = {}) {
     displayName: "Test Admin",
     ...extra,
   });
-  return { auth: { uid } };
+  // The token carries the server-set admin claim, as a real admin's does.
+  return { auth: { uid, token: { admin: true } } };
+}
+
+/** Listed in admins but whose token has no admin claim yet. */
+async function makeAdminWithoutClaim(uid = "admin2") {
+  await db.doc(`admins/${uid}`).set({ email: `${uid}@example.com` });
+  return { auth: { uid, token: {} } };
 }
 
 const asNonAdmin = (uid = "someone") => ({ auth: { uid } });
@@ -89,6 +96,7 @@ module.exports = {
   auth,
   resetEmulators,
   makeAdmin,
+  makeAdminWithoutClaim,
   asNonAdmin,
   makeUser,
   collectionDocs,

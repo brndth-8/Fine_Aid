@@ -1,59 +1,18 @@
+import '../../core/widgets/first_aid_step_list.dart';
+import '../../core/widgets/icon_popup.dart';
+import '../../i18n/offline_strings.dart';
+import '../../services/connectivity_service.dart';
+import '../../data/first_aid_step_images.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import '../../services/api/gemini_service.dart';
-import '../../services/firebase/first_aid_content_service.dart';
-import '../../services/firebase/notification_service.dart';
-import '../../core/widgets/remind_me_checkbox.dart';
-import '../../i18n/notification_strings.dart';
-import '../../services/voice_input_service.dart';
 import '../../services/health_profile_service.dart';
-import '../../services/connectivity_service.dart';
-import '../../services/otc_filter_service.dart';
-import '../../services/guest_usage_service.dart';
-import '../../core/widgets/guest_gate_dialogs.dart';
-import '../../core/widgets/guest_usage_badge.dart';
-import '../../core/network_error.dart';
-import '../../core/scope_check.dart';
 import '../../data/first_aid_guides.dart';
-import '../../data/healing_durations.dart';
-import '../../data/health_profile_cautions.dart';
-import '../../core/follow_up_fallback.dart';
-import '../../core/widgets/voice_message_bubble.dart';
-import '../../core/widgets/otc_suggestions_block.dart';
+import '../../core/widgets/health_profile_box.dart';
 import '../../i18n/first_aid_guides_tl.dart';
 import '../../i18n/health_kit_content_tl.dart';
+import '../../i18n/app_language.dart';
 import '../../i18n/health_kit_locale.dart';
 import '../../i18n/health_kit_ui_strings.dart';
-
-class _FollowUpMessage {
-  final String text;
-  // The chat model always returns both languages (see BilingualReply) —
-  // kept alongside the English text so the bubble can switch language
-  // instantly when the Health Kit locale toggle changes, without a
-  // re-fetch. Null for user messages, since there's nothing to translate.
-  final String? tagalog;
-  final bool isUser;
-  final List<OtcSuggestion> otcSuggestions;
-  // Set only for a voice follow-up question — the recorded clip's local
-  // file path, so it can be replayed as a chat bubble. `text` is always the
-  // transcript either way, so the journal and the answer pipeline never
-  // need to know whether a message started out as speech or typing.
-  final String? audioPath;
-  const _FollowUpMessage({
-    required this.text,
-    this.tagalog,
-    required this.isUser,
-    this.otcSuggestions = const [],
-    this.audioPath,
-  });
-
-  Map<String, dynamic> toJournalMap() => {
-    'role': isUser ? 'user' : 'assistant',
-    'text': text,
-  };
-}
 
 /// A single yes/no question in a category's fixed-order question tree.
 /// Answering "yes" to a red-flag question immediately shows a safety
@@ -76,7 +35,8 @@ class _Category {
   // the Tagalog translation for this category can be looked up.
   final String id;
   final String title;
-  final IconData icon;
+  // The picture shown beside the category name (assets/images/health_kit/).
+  final String image;
   final List<_Question> questions;
   final List<String> watchFor;
   final String seekCareIf;
@@ -84,7 +44,7 @@ class _Category {
   const _Category({
     required this.id,
     required this.title,
-    required this.icon,
+    required this.image,
     required this.questions,
     required this.watchFor,
     required this.seekCareIf,
@@ -130,12 +90,15 @@ const List<String> _defaultWatchFor = [
   'Fever',
 ];
 
+// The screen's soft background, behind the white cards.
+const Color _pageBackground = Color(0xFFF6F7F5);
+
 class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
   static final List<_Category> _categories = [
     _Category(
       id: 'laceration',
       title: 'Laceration',
-      icon: Icons.cut_outlined,
+      image: 'assets/images/health_kit/Laceration.png',
       questions: [
         const _Question(
           text: 'Was this caused by a dirty, rusty, or contaminated object?',
@@ -161,7 +124,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
     _Category(
       id: 'minor_cut',
       title: 'Minor Cut',
-      icon: Icons.content_cut,
+      image: 'assets/images/health_kit/Minor_cut.png',
       questions: [
         const _Question(
           text: 'Is the cut on your face, hands, or over a joint?',
@@ -183,7 +146,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
     _Category(
       id: 'scratch',
       title: 'Scratch',
-      icon: Icons.back_hand_outlined,
+      image: 'assets/images/health_kit/Scratch.png',
       questions: [
         const _Question(
           text: 'Was the scratch from a pet or any other animal?',
@@ -202,7 +165,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
     _Category(
       id: 'abrasion',
       title: 'Abrasion',
-      icon: Icons.healing_outlined,
+      image: 'assets/images/health_kit/Abrasion.png',
       questions: [
         const _Question(
           text:
@@ -224,7 +187,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
     _Category(
       id: 'puncture_wound',
       title: 'Puncture Wound',
-      icon: Icons.change_history,
+      image: 'assets/images/health_kit/Puncture_wound.png',
       questions: [
         const _Question(
           text: 'Was the object a nail, needle, or something dirty/rusty?',
@@ -250,7 +213,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
     _Category(
       id: 'burn',
       title: 'Burn',
-      icon: Icons.local_fire_department_outlined,
+      image: 'assets/images/health_kit/Burn.png',
       questions: [
         const _Question(
           text:
@@ -272,7 +235,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
     _Category(
       id: 'bruise',
       title: 'Bruise',
-      icon: Icons.circle_outlined,
+      image: 'assets/images/health_kit/Bruise.png',
       questions: [
         const _Question(
           text:
@@ -306,7 +269,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
     _Category(
       id: 'swelling',
       title: 'Swelling',
-      icon: Icons.bubble_chart_outlined,
+      image: 'assets/images/health_kit/Swelling.png',
       questions: [
         const _Question(
           text:
@@ -333,7 +296,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
     _Category(
       id: 'rash',
       title: 'Rash',
-      icon: Icons.grain_outlined,
+      image: 'assets/images/health_kit/Rash.png',
       questions: [
         const _Question(
           text:
@@ -369,7 +332,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
     _Category(
       id: 'other_skin_issue',
       title: 'Other Skin Issue',
-      icon: Icons.medical_information_outlined,
+      image: 'assets/images/health_kit/Other_skin_issue.png',
       questions: [
         const _Question(text: 'Is there any active bleeding?'),
         const _Question(
@@ -391,57 +354,47 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
   int? _resultCategoryIndex;
   bool _resultHasRedFlag = false;
 
-  final TextEditingController _concernController = TextEditingController();
-  String? _userConcern;
-  final List<Map<String, dynamic>> _qaHistory = [];
-  final List<String> _redFlagMessages = [];
+  Map<String, dynamic>? _profile;
 
-  final TextEditingController _chatController = TextEditingController();
-  final List<_FollowUpMessage> _followUpMessages = [];
-  bool _isSendingFollowUp = false;
-
-  final VoiceInputService _voiceInput = VoiceInputService();
-  bool _isRecording = false;
-  Duration _recordingElapsed = Duration.zero;
-  double _recordingLevel = 0;
-  Timer? _recordingTimer;
-  StreamSubscription<double>? _amplitudeSubscription;
-
-  bool _isSaving = false;
-  // "Remind me": the user asked for a healing check-in for this entry.
-  bool _remindMe = false;
-  bool _savedToJournal = false;
-  String? _savedJournalEntryId;
-  bool _hasUnsavedFollowUps = false;
-
-  List<String> _healthCautions = [];
-
-  HealthKitLocale _locale = HealthKitLocale.en;
+  // The Health Kit follows the app-wide language (Settings > Language). All of
+  // its text is bundled with the app, so Filipino also works offline.
+  HealthKitLocale get _locale => AppLanguageScope.isTagalog(context)
+      ? HealthKitLocale.tl
+      : HealthKitLocale.en;
 
   @override
   void initState() {
     super.initState();
-    _loadLocale();
     _loadHealthCautions();
+    // Opened without internet: say who the Health Kit is for, first.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _showOfflineNotice());
+  }
+
+  /// Offline Mode: "This is only for users with no recognized health
+  /// conditions ...". Shown each time the Health Kit opens offline.
+  Future<void> _showOfflineNotice() async {
+    if (!mounted || ConnectivityService().lastKnownOnline != false) return;
+    final s = OfflineStrings.of(context);
+    await showIconPopup(
+      context,
+      badge: const PopupBadge(icon: Icons.medical_services_outlined),
+      title: s.kitNoticeTitle,
+      body: [
+        Text(
+          s.kitNoticeBody,
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+      ],
+      buttonLabel: s.understood,
+      dismissible: false,
+    );
   }
 
   Future<void> _loadHealthCautions() async {
     final profile = await HealthProfileService().getHealthProfile();
     if (!mounted) return;
-    final cautions = healthProfileCautions(profile);
-    if (cautions.isNotEmpty) setState(() => _healthCautions = cautions);
-  }
-
-  Future<void> _loadLocale() async {
-    final locale = await loadHealthKitLocale();
-    if (!mounted) return;
-    setState(() => _locale = locale);
-  }
-
-  void _setLocale(HealthKitLocale locale) {
-    if (locale == _locale) return;
-    setState(() => _locale = locale);
-    saveHealthKitLocale(locale);
+    if (profile != null) setState(() => _profile = profile);
   }
 
   String _ui(String key) => HealthKitStrings.of(key, _locale);
@@ -477,60 +430,27 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
 
   List<Widget> _buildGuide(ThemeData theme, _Category category) {
     final guide = _guide(category);
-    final widgets = <Widget>[];
-    var number = 0;
-    for (final phase in GuidePhase.values) {
-      final steps = guide.where((s) => s.phase == phase).toList();
-      if (steps.isEmpty) continue;
-      widgets.add(
-        Padding(
-          padding: const EdgeInsets.only(top: 6, bottom: 6),
-          child: Text(
-            _ui('phase_${phase.name}'),
-            style: theme.textTheme.titleSmall?.copyWith(
-              color: theme.colorScheme.primary,
-              fontWeight: FontWeight.bold,
+    // The picture for a step is chosen from its English wording, so the
+    // Tagalog guide (same steps, same order) gets the same pictures.
+    final english = firstAidGuides[category.id] ?? const <GuideStep>[];
+    return [
+      FirstAidStepList(
+        steps: [
+          for (var i = 0; i < guide.length; i++)
+            PhasedStep(
+              phase: guide[i].phase,
+              text: guide[i].text,
+              why: guide[i].why,
+              imageKey: firstAidStepImageKey(
+                i < english.length ? english[i].text : guide[i].text,
+              ),
             ),
-          ),
-        ),
-      );
-      for (final step in steps) {
-        number++;
-        widgets.add(
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '$number. ',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(step.text, style: theme.textTheme.bodyMedium),
-                      const SizedBox(height: 2),
-                      Text(
-                        '${_ui('whyLabel')} ${step.why}',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          fontStyle: FontStyle.italic,
-                          color: Colors.grey.shade700,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      }
-    }
-    return widgets;
+        ],
+        phaseLabel: (phase) => _ui('phase_${phase.name}'),
+        whyLabel: _ui('whyLabel'),
+        numbered: true,
+      ),
+    ];
   }
 
   List<String> _watchFor(_Category category) =>
@@ -539,53 +459,71 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
   String _seekCareIf(_Category category) =>
       _translation(category)?.seekCareIf ?? category.seekCareIf;
 
-  // The chat model always returns both languages — the bot's bubble
-  // switches immediately with the toggle. A user's own message is shown
-  // exactly as they typed or spoke it, since there's no translation of it.
-  String _displayFollowUpText(_FollowUpMessage message) {
-    if (message.isUser) return message.text;
-    if (_locale == HealthKitLocale.tl &&
-        message.tagalog != null &&
-        message.tagalog!.trim().isNotEmpty) {
-      return message.tagalog!;
-    }
-    return message.text;
-  }
-
   @override
   void dispose() {
-    _concernController.dispose();
-    _chatController.dispose();
-    _recordingTimer?.cancel();
-    _amplitudeSubscription?.cancel();
-    _voiceInput.dispose();
     super.dispose();
   }
 
-  Future<bool> _askQuestion(String text, int number, int total) async {
+  /// Yes / No, or null when the person closes the box with the X (the check
+  /// is cancelled: that is not an answer).
+  Future<bool?> _askQuestion(String text, int number, int total) async {
     final answer = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          HealthKitStrings.questionDialogTitle(number, total, _locale),
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        titlePadding: const EdgeInsets.fromLTRB(24, 16, 8, 0),
+        title: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  HealthKitStrings.questionDialogTitle(number, total, _locale),
+                  style: const TextStyle(
+                    color: Color(0xFF700509),
+                    fontSize: 19,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.close, color: Color(0xFF666666)),
+              tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+              onPressed: () => Navigator.pop(context),
+            ),
+          ],
         ),
-        content: Text(text),
-        actionsAlignment: MainAxisAlignment.spaceEvenly,
+        content: Text(
+          text,
+          style: const TextStyle(color: Colors.black, fontSize: 16),
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
         actions: [
-          OutlinedButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(_ui('no')),
+          // No (outlined) and Yes (filled): two separate pills, as designed.
+          SizedBox(
+            width: 112,
+            child: OutlinedButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text(_ui('no')),
+            ),
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(_ui('yes')),
+          const SizedBox(width: 12),
+          SizedBox(
+            width: 112,
+            child: ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: Text(_ui('yes')),
+            ),
           ),
         ],
       ),
     );
-    return answer ?? false;
+    return answer;
   }
 
   Future<void> _showRedFlagInterstitial(String message) async {
@@ -618,11 +556,6 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
     setState(() {
       _isRunningFlow = true;
       _resultCategoryIndex = null;
-      _userConcern = _concernController.text.trim().isEmpty
-          ? null
-          : _concernController.text.trim();
-      _qaHistory.clear();
-      _redFlagMessages.clear();
     });
 
     final category = _categories[index];
@@ -631,15 +564,18 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
     for (var i = 0; i < category.questions.length; i++) {
       if (!mounted) return;
       final question = category.questions[i];
-      final answeredYes = await _askQuestion(
+      final answer = await _askQuestion(
         _questionText(category, i),
         i + 1,
         category.questions.length,
       );
-      _qaHistory.add({
-        'question': question.text,
-        'answer': answeredYes ? 'Yes' : 'No',
-      });
+      if (!mounted) return;
+      if (answer == null) {
+        // Closed with the X: stop here and go back to the injury list.
+        _reset();
+        return;
+      }
+      final answeredYes = answer;
 
       if (answeredYes && question.isRedFlag) {
         hasRedFlag = true;
@@ -647,7 +583,6 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
             question.redFlagMessage ??
             'Based on your answer, this may need professional evaluation.';
         final message = _redFlagMessageFor(category, i, fallback);
-        _redFlagMessages.add(message);
         if (!mounted) return;
         await _showRedFlagInterstitial(message);
       }
@@ -666,324 +601,7 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
       _selectedCategoryIndex = null;
       _resultCategoryIndex = null;
       _isRunningFlow = false;
-      _userConcern = null;
-      _concernController.clear();
-      _qaHistory.clear();
-      _redFlagMessages.clear();
-      _followUpMessages.clear();
-      _savedToJournal = false;
-      _remindMe = false;
-      _savedJournalEntryId = null;
-      _hasUnsavedFollowUps = false;
     });
-  }
-
-  Future<void> _handleFollowUpSend() async {
-    final text = _chatController.text.trim();
-    if (text.isEmpty || _isSendingFollowUp) return;
-    _chatController.clear();
-    await _sendFollowUp(text);
-  }
-
-  Future<void> _sendFollowUp(String text, {String? audioPath}) async {
-    if (text.isEmpty || _isSendingFollowUp) return;
-
-    // Deliberately no local out-of-scope pre-check here (unlike the
-    // standalone chatbot) — this screen only reaches the follow-up input
-    // after a category is already selected, so a message like "I have a
-    // headache" is very plausibly ABOUT that category even without
-    // repeating wound-related words. A keyword-only check can't see that
-    // context and would wrongly refuse it; the shared system prompt's own
-    // scope/borderline-case judgment, which DOES see the category context
-    // (passed below), is the right place to decide here.
-    final isGuest = FirebaseAuth.instance.currentUser == null;
-    if (isGuest && await GuestUsageService.instance.hasReachedLimit()) {
-      if (!mounted) return;
-      await showGuestUsageLimitDialog(context);
-      return;
-    }
-
-    setState(() {
-      _followUpMessages.add(
-        _FollowUpMessage(text: text, isUser: true, audioPath: audioPath),
-      );
-      _isSendingFollowUp = true;
-    });
-
-    final online = await ConnectivityService().isOnline;
-    if (!online) {
-      if (!mounted) return;
-      setState(() {
-        _followUpMessages.add(
-          _FollowUpMessage(text: noInternetMessage, isUser: false),
-        );
-        _isSendingFollowUp = false;
-      });
-      return;
-    }
-
-    final category = _resultCategoryIndex != null
-        ? _categories[_resultCategoryIndex!]
-        : null;
-    final woundContext = category == null
-        ? null
-        : 'Category: ${category.title}\n'
-              'First aid steps given: ${(firstAidGuides[category.id] ?? const <GuideStep>[]).map(guideStepToJournalText).join(' ')}\n'
-              'Warning signs: ${category.watchFor.join(', ')}';
-
-    String response;
-    String? responseTagalog;
-    List<OtcSuggestion> otcSuggestions = const [];
-    try {
-      final contextualQuery = [
-        if (category != null) category.title,
-        text,
-      ].join(' ');
-      final referenceContext = await FirstAidContentService()
-          .buildReferenceContext(contextualQuery)
-          .timeout(const Duration(seconds: 15));
-      final raw = await GeminiService()
-          .sendChatMessage(
-            text,
-            referenceContext: referenceContext,
-            woundContext: woundContext,
-          )
-          .timeout(const Duration(seconds: 20));
-      final parsed = parseBilingualReply(raw);
-      final english = parsed.english.trim();
-      response = english.isNotEmpty ? english : randomFollowUpFallbackMessage();
-      final tagalog = parsed.tagalog?.trim();
-      responseTagalog = (tagalog != null && tagalog.isNotEmpty)
-          ? tagalog
-          : null;
-      otcSuggestions = await OtcFilterService.instance.filter(
-        parsed.otcSuggestions,
-      );
-      if (isGuest && !isRefusalReply(response)) {
-        await GuestUsageService.instance.recordSuccessfulUse();
-      }
-    } catch (e, st) {
-      logFollowUpError('FirstAidKit', e, st);
-      response = isNetworkError(e)
-          ? noInternetMessage
-          : randomFollowUpFallbackMessage();
-    }
-
-    if (!mounted) return;
-    setState(() {
-      _followUpMessages.add(
-        _FollowUpMessage(
-          text: response,
-          tagalog: responseTagalog,
-          isUser: false,
-          otcSuggestions: otcSuggestions,
-        ),
-      );
-      _isSendingFollowUp = false;
-      if (_savedJournalEntryId != null) _hasUnsavedFollowUps = true;
-    });
-  }
-
-  String _formatElapsed(Duration d) {
-    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return '$m:$s';
-  }
-
-  Future<void> _startVoiceRecording() async {
-    if (_isSendingFollowUp || _isRecording) return;
-
-    final available = await _voiceInput.isAvailable;
-    if (!available) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            "I couldn't access speech recognition on this device - check "
-            'that microphone permission is allowed, or type your question '
-            'instead.',
-          ),
-        ),
-      );
-      return;
-    }
-
-    await _voiceInput.start();
-    if (!mounted) return;
-    _amplitudeSubscription = _voiceInput.amplitudeStream().listen((level) {
-      if (mounted) setState(() => _recordingLevel = level);
-    });
-    _recordingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) {
-        setState(() => _recordingElapsed += const Duration(seconds: 1));
-      }
-    });
-    setState(() {
-      _isRecording = true;
-      _recordingElapsed = Duration.zero;
-    });
-  }
-
-  Future<void> _cancelVoiceRecording() async {
-    _recordingTimer?.cancel();
-    await _amplitudeSubscription?.cancel();
-    await _voiceInput.cancel();
-    if (!mounted) return;
-    setState(() {
-      _isRecording = false;
-      _recordingElapsed = Duration.zero;
-      _recordingLevel = 0;
-    });
-  }
-
-  Future<void> _finishVoiceRecording() async {
-    _recordingTimer?.cancel();
-    await _amplitudeSubscription?.cancel();
-    final result = await _voiceInput.stop();
-    if (!mounted) return;
-    setState(() {
-      _isRecording = false;
-      _recordingElapsed = Duration.zero;
-      _recordingLevel = 0;
-    });
-
-    if (result.transcript.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            result.audioPath == null
-                ? "I couldn't record that - check microphone permission "
-                      'and try again, or type your question instead.'
-                : "I recorded that, but couldn't make out the words - try "
-                      'again, speak a bit closer to the mic, or type your '
-                      'question instead.',
-          ),
-        ),
-      );
-      return;
-    }
-
-    await _sendFollowUp(result.transcript, audioPath: result.audioPath);
-  }
-
-  Future<void> _saveToJournal() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      await showGuestSaveGateDialog(context);
-      return;
-    }
-    final index = _resultCategoryIndex;
-    if (index == null) return;
-    final category = _categories[index];
-
-    setState(() => _isSaving = true);
-
-    try {
-      final guideSteps = (firstAidGuides[category.id] ?? const <GuideStep>[])
-          .map(guideStepToJournalText)
-          .toList();
-      final stepsText = guideSteps
-          .asMap()
-          .entries
-          .map((e) => '${e.key + 1}. ${e.value}')
-          .join('\n');
-      final description =
-          'FIRST AID STEPS:\n$stepsText\n\n'
-          'WATCH FOR:\n${category.watchFor.map((w) => '- $w').join('\n')}\n\n'
-          'SEEK CARE IF: ${category.seekCareIf}';
-
-      final journalData = <String, dynamic>{
-        'title': 'First Aid Assistant Session',
-        'description': description,
-        'classification': category.title,
-        'category': category.title,
-        'source': 'first_aid_assistant',
-        'userConcern': _userConcern,
-        'questionsAndAnswers': _qaHistory,
-        'redFlags': _redFlagMessages,
-        'firstAidSteps': guideSteps,
-        'watchFor': category.watchFor,
-        'seekCareIf': category.seekCareIf,
-        'hasRedFlag': _resultHasRedFlag,
-        'followUpConversation': _followUpMessages
-            .map((m) => m.toJournalMap())
-            .toList(),
-        'imageUrls': const <String>[],
-        'imageCount': 0,
-        'severity': null,
-        'remindMe': _remindMe,
-      };
-
-      if (_savedJournalEntryId == null) {
-        journalData['createdAt'] = FieldValue.serverTimestamp();
-        final docRef = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .collection('journalEntries')
-            .add(journalData)
-            .timeout(const Duration(seconds: 10));
-
-        final healingDays = healingDurationDays[category.title];
-        final noBenchmark = _remindMe && healingDays == null;
-        if (_remindMe && healingDays != null && mounted) {
-          await NotificationService().ensureHealingReminderPermission(context);
-          await NotificationService().scheduleHealingCheckIn(
-            entryId: docRef.id,
-            classification: category.title,
-            healingDays: healingDays,
-          );
-        }
-
-        if (mounted) {
-          setState(() {
-            _savedToJournal = true;
-            _savedJournalEntryId = docRef.id;
-            _hasUnsavedFollowUps = false;
-            _isSaving = false;
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                noBenchmark
-                    ? 'Session saved to Health Journal. '
-                          '${NotificationStrings.of(context).noBenchmark}'
-                    : 'Session saved to Health Journal.',
-              ),
-            ),
-          );
-        }
-      } else {
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .collection('journalEntries')
-            .doc(_savedJournalEntryId)
-            .update({
-              'userConcern': journalData['userConcern'],
-              'followUpConversation': journalData['followUpConversation'],
-            })
-            .timeout(const Duration(seconds: 10));
-
-        if (mounted) {
-          setState(() {
-            _hasUnsavedFollowUps = false;
-            _isSaving = false;
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Journal entry updated.')),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isSaving = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Could not save to journal. Please try again.'),
-          ),
-        );
-      }
-    }
   }
 
   @override
@@ -991,582 +609,404 @@ class _FirstAidKitScreenState extends State<FirstAidKitScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back_ios, size: 18),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                  Expanded(
-                    child: Text(
-                      'First Aid Health Kit',
-                      style: theme.textTheme.headlineSmall?.copyWith(
-                        color: theme.colorScheme.primary,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  _buildLanguageToggle(theme),
-                ],
-              ),
-            ),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+      backgroundColor: _pageBackground,
+      body: Column(
+        children: [
+          // Maroon header: back, title, language.
+          Container(
+            width: double.infinity,
+            color: theme.colorScheme.primary,
+            child: SafeArea(
+              bottom: false,
+              child: SizedBox(
+                height: 60,
+                child: Row(
                   children: [
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.primary,
-                        borderRadius: BorderRadius.circular(16),
+                    IconButton(
+                      icon: const Icon(
+                        Icons.arrow_back_ios_new,
+                        color: Colors.white,
+                        size: 20,
                       ),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                    Expanded(
                       child: Text(
-                        _ui('bannerBody'),
-                        style: theme.textTheme.bodyMedium?.copyWith(
+                        'First Aid Health Kit',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.titleLarge?.copyWith(
                           color: Colors.white,
+                          fontWeight: FontWeight.normal,
                         ),
                       ),
                     ),
-                    const SizedBox(height: 20),
-                    Text(
-                      _ui('categoryPrompt'),
-                      style: theme.textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<int>(
-                      initialValue: _selectedCategoryIndex,
-                      decoration: InputDecoration(
-                        filled: true,
-                        fillColor: theme.colorScheme.surfaceContainerHigh,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none,
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 4,
-                        ),
-                      ),
-                      hint: Text(_ui('categoryHint')),
-                      items: List.generate(
-                        _categories.length,
-                        (i) => DropdownMenuItem(
-                          value: i,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                _categories[i].icon,
-                                size: 18,
-                                color: theme.colorScheme.primary,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(_categoryTitle(_categories[i])),
-                            ],
-                          ),
-                        ),
-                      ),
-                      onChanged: _isRunningFlow
-                          ? null
-                          : (index) {
-                              if (index == null) return;
-                              setState(() {
-                                _selectedCategoryIndex = index;
-                                _resultCategoryIndex = null;
-                              });
-                            },
-                    ),
-                    if (_selectedCategoryIndex != null &&
-                        !_isRunningFlow &&
-                        _resultCategoryIndex == null) ...[
-                      const SizedBox(height: 16),
-                      Text(
-                        _ui('concernLabel'),
-                        style: theme.textTheme.titleSmall,
-                      ),
-                      const SizedBox(height: 6),
-                      TextField(
-                        controller: _concernController,
-                        maxLines: 2,
-                        decoration: InputDecoration(
-                          hintText: _ui('concernHint'),
-                          filled: true,
-                          fillColor: theme.colorScheme.surfaceContainerHigh,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      ElevatedButton(
-                        onPressed: _startQuestions,
-                        style: ElevatedButton.styleFrom(
-                          minimumSize: const Size.fromHeight(46),
-                        ),
-                        child: Text(_ui('startQuestions')),
-                      ),
-                    ],
-                    const SizedBox(height: 20),
-                    if (_isRunningFlow)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 24),
-                        child: Center(child: CircularProgressIndicator()),
-                      ),
-                    if (_resultCategoryIndex != null)
-                      _buildResult(theme, _categories[_resultCategoryIndex!]),
+                    // Same width as the back button, so the title stays centred.
+                    const SizedBox(width: 48),
                   ],
                 ),
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLanguageToggle(ThemeData theme) {
-    return Semantics(
-      label: _ui('languageToggleLabel'),
-      child: SegmentedButton<HealthKitLocale>(
-        segments: const [
-          ButtonSegment(value: HealthKitLocale.en, label: Text('EN')),
-          ButtonSegment(value: HealthKitLocale.tl, label: Text('TL')),
-        ],
-        selected: {_locale},
-        showSelectedIcon: false,
-        style: const ButtonStyle(
-          visualDensity: VisualDensity.compact,
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        ),
-        onSelectionChanged: (selection) => _setLocale(selection.first),
-      ),
-    );
-  }
-
-  /// Short cautions derived from the user's onboarding Health Profile
-  /// (diabetes, bleeding disorders, severe allergies) — an additive nudge
-  /// alongside the standard first aid steps, not a replacement for them.
-  Widget _buildHealthCautionBox(ThemeData theme) {
-    if (_healthCautions.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.blue.shade50,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.blue.shade200),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Based on Your Health Profile',
-              style: theme.textTheme.titleSmall?.copyWith(
-                color: Colors.blue.shade800,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 6),
-            ..._healthCautions.map(
-              (c) => Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Text(
-                  c,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: Colors.blue.shade900,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildResult(ThemeData theme, _Category category) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 24,
-                backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                child: Icon(category.icon, color: theme.colorScheme.primary),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  _categoryTitle(category),
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
           ),
-          if (_userConcern != null) ...[
-            const SizedBox(height: 12),
-            Text(
-              _ui('yourConcern'),
-              style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(_userConcern!, style: theme.textTheme.bodyMedium),
-          ],
-          const SizedBox(height: 16),
-          if (_resultHasRedFlag) ...[
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.red.shade50,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.red.shade300),
-              ),
-              child: Row(
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.warning_amber_rounded, color: Colors.red.shade700),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      _ui('redFlagSummary'),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: Colors.red.shade700,
-                        fontWeight: FontWeight.bold,
-                      ),
+                  if (_resultCategoryIndex == null && !_isRunningFlow)
+                    ..._buildChooser(theme),
+                  if (_isRunningFlow)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 24),
+                      child: Center(child: CircularProgressIndicator()),
                     ),
-                  ),
+                  if (_resultCategoryIndex != null)
+                    _buildResult(theme, _categories[_resultCategoryIndex!]),
                 ],
               ),
             ),
-            const SizedBox(height: 16),
-          ],
-          _buildHealthCautionBox(theme),
-          Text(
-            _ui('basicFirstAidSteps'),
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
           ),
-          const SizedBox(height: 8),
-          ..._buildGuide(theme, category),
-          const SizedBox(height: 12),
-          Text(
-            _ui('watchFor'),
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 6),
-          ..._watchFor(category).map(
-            (w) => Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Row(
+        ],
+      ),
+    );
+  }
+
+  /// The offline banner, the question, and one card per injury type.
+  List<Widget> _buildChooser(ThemeData theme) {
+    return [
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.primary,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('• '),
-                  Expanded(child: Text(w, style: theme.textTheme.bodyMedium)),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              '${_ui('seekCareIfPrefix')}${_seekCareIf(category)}',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.primary,
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            _ui('resultDisclaimer'),
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: Colors.grey.shade600,
-              fontStyle: FontStyle.italic,
-            ),
-          ),
-          const SizedBox(height: 16),
-          if (!_savedToJournal)
-            RemindMeCheckbox(
-              value: _remindMe,
-              onChanged: (v) => setState(() => _remindMe = v),
-            ),
-          if (_savedToJournal && !_hasUnsavedFollowUps)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.green.shade50,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.green.shade300),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.check_circle,
-                    color: Colors.green.shade700,
-                    size: 18,
-                  ),
-                  const SizedBox(width: 8),
                   Text(
-                    _ui('savedToJournal'),
-                    style: TextStyle(
-                      color: Colors.green.shade700,
+                    _ui('bannerTitle'),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: Colors.white,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
+                  const SizedBox(height: 2),
+                  Text(
+                    _ui('bannerSubtitle'),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: Colors.white,
+                    ),
+                  ),
                 ],
               ),
-            )
-          else
-            ElevatedButton.icon(
-              onPressed: _isSaving ? null : _saveToJournal,
-              icon: _isSaving
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : Icon(
-                      _hasUnsavedFollowUps ? Icons.sync : Icons.save_outlined,
-                      size: 18,
-                    ),
-              label: Text(
-                _isSaving
-                    ? _ui('saving')
-                    : _hasUnsavedFollowUps
-                    ? _ui('updateJournalEntry')
-                    : _ui('saveToJournal'),
-              ),
-              style: ElevatedButton.styleFrom(
-                minimumSize: const Size.fromHeight(46),
-              ),
             ),
-          const SizedBox(height: 16),
-          _buildFollowUpSection(theme),
-          const SizedBox(height: 16),
-          OutlinedButton(
-            onPressed: _reset,
-            child: Text(_ui('chooseDifferentInjury')),
+            const SizedBox(width: 12),
+            const Icon(Icons.medical_services, color: Colors.white, size: 44),
+          ],
+        ),
+      ),
+      const SizedBox(height: 20),
+      Text(
+        _ui('categoryPrompt'),
+        style: theme.textTheme.titleSmall?.copyWith(color: Colors.black),
+      ),
+      const SizedBox(height: 2),
+      Text(_ui('categorySubtitle'), style: theme.textTheme.bodyMedium),
+      const SizedBox(height: 16),
+      // Wide, low cards (the picture, then the name and the arrow). Their
+      // height follows the width (the picture is about three quarters of the
+      // card) and the text size, so nothing overflows on a small phone, a
+      // tablet or with a larger font.
+      LayoutBuilder(
+        builder: (context, box) {
+          const gap = 14.0;
+          final cardWidth = (box.maxWidth - gap) / 2;
+          final pictureHeight = (cardWidth - 24) * 0.78 * (278 / 480);
+          final textScale = MediaQuery.textScalerOf(context).scale(10) / 10;
+          return GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _categories.length,
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              mainAxisSpacing: gap,
+              crossAxisSpacing: gap,
+              mainAxisExtent: 12 + pictureHeight + 8 + 40 * textScale + 12,
+            ),
+            itemBuilder: (context, i) => _buildCategoryCard(theme, i),
+          );
+        },
+      ),
+    ];
+  }
+
+  Widget _buildCategoryCard(ThemeData theme, int index) {
+    final category = _categories[index];
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: _isRunningFlow ? null : () => _chooseCategory(index),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // The picture takes about three quarters of the card, on the
+              // left; the arrow sits under the rest.
+              FractionallySizedBox(
+                widthFactor: 0.78,
+                alignment: Alignment.centerLeft,
+                child: AspectRatio(
+                  aspectRatio: 480 / 278,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: Image.asset(
+                      category.image,
+                      fit: BoxFit.cover,
+                      excludeFromSemantics: true,
+                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                    ),
+                  ),
+                ),
+              ),
+              const Spacer(),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _categoryTitle(category),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: Colors.black,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  const CircleAvatar(
+                    radius: 14,
+                    backgroundColor: Color(0xFFF8C7C0),
+                    child: Icon(
+                      Icons.chevron_right,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildFollowUpSection(ThemeData theme) {
+  /// A tap on an injury card goes straight to its questions (the Health Kit
+  /// works offline, so there is nothing to describe or save).
+  Future<void> _chooseCategory(int index) async {
+    if (_isRunningFlow) return;
+    setState(() {
+      _selectedCategoryIndex = index;
+      _resultCategoryIndex = null;
+    });
+    await _startQuestions();
+  }
+
+  /// The blue "Based on Your Health Profile" box (see [HealthProfileBox]): the
+  /// conditions in the profile and a short caution for each, an additive nudge
+  /// alongside the standard first aid steps, not a replacement for them.
+  Widget _buildHealthCautionBox(ThemeData theme) => HealthProfileBox(
+    profile: _profile,
+    tagalog: _locale == HealthKitLocale.tl,
+    bottomPadding: 16,
+  );
+
+  Widget _buildResult(ThemeData theme, _Category category) {
+    final primary = theme.colorScheme.primary;
+    final summary = _ui('redFlagSummary');
+    final cut = summary.indexOf('. ');
+    final summaryHead = cut > 0 ? summary.substring(0, cut + 1) : summary;
+    final summaryRest = cut > 0 ? summary.substring(cut + 2) : '';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Text(
-              _ui('askFollowUp'),
-              style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+        if (_resultHasRedFlag) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFDECEA),
+              borderRadius: BorderRadius.circular(16),
             ),
-            const Spacer(),
-            const GuestUsageBadge(),
-          ],
-        ),
-        const SizedBox(height: 2),
-        Text(
-          _ui('followUpSubtitle'),
-          style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey),
-        ),
-        const SizedBox(height: 10),
-        ..._followUpMessages.map(
-          (m) => Align(
-            alignment: m.isUser ? Alignment.centerRight : Alignment.centerLeft,
-            child: Container(
-              constraints: BoxConstraints(
-                maxWidth: MediaQuery.of(context).size.width * 0.7,
-              ),
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: m.isUser
-                    ? Theme.of(context).colorScheme.primary
-                    : Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (m.audioPath != null) ...[
-                    VoiceMessageBubble(
-                      audioPath: m.audioPath!,
-                      isUser: m.isUser,
-                    ),
-                    const SizedBox(height: 6),
-                  ],
-                  Text(
-                    _displayFollowUpText(m),
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: m.isUser ? Colors.white : null,
-                      fontStyle: m.audioPath != null ? FontStyle.italic : null,
-                    ),
-                  ),
-                  if (!m.isUser && m.otcSuggestions.isNotEmpty)
-                    OtcSuggestionsBlock(suggestions: m.otcSuggestions),
-                ],
-              ),
-            ),
-          ),
-        ),
-        if (_isSendingFollowUp)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: theme.colorScheme.primary,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Thinking…',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: Colors.grey,
+                Icon(Icons.warning_amber_rounded, color: primary),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        summaryHead,
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: primary,
+                        ),
+                      ),
+                      if (summaryRest.isNotEmpty)
+                        Text(
+                          summaryRest,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: primary,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ],
             ),
           ),
-        _buildFollowUpInputBar(theme),
-      ],
-    );
-  }
-
-  Widget _buildFollowUpInputBar(ThemeData theme) {
-    if (_isRecording) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(30),
-        ),
-        child: Row(
-          children: [
-            IconButton(
-              icon: const Icon(Icons.close, color: Colors.grey),
-              tooltip: 'Cancel recording',
-              onPressed: _cancelVoiceRecording,
-            ),
-            TweenAnimationBuilder<double>(
-              tween: Tween(begin: 0.85, end: 0.85 + _recordingLevel * 0.45),
-              duration: const Duration(milliseconds: 150),
-              builder: (context, scale, child) => Transform.scale(
-                scale: scale,
-                child: const SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                'Listening… ${_formatElapsed(_recordingElapsed)}',
-                style: theme.textTheme.bodyMedium,
-              ),
-            ),
-            IconButton(
-              icon: Icon(Icons.check_circle, color: theme.colorScheme.primary),
-              tooltip: 'Stop and send',
-              onPressed: _finishVoiceRecording,
-            ),
-          ],
-        ),
-      );
-    }
-
-    final hasText = _chatController.text.trim().isNotEmpty;
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(30),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: TextField(
-                controller: _chatController,
-                decoration: InputDecoration(
-                  hintText: _ui('followUpHint'),
-                  border: InputBorder.none,
-                ),
-                onChanged: (_) => setState(() {}),
-                onSubmitted: (_) => _handleFollowUpSend(),
-              ),
-            ),
-          ),
-          IconButton(
-            icon: Icon(Icons.mic, color: theme.colorScheme.primary),
-            tooltip: 'Record a follow-up question',
-            onPressed: _isSendingFollowUp ? null : _startVoiceRecording,
-          ),
-          IconButton(
-            icon: Icon(Icons.send, color: theme.colorScheme.primary),
-            tooltip: 'Send',
-            onPressed: (_isSendingFollowUp || !hasText)
-                ? null
-                : _handleFollowUpSend,
-          ),
+          const SizedBox(height: 14),
         ],
-      ),
+        // The injury: its name (and the person's own words) beside its picture.
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _categoryTitle(category),
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: Colors.black,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: Image.asset(
+                  category.image,
+                  width: 120,
+                  height: 70,
+                  fit: BoxFit.cover,
+                  excludeFromSemantics: true,
+                  errorBuilder: (_, _, _) =>
+                      const SizedBox(width: 120, height: 70),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+        _buildHealthCautionBox(theme),
+        Text(
+          _ui('basicFirstAidSteps'),
+          style: theme.textTheme.titleSmall?.copyWith(color: Colors.black),
+        ),
+        const SizedBox(height: 10),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ..._buildGuide(theme, category),
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFE797),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _ui('watchFor'),
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: Colors.black,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    ..._watchFor(category).map(
+                      (w) => Padding(
+                        padding: const EdgeInsets.only(bottom: 2),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('•  '),
+                            Expanded(
+                              child: Text(w, style: theme.textTheme.bodySmall),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFD9D9),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.warning_amber_rounded, color: primary, size: 28),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '${_ui('seekCareIfPrefix')}${_seekCareIf(category)}',
+                  style: theme.textTheme.bodySmall?.copyWith(color: primary),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          _ui('resultDisclaimer'),
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: const Color(0xFF8F8584),
+            fontWeight: FontWeight.normal,
+          ),
+        ),
+        const SizedBox(height: 16),
+        OutlinedButton(
+          onPressed: _reset,
+          child: Text(_ui('chooseDifferentInjury')),
+        ),
+      ],
     );
   }
 }

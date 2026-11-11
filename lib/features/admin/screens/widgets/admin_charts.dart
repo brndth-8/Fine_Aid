@@ -31,7 +31,7 @@ enum TrendRange {
       : DateTime(start.year, start.month, start.day + 1);
 }
 
-enum TrendMarker { circle, square, triangle }
+enum TrendMarker { circle, square, triangle, diamond }
 
 enum TrendDash { solid, dashed, dotted }
 
@@ -40,19 +40,29 @@ enum TrendDash { solid, dashed, dotted }
 class TrendSeries {
   const TrendSeries({
     required this.name,
-    required this.query,
+    this.query,
     required this.color,
     required this.marker,
     required this.dash,
     this.field = 'createdAt',
+    this.remainder = false,
   });
 
   final String name;
-  final Query<Map<String, dynamic>> query;
+
+  /// Where the counts come from. Null for a series whose values are passed
+  /// in directly (see [AdminLineChart]).
+  final Query<Map<String, dynamic>>? query;
   final Color color;
   final TrendMarker marker;
   final TrendDash dash;
   final String field;
+
+  /// A catch-all line: [query] counts EVERYTHING in the bucket, and what is
+  /// drawn is that total minus what the other lines already show (never below
+  /// 0). This is how a chart split by category keeps entries whose category is
+  /// missing or unknown, instead of silently dropping them.
+  final bool remainder;
 }
 
 /// The three series shown on both the Dashboard and Reports & Analytics.
@@ -101,6 +111,32 @@ class _TrendData {
   bool get isEmpty => values.every((s) => s.every((v) => v == 0));
 }
 
+/// Turns the raw counts into what is drawn: a series flagged
+/// [TrendSeries.remainder] becomes (its total) - (the sum of the other lines)
+/// per bucket, never below 0. values[series][bucket].
+List<List<int>> withRemainders(
+  List<TrendSeries> series,
+  List<List<int>> counts,
+) {
+  return [
+    for (var i = 0; i < series.length; i++)
+      if (!series[i].remainder)
+        counts[i]
+      else
+        [
+          for (var b = 0; b < counts[i].length; b++)
+            math.max(
+              0,
+              counts[i][b] -
+                  [
+                    for (var j = 0; j < series.length; j++)
+                      if (j != i && !series[j].remainder) counts[j][b],
+                  ].fold(0, (a, c) => a + c),
+            ),
+        ],
+  ];
+}
+
 /// One server-side `count()` per bucket per series, all in parallel. Buckets
 /// with no documents come back as 0, so the line never skips a day. Nothing
 /// is downloaded and only the displayed range is queried.
@@ -113,7 +149,7 @@ Future<_TrendData> _fetchTrend(
     for (final s in series)
       Future.wait([
         for (final start in starts)
-          s.query
+          s.query!
               .where(s.field, isGreaterThanOrEqualTo: Timestamp.fromDate(start))
               .where(s.field, isLessThan: Timestamp.fromDate(range.end(start)))
               .count()
@@ -121,7 +157,7 @@ Future<_TrendData> _fetchTrend(
               .then((snap) => snap.count ?? 0),
       ]),
   ]);
-  return _TrendData(starts, range, results);
+  return _TrendData(starts, range, withRemainders(series, results));
 }
 
 /// Card with a range selector, legend and an interactive line chart. Loads
@@ -131,12 +167,22 @@ class AdminTrendCard extends StatefulWidget {
     super.key,
     required this.title,
     required this.caption,
+    this.seriesBuilder,
     this.initialRange = TrendRange.days30,
+    this.fillHeight = false,
   });
 
   final String title;
   final String caption;
+
+  /// The lines to plot, given the theme colours. Defaults to the standard
+  /// new users / journal entries / AI scans set.
+  final List<TrendSeries> Function(ColorScheme)? seriesBuilder;
   final TrendRange initialRange;
+
+  /// Fill the height the parent gives (the chart stretches) instead of using a
+  /// fixed chart height, so the card can sit in a panel of a set size.
+  final bool fillHeight;
 
   @override
   State<AdminTrendCard> createState() => _AdminTrendCardState();
@@ -144,13 +190,18 @@ class AdminTrendCard extends StatefulWidget {
 
 class _AdminTrendCardState extends State<AdminTrendCard> {
   // Built on first use (inside build) because the colours come from the theme.
-  late final List<TrendSeries> _series = standardAdminTrendSeries(
-    Theme.of(context).colorScheme,
-  );
+  late final List<TrendSeries> _series =
+      (widget.seriesBuilder ?? standardAdminTrendSeries)(
+        Theme.of(context).colorScheme,
+      );
   late TrendRange _range = widget.initialRange;
   late Future<_TrendData> _future = _fetchTrend(_series, _range);
 
   void _load() => _future = _fetchTrend(_series, _range);
+
+  Widget _chartArea({required Widget child}) => widget.fillHeight
+      ? Expanded(child: child)
+      : SizedBox(height: 240, child: child);
 
   @override
   Widget build(BuildContext context) {
@@ -227,8 +278,7 @@ class _AdminTrendCardState extends State<AdminTrendCard> {
             ],
           ),
           const SizedBox(height: 12),
-          SizedBox(
-            height: 240,
+          _chartArea(
             child: FutureBuilder<_TrendData>(
               future: _future,
               builder: (context, snap) {
@@ -277,6 +327,65 @@ class _AdminTrendCardState extends State<AdminTrendCard> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// The same line chart as [AdminTrendCard] (legend, hover/tap tooltip, whole
+/// number axis starting at 0), for values that are already loaded: one list
+/// of per-day counts per series, oldest day first. An all-zero chart still
+/// draws its flat lines at 0.
+class AdminLineChart extends StatelessWidget {
+  const AdminLineChart({
+    super.key,
+    required this.days,
+    required this.series,
+    required this.values,
+    this.height = 180,
+  });
+
+  final List<DateTime> days;
+  final List<TrendSeries> series;
+
+  /// values[seriesIndex][dayIndex]
+  final List<List<int>> values;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 16,
+          runSpacing: 4,
+          children: [
+            for (final s in series)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CustomPaint(
+                    size: const Size(30, 12),
+                    painter: _LegendPainter(s),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(s.name, style: theme.textTheme.bodySmall),
+                ],
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: height,
+          child: _TrendChart(
+            data: _TrendData(days, TrendRange.days30, values),
+            series: series,
+            textStyle:
+                theme.textTheme.bodySmall ?? const TextStyle(fontSize: 12),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -371,6 +480,15 @@ void _drawMarker(
         ..moveTo(c.dx, c.dy - r - 1)
         ..lineTo(c.dx + r + 1, c.dy + r)
         ..lineTo(c.dx - r - 1, c.dy + r)
+        ..close();
+      canvas.drawPath(path, fill);
+      canvas.drawPath(path, ring);
+    case TrendMarker.diamond:
+      final path = Path()
+        ..moveTo(c.dx, c.dy - r - 1.5)
+        ..lineTo(c.dx + r + 1.5, c.dy)
+        ..lineTo(c.dx, c.dy + r + 1.5)
+        ..lineTo(c.dx - r - 1.5, c.dy)
         ..close();
       canvas.drawPath(path, fill);
       canvas.drawPath(path, ring);

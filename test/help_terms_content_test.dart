@@ -114,7 +114,15 @@ void main() {
         // Nothing expands in place; the text is on the page itself.
         expect(find.text(firstBody(section)), findsNothing);
       }
-      expect(find.byIcon(Icons.chevron_right), findsNWidgets(4));
+      // each page is a card with a line about it (the design)
+      for (final line in [
+        s.gettingStartedSub,
+        s.privacySub,
+        s.journalSub,
+        s.referencesSub,
+      ]) {
+        expect(find.text(line), findsOneWidget, reason: line);
+      }
       expect(find.byIcon(Icons.keyboard_arrow_down), findsNothing);
       expect(find.text(s.heading), findsOneWidget);
       expect(find.text(s.replayTour), findsOneWidget);
@@ -131,6 +139,7 @@ void main() {
           await tester.tap(find.text(section.title));
           await tester.pumpAndSettle();
           expect(find.byType(HelpTopicScreen), findsOneWidget);
+          // in the top bar only: no duplicate title above the text
           expect(find.text(section.title), findsOneWidget);
           expect(find.text(firstBody(section)), findsOneWidget);
           expect(find.byIcon(Icons.arrow_back_ios), findsOneWidget);
@@ -239,7 +248,8 @@ void main() {
       await Firebase.initializeApp();
     });
 
-    test('follows the document: headings in order, fixes applied', () {
+    test('follows the PDF: each English heading is followed by its Filipino '
+        'one, in order', () {
       final headers = TermsStrings.en.sections
           .where((s) => !s.subheader && s.header.isNotEmpty)
           .map((s) => s.header)
@@ -247,21 +257,29 @@ void main() {
       expect(headers, [
         'MEDICAL DISCLAIMER & EMERGENCY SERVICES',
         'APP USAGE & ACCOUNT TERMS',
+        'PAGGAMIT NG APP AT MGA TUNTUNIN SA ACCOUNT',
         'ACCEPTABLE USE POLICY',
+        'PATAKARAN SA TANGGAP NA PAGGAMIT',
         'ADVISORY AND VALIDATION BY HEALTHCARE PROFESSIONALS',
+        'ABISO AT PAGPAPATIBAY NG MGA PROPESYONAL SA KALUSUGAN',
         'PRIVACY AND HEALTH DATA',
+        'PRIVACY AT DATA NG KALUSUGAN',
         'LIMITATION OF LIABILITY & DISCLAIMER OF WARRANTIES',
+        'LIMITASYON NG PANANAGUTAN AT PAGTATATWA NG MGA WARRANTY',
         'TERMINATION',
+        'PAGTIGIL O PAGPAPATIGIL',
         'CHANGES TO THESE TERMS',
+        'MGA PAGBABAGO SA MGA TUNTUNING ITO',
       ]);
       final text = TermsStrings.en.sections
           .map((s) => '${s.paragraph ?? ''} ${s.bullets.join(' ')}')
           .join('\n');
-      expect(text, contains('governed by our Privacy Policy, which'));
-      expect(text, isNot(contains('[')));
-      expect(text, contains('without notice, if you violate these Terms'));
-      // Both languages have the same sections.
-      expect(TermsStrings.tl.sections.length, TermsStrings.en.sections.length);
+      // word for word, as in the PDF (including its [Privacy Policy])
+      expect(text, contains('governed by our [Privacy Policy], which'));
+      expect(text, contains('without notice. If you violate these Terms'));
+      expect(text, contains('Mangyaring basahing mabuti'));
+      // the same bilingual body whatever the app language is
+      expect(TermsStrings.tl.sections, TermsStrings.en.sections);
     });
 
     testWidgets('the emergency disclaimer is a prominent boxed notice', (

@@ -63,8 +63,8 @@ class TourStrings {
       ),
       TourStepText(
         'Settings',
-        'Adjust notifications, text size, and other app preferences '
-            'from here.',
+        'Personalized by changing text size, View App Information, Choose '
+            'preferred language and share your feedback',
       ),
     ],
     skipTour: 'Skip Tour',
@@ -109,8 +109,9 @@ class TourStrings {
       ),
       TourStepText(
         'Settings',
-        'Ayusin dito ang mga notification, laki ng teksto, at iba pang '
-            'kagustuhan sa app.',
+        'I-personalize sa pamamagitan ng pagpapalit ng laki ng teksto, '
+            'tingnan ang impormasyon ng app, piliin ang gustong wika, at '
+            'ibahagi ang iyong feedback',
       ),
     ],
     skipTour: 'Laktawan ang Tour',

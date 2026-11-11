@@ -23,11 +23,19 @@ class JournalEntryStrings {
   final String injuryTypePrompt;
   final String deep;
   final String minor;
+  // Add Entry > Injury > Deep: what the "Deep" choice describes.
+  final String deepDescription;
+  // The "Professional care recommended" pop-up (Injury > Deep).
+  final String careTitle;
+  final String careBody;
+  final String careNote;
+  final String careContinue;
   final String selectedFormat; // {category}
 
   final String titleRequired;
   final String categoryRequired;
   final String painRequired;
+  final String itchRequired;
   final String saveFailed;
 
   /// Display names of the four journal categories. The stored value (the
@@ -59,10 +67,16 @@ class JournalEntryStrings {
     required this.injuryTypePrompt,
     required this.deep,
     required this.minor,
+    required this.deepDescription,
+    required this.careTitle,
+    required this.careBody,
+    required this.careNote,
+    required this.careContinue,
     required this.selectedFormat,
     required this.titleRequired,
     required this.categoryRequired,
     required this.painRequired,
+    required this.itchRequired,
     required this.saveFailed,
     required this.categoryNames,
     required this.injurySubtitle,
@@ -100,10 +114,24 @@ class JournalEntryStrings {
     injuryTypePrompt: 'Choose the one that best describes your injury.',
     deep: 'Deep',
     minor: 'Minor',
+    deepDescription:
+        'The wound is deep, and fat or muscle may be partly visible. The '
+        'edges of the wound are gaping apart. Bleeding continues even after '
+        '10 minutes of firm pressure, or the wound was caused by a dirty or '
+        'sharp object that pierced the skin.',
+    careTitle: 'Professional care recommended',
+    careBody:
+        'We recommend seeking professional medical help to ensure proper '
+        'care.',
+    careNote:
+        'You can use this journal to monitor your recovery and track your '
+        'aftercare.',
+    careContinue: 'Continue to journal',
     selectedFormat: 'Selected: {category}',
     titleRequired: 'Please add a title.',
     categoryRequired: 'Please select a category.',
     painRequired: 'Please rate your pain.',
+    itchRequired: 'Please rate your itchiness.',
     saveFailed: 'Could not save entry. Please try again.',
     categoryNames: {
       'Injury (Wounds/laceration/Abrasion)': 'Injury',
@@ -159,10 +187,24 @@ class JournalEntryStrings {
     injuryTypePrompt: 'Piliin ang pinakaangkop sa iyong pinsala.',
     deep: 'Malalim',
     minor: 'Maliit',
+    deepDescription:
+        'Malalim ang sugat at maaaring bahagyang makita ang taba o kalamnan. '
+        'Nakabuka ang mga gilid ng sugat. Patuloy ang pagdurugo kahit '
+        'nadiinan na ito nang 10 minuto, o dulot ito ng marumi o matulis na '
+        'bagay na bumaon sa balat.',
+    careTitle: 'Inirerekomenda ang propesyonal na pangangalaga',
+    careBody:
+        'Inirerekomenda naming humingi ng tulong medikal mula sa propesyonal '
+        'para masiguro ang tamang pangangalaga.',
+    careNote:
+        'Maaari mong gamitin ang journal na ito para subaybayan ang iyong '
+        'paggaling at ang iyong aftercare.',
+    careContinue: 'Magpatuloy sa journal',
     selectedFormat: 'Napili: {category}',
     titleRequired: 'Magdagdag ng pamagat.',
     categoryRequired: 'Pumili ng kategorya.',
     painRequired: 'I-rate ang iyong sakit.',
+    itchRequired: 'I-rate ang iyong pangangati.',
     saveFailed: 'Hindi ma-save ang entry. Pakisubukan muli.',
     categoryNames: {
       'Injury (Wounds/laceration/Abrasion)': 'Pinsala',

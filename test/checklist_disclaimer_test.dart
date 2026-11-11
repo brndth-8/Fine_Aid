@@ -35,60 +35,59 @@ void main() {
   }.entries) {
     final s = lang.value;
 
-    testWidgets('${lang.key.name}: diabetes types, disclaimer on check only', (
-      tester,
-    ) async {
+    testWidgets('${lang.key.name}: diabetes opens to its types, disclaimer '
+        'when one is chosen', (tester) async {
       await pump(tester, lang.key);
+      final ticked = find.byWidgetPredicate(
+        (w) => w is Checkbox && w.value == true,
+      );
 
-      // Nothing yet: no type list, no pop-up.
-      expect(find.text(s.diabetesTypeTitle), findsNothing);
+      // Closed: no type list, no pop-up.
+      expect(find.text(s.diabetesType1), findsNothing);
       expect(find.text(s.disclaimer), findsNothing);
 
-      // Checking Diabetes shows the pop-up and the five types.
+      // Opening the card chooses nothing: the types show, no pop-up.
       await tester.tap(find.text(s.diabetes));
       await tester.pumpAndSettle();
-      expect(find.text(s.disclaimer), findsOneWidget);
-      expect(find.text(s.disclaimerOk), findsOneWidget);
-      await tester.tap(find.text(s.disclaimerOk));
-      await tester.pumpAndSettle();
       expect(find.text(s.disclaimer), findsNothing);
-
-      expect(find.text(s.diabetesTypeTitle), findsOneWidget);
       for (final name in [
         s.diabetesType1,
         s.diabetesType2,
         s.diabetesGestational,
         s.diabetesPrediabetes,
-        s.diabetesNotSure,
       ]) {
         expect(find.text(name), findsOneWidget);
       }
+      expect(ticked, findsNothing);
 
-      // Single choice: picking another type moves the selection.
+      // Choosing a type is how Diabetes is chosen: the pop-up comes.
       await tester.tap(find.text(s.diabetesType2));
-      await tester.pump();
-      expect(find.byIcon(Icons.radio_button_checked), findsOneWidget);
+      await tester.pumpAndSettle();
+      expect(find.text(s.disclaimer), findsOneWidget);
+      await tester.tap(find.text(s.disclaimerOk));
+      await tester.pumpAndSettle();
+      expect(ticked, findsOneWidget);
+
+      // Single choice: another type moves the tick, with no second pop-up.
       await tester.tap(find.text(s.diabetesGestational));
-      await tester.pump();
-      expect(find.byIcon(Icons.radio_button_checked), findsOneWidget);
+      await tester.pumpAndSettle();
+      expect(find.text(s.disclaimer), findsNothing);
+      expect(ticked, findsOneWidget);
 
       // The pop-up never blocked the selection or the Continue button.
       final cont = find.widgetWithText(ElevatedButton, s.continueButton);
       expect(tester.widget<ElevatedButton>(cont).onPressed, isNotNull);
 
-      // Unchecking: no pop-up, the list closes, and the type is forgotten.
-      await tester.tap(find.text(s.diabetes));
+      // Tapping the chosen type again clears it: no pop-up, nothing chosen.
+      await tester.tap(find.text(s.diabetesGestational));
       await tester.pumpAndSettle();
       expect(find.text(s.disclaimer), findsNothing);
-      expect(find.text(s.diabetesTypeTitle), findsNothing);
+      expect(ticked, findsNothing);
 
-      // Checking again pops up again, with nothing selected.
-      await tester.tap(find.text(s.diabetes));
+      // Choosing again pops up again.
+      await tester.tap(find.text(s.diabetesType1));
       await tester.pumpAndSettle();
       expect(find.text(s.disclaimer), findsOneWidget);
-      await tester.tap(find.text(s.disclaimerOk));
-      await tester.pumpAndSettle();
-      expect(find.byIcon(Icons.radio_button_checked), findsNothing);
     });
 
     testWidgets('${lang.key.name}: every checked condition shows it; food '
@@ -96,6 +95,9 @@ void main() {
       await pump(tester, lang.key);
 
       await tester.tap(find.text(s.hemophilia));
+      await tester.pumpAndSettle();
+      expect(find.text(s.disclaimer), findsNothing); // opening chooses nothing
+      await tester.tap(find.text(s.hemophiliaA));
       await tester.pumpAndSettle();
       expect(find.text(s.disclaimer), findsOneWidget);
       await tester.tap(find.text(s.disclaimerOk));

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../i18n/screen_text_strings.dart';
 
 /// Shown when a guest (not registered or logged in) tries to save
 /// something to the Health Journal. Offers Register/Log in, plus an
@@ -9,25 +10,25 @@ Future<void> showGuestSaveGateDialog(BuildContext context) {
     builder: (dialogContext) => AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       title: const Text('Save to Health Journal'),
-      content: const Text('You need to register or log in to save this entry.'),
+      content: Text(ScreenText.of(context).guestSaveBody),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(dialogContext),
-          child: const Text('Not now'),
+          child: Text(ScreenText.of(context).notNow),
         ),
         OutlinedButton(
           onPressed: () {
             Navigator.pop(dialogContext);
             Navigator.of(context).pushNamed('/registration');
           },
-          child: const Text('Register'),
+          child: Text(ScreenText.of(context).register),
         ),
         ElevatedButton(
           onPressed: () {
             Navigator.pop(dialogContext);
             Navigator.of(context).pushNamed('/login-form');
           },
-          child: const Text('Log in'),
+          child: Text(ScreenText.of(context).logIn),
         ),
       ],
     ),
@@ -42,28 +43,25 @@ Future<void> showGuestUsageLimitDialog(BuildContext context) {
     builder: (dialogContext) => AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       title: const Text("Today's Limit Reached"),
-      content: const Text(
-        "You've reached today's limit for guests. Register or log in for "
-        'unlimited use, or try again tomorrow.',
-      ),
+      content: Text(ScreenText.of(context).guestLimitBody),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(dialogContext),
-          child: const Text('OK'),
+          child: Text(ScreenText.of(context).ok),
         ),
         OutlinedButton(
           onPressed: () {
             Navigator.pop(dialogContext);
             Navigator.of(context).pushNamed('/registration');
           },
-          child: const Text('Register'),
+          child: Text(ScreenText.of(context).register),
         ),
         ElevatedButton(
           onPressed: () {
             Navigator.pop(dialogContext);
             Navigator.of(context).pushNamed('/login-form');
           },
-          child: const Text('Log in'),
+          child: Text(ScreenText.of(context).logIn),
         ),
       ],
     ),

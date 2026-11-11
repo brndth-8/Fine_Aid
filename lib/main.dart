@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -23,6 +24,21 @@ import 'core/widgets/global_offline_banner.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // The phone's own navigation bar is see-through: the app draws behind it, so
+  // a white (or any coloured) system bar never shows as an extended strip
+  // under the app. Dark icons, as the app's pages are light.
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      systemNavigationBarColor: Colors.transparent,
+      systemNavigationBarDividerColor: Colors.transparent,
+      systemNavigationBarContrastEnforced: false,
+      systemNavigationBarIconBrightness: Brightness.dark,
+      statusBarColor: Colors.transparent,
+    ),
+  );
+
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   // Explicit (matches the mobile default, but stated outright): local
@@ -83,7 +99,8 @@ class MyApp extends StatelessWidget {
           title: 'Fine Aid',
           theme: AppTheme.lightTheme,
           darkTheme: AppTheme.darkTheme,
-          themeMode: ThemeMode.system,
+          // Always the light theme (there is no light/dark option).
+          themeMode: ThemeMode.light,
           // Applies the Personalization > Text Size setting app-wide,
           // instantly, on top of whatever the device's own system text
           // scale already is.

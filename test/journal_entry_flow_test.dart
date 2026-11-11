@@ -4,6 +4,7 @@ import 'package:fine_aid/i18n/app_language.dart';
 import 'package:fine_aid/i18n/classification_strings.dart';
 import 'package:fine_aid/i18n/journal_entry_strings.dart';
 import 'package:fine_aid/i18n/pain_strings.dart';
+import 'package:fine_aid/i18n/screen_text_strings.dart';
 import 'package:firebase_core/firebase_core.dart';
 // ignore: depend_on_referenced_packages
 import 'package:firebase_core_platform_interface/test.dart';
@@ -50,7 +51,9 @@ void main() {
     );
     await tester.pumpAndSettle();
     // The guest notice shown on entry.
-    await tester.tap(find.text('Continue as Guest'));
+    await tester.tap(
+      find.text(ScreenText.forLanguage(language).continueAsGuest),
+    );
     await tester.pumpAndSettle();
   }
 
@@ -134,7 +137,7 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Continue as Guest'));
+      await tester.tap(find.text(ScreenText.en.continueAsGuest));
       await tester.pumpAndSettle();
       await tester.tap(find.text(en.cancel));
       await tester.pumpAndSettle();
@@ -250,7 +253,8 @@ void main() {
       expect(inDialog(find.text(en.minor)), findsOneWidget);
       expect(inDialog(find.text(en.deep)), findsOneWidget);
       expect(inDialog(find.text(info.minorSigns)), findsOneWidget);
-      expect(inDialog(find.text(info.seriousSigns)), findsOneWidget);
+      // The Deep choice carries its own description (Nov 8 wording).
+      expect(inDialog(find.text(en.deepDescription)), findsOneWidget);
     });
 
     testWidgets('the descriptions are the drafted wording', (tester) async {
@@ -319,7 +323,7 @@ void main() {
       expect(inDialog(find.text(tl.deep)), findsOneWidget);
       expect(inDialog(find.text(tl.minor)), findsOneWidget);
       expect(inDialog(find.text(info.minorSigns)), findsOneWidget);
-      expect(inDialog(find.text(info.seriousSigns)), findsOneWidget);
+      expect(inDialog(find.text(tl.deepDescription)), findsOneWidget);
     });
 
     testWidgets('picking another category clears the Injury type', (
@@ -329,6 +333,9 @@ void main() {
       await tester.tap(inDialog(find.text(en.deep)));
       await tester.pump();
       await tester.tap(inDialog(find.text(en.confirm)));
+      await tester.pumpAndSettle();
+      // Deep brings up "Professional care recommended"; carry on.
+      await tester.tap(find.text(en.careContinue));
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Burns'));

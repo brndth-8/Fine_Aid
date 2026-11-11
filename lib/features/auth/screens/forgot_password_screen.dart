@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import '../../../core/password_requirements.dart';
+import '../../../i18n/screen_text_strings.dart';
 
 enum _ResetStep { username, otp, newPassword, done }
 
@@ -123,7 +124,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: switch (_step) {
-            _ResetStep.username => _buildUsernameStep(),
+            // Scrolls, so large text never overflows the first step.
+            _ResetStep.username => SingleChildScrollView(
+              child: _buildUsernameStep(),
+            ),
             _ResetStep.otp || _ResetStep.newPassword => _buildResetStep(),
             _ResetStep.done => _buildDoneStep(),
           },
@@ -142,10 +146,14 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           Text(
             'Enter your username and choose how to receive your 6-digit '
             'verification code.',
+            textAlign: TextAlign.center,
             style: theme.textTheme.bodyMedium,
           ),
           const SizedBox(height: 16),
-          Text('Send code via', style: theme.textTheme.titleSmall),
+          Text(
+            ScreenText.of(context).sendCodeVia,
+            style: theme.textTheme.titleSmall,
+          ),
           const SizedBox(height: 6),
           SegmentedButton<_RecoveryMethod>(
             segments: const [
@@ -157,7 +165,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               ButtonSegment(
                 value: _RecoveryMethod.email,
                 label: Text('Email'),
-                icon: Icon(Icons.email_outlined),
+                icon: Icon(Icons.mail_outline),
               ),
             ],
             selected: {_method},
@@ -170,14 +178,22 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 ? 'Sent to the phone number on your account.'
                 : 'Sent to the recovery email on your account, if you '
                       'added one. If not, use SMS instead.',
-            style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: const Color(0xFF8F8584),
+            ),
           ),
           const SizedBox(height: 20),
-          Text('Username', style: theme.textTheme.titleSmall),
+          Text(
+            ScreenText.of(context).username,
+            style: theme.textTheme.titleSmall,
+          ),
           const SizedBox(height: 6),
           TextFormField(
             controller: _usernameController,
-            decoration: const InputDecoration(hintText: 'Enter your username'),
+            decoration: const InputDecoration(
+              hintText: 'Enter your username',
+              prefixIcon: Icon(Icons.person_outline, size: 18),
+            ),
             validator: (value) => (value == null || value.trim().isEmpty)
                 ? 'Username is required'
                 : null,
@@ -198,7 +214,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       color: Colors.white,
                     ),
                   )
-                : const Text('Send Reset Code'),
+                : Text(ScreenText.of(context).sendResetCode),
           ),
         ],
       ),
@@ -222,7 +238,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               style: theme.textTheme.bodyMedium,
             ),
             const SizedBox(height: 20),
-            Text('Verification Code', style: theme.textTheme.titleSmall),
+            Text(
+              ScreenText.of(context).verificationCode,
+              style: theme.textTheme.titleSmall,
+            ),
             const SizedBox(height: 6),
             TextField(
               controller: _codeController,
@@ -231,7 +250,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               decoration: const InputDecoration(hintText: '6-digit code'),
             ),
             const SizedBox(height: 12),
-            Text('New Password', style: theme.textTheme.titleSmall),
+            Text(
+              ScreenText.of(context).newPassword,
+              style: theme.textTheme.titleSmall,
+            ),
             const SizedBox(height: 6),
             TextFormField(
               controller: _passwordController,
@@ -252,7 +274,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               validator: validatePasswordStrength,
             ),
             const SizedBox(height: 12),
-            Text('Confirm New Password', style: theme.textTheme.titleSmall),
+            Text(
+              ScreenText.of(context).confirmNewPassword,
+              style: theme.textTheme.titleSmall,
+            ),
             const SizedBox(height: 6),
             TextFormField(
               controller: _confirmPasswordController,
@@ -290,7 +315,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                         color: Colors.white,
                       ),
                     )
-                  : const Text('Reset Password'),
+                  : Text(ScreenText.of(context).resetPassword),
             ),
             const SizedBox(height: 12),
             TextButton(
@@ -300,7 +325,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       _step = _ResetStep.username;
                       _error = null;
                     }),
-              child: const Text('Start over'),
+              child: Text(ScreenText.of(context).startOver),
             ),
           ],
         ),
@@ -338,7 +363,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             const SizedBox(height: 24),
             ElevatedButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Back to Login'),
+              child: Text(ScreenText.of(context).backToLogin),
             ),
           ],
         ),

@@ -15,6 +15,11 @@
  *
  * Options:
  *   node seed.js --dry-run      Parse + validate only, don't write anything.
+ *   node seed.js --prune        After writing, ALSO delete the older seeded
+ *                               chunks (ids like chunk_0123) that are no longer
+ *                               in firstAidContent.json. Documents with other
+ *                               ids (eg articles an admin wrote) are never touched.
+ *   node seed.js --prune --dry-run   Read-only: counts how many would be deleted.
  *   node seed.js --collection=someOtherName   Override target collection.
  */
 const fs = require("fs");
@@ -26,6 +31,7 @@ const SERVICE_ACCOUNT_FILE = path.join(__dirname, "serviceAccountKey.json");
 
 const args = process.argv.slice(2);
 const isDryRun = args.includes("--dry-run");
+const isPrune = args.includes("--prune");
 const collectionArg = args.find((a) => a.startsWith("--collection="));
 const COLLECTION = collectionArg
   ? collectionArg.split("=")[1]
@@ -69,6 +75,15 @@ function validateChunk(chunk, index) {
   }
 }
 
+/** Ids of seeded chunks (chunk_0001 ...) in Firestore that are not in [chunks]. */
+async function findStaleSeededIds(db, chunks) {
+  const keep = new Set(chunks.map((c) => c.id));
+  const snap = await db.collection(COLLECTION).select().get();
+  return snap.docs
+    .map((d) => d.id)
+    .filter((id) => /^chunk_[0-9]{4}$/.test(id) && !keep.has(id));
+}
+
 async function main() {
   const chunks = loadChunks();
   console.log(`Loaded ${chunks.length} chunks from ${DATA_FILE}`);
@@ -79,6 +94,15 @@ async function main() {
   if (isDryRun) {
     console.log("--dry-run set: not writing to Firestore. Sample chunk:");
     console.log(JSON.stringify(chunks[0], null, 2));
+    if (isPrune) {
+      admin.initializeApp({
+        credential: admin.credential.cert(loadServiceAccount()),
+      });
+      const stale = await findStaleSeededIds(admin.firestore(), chunks);
+      console.log(
+        `--prune: ${stale.length} older seeded chunk(s) would be deleted (read-only check).`
+      );
+    }
     return;
   }
 
@@ -111,6 +135,19 @@ async function main() {
     await batch.commit();
     written += slice.length;
     console.log(`  committed ${written}/${chunks.length}`);
+  }
+
+  if (isPrune) {
+    const stale = await findStaleSeededIds(db, chunks);
+    for (let i = 0; i < stale.length; i += BATCH_SIZE) {
+      const batch = db.batch();
+      for (const id of stale.slice(i, i + BATCH_SIZE)) {
+        batch.delete(db.collection(COLLECTION).doc(id));
+      }
+      await batch.commit();
+      console.log(`  deleted ${Math.min(i + BATCH_SIZE, stale.length)}/${stale.length} older chunks`);
+    }
+    console.log(`Removed ${stale.length} older seeded chunk(s).`);
   }
 
   console.log(`\nDone. Wrote ${written} documents to "${COLLECTION}".`);

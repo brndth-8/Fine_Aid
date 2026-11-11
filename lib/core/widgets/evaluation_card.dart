@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/theme/app_theme.dart';
 import '../../data/journal_evaluation.dart';
 import '../../i18n/app_language.dart';
 import '../../i18n/evaluation_strings.dart';
@@ -25,47 +26,74 @@ class EvaluationCard extends StatelessWidget {
     if (text == null) return const SizedBox.shrink();
     final labels = tagalog ? EvaluationStrings.tl : EvaluationStrings.en;
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(16),
-        // Same outline the journal's other cards use.
-        border: Border.all(color: theme.colorScheme.primary, width: 1.2),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    // "Label: value" lines, with the label in bold.
+    Widget lines() => Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final line in text.split('\n'))
+          if (line.trim().isNotEmpty)
+            Builder(
+              builder: (context) {
+                final colon = line.indexOf(':');
+                final base = theme.textTheme.bodyMedium?.copyWith(
+                  color: Colors.black,
+                );
+                if (colon < 1 || colon > 32) return Text(line, style: base);
+                return Text.rich(
+                  TextSpan(
+                    style: base,
+                    children: [
+                      TextSpan(
+                        text: line.substring(0, colon + 1),
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      TextSpan(text: line.substring(colon + 1)),
+                    ],
+                  ),
+                );
+              },
+            ),
+      ],
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFFDCEBFA),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFF3F6DB3), width: 1),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(
-                Icons.fact_check_outlined,
-                size: 18,
-                color: theme.colorScheme.primary,
+              Row(
+                children: [
+                  const Icon(
+                    Icons.fact_check_outlined,
+                    size: 20,
+                    color: Color(0xFF3F6DB3),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    labels.title,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: Colors.black,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
-              Text(
-                labels.title,
-                style: theme.textTheme.titleSmall?.copyWith(
-                  color: theme.colorScheme.primary,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              const SizedBox(height: 10),
+              lines(),
             ],
           ),
-          const SizedBox(height: 8),
-          Text(text, style: theme.textTheme.bodyMedium),
-          const SizedBox(height: 8),
-          Text(
-            labels.footnote,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: Colors.grey.shade600,
-              fontStyle: FontStyle.italic,
-            ),
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 6),
+        Text(labels.footnote, style: AppTheme.noteStyle()),
+      ],
     );
   }
 }

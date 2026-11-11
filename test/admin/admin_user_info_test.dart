@@ -60,6 +60,48 @@ void main() {
     );
   });
 
+  group('pop-up sections', () {
+    Map<String, AdminInfoRow> byLabel(List<AdminInfoSection> sections) => {
+      for (final s in sections)
+        for (final r in s.rows) r.label: r,
+    };
+
+    test('are grouped Personal information, Contact, Account', () {
+      final sections = adminUserInfoSections({'username': 'x'});
+      expect(sections.map((s) => s.title), [
+        'Personal information',
+        'Contact',
+        'Account',
+      ]);
+    });
+
+    test(
+      'show dates with the age and soft placeholders for missing details',
+      () {
+        final rows = byLabel(
+          adminUserInfoSections({
+            'username': 'ropssss',
+            'firstName': 'Ceejay',
+            'dateOfBirth': Timestamp.fromDate(DateTime(2004, 10, 23)),
+            'gender': 'male',
+            'phoneNumber': '+63 916 639 5987',
+            'createdAt': Timestamp.fromDate(DateTime(2026, 10, 23, 16, 28)),
+          }, today: DateTime(2026, 10, 25)),
+        );
+        expect(rows['Date of birth']!.value, 'Oct 23, 2004');
+        expect(rows['Age']!.value, '22 years old');
+        expect(rows['Date created']!.value, 'Oct 23, 2026 · 4:28 PM');
+        expect(rows['Email']!.value, 'Not provided');
+        expect(rows['Email']!.muted, isTrue);
+        expect(rows['Last updated']!.value, 'Not yet updated');
+        expect(rows['Underage acknowledgment']!.value, 'Not applicable');
+        expect(rows['Last name']!.value, 'Not provided');
+        expect(rows['Phone number']!.muted, isFalse);
+        expect(rows['Account type']!.value, 'Registered');
+      },
+    );
+  });
+
   test('an acknowledgment with no timestamp still reads as acknowledged', () {
     final rows = rowsFor({'username': 'x', 'underageAcknowledged': true});
     expect(rows['Underage acknowledgment'], 'Acknowledged');

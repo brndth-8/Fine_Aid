@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import '../../../i18n/screen_text_strings.dart';
 import 'assessment_result_screen.dart';
 
 class _DetectedWound {
@@ -75,12 +76,7 @@ class _MultiInjuryScreenState extends State<MultiInjuryScreen> {
           ? widget.woundBoxes[index]
           : null;
       final region = _ensureMinSize(aiBox ?? _fallbackRegion(index));
-      return _DetectedWound(
-        label:
-            'Wound ${index + 1} — '
-            '${widget.woundDescriptions[index]}',
-        region: region,
-      );
+      return _DetectedWound(label: 'Wound ${index + 1}', region: region);
     });
   }
 
@@ -89,43 +85,44 @@ class _MultiInjuryScreenState extends State<MultiInjuryScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        centerTitle: true,
+        title: const Text(
+          'AI Vision Camera',
+          style: TextStyle(fontWeight: FontWeight.normal),
+        ),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios, size: 18),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
       body: SafeArea(
         child: Column(
           children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back_ios, size: 18),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                  Text('AI Vision Camera', style: theme.textTheme.titleMedium),
-                ],
-              ),
-            ),
+            const SizedBox(height: 12),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.primary,
-                  borderRadius: BorderRadius.circular(16),
+                  color: const Color(0xFF700505),
+                  borderRadius: BorderRadius.circular(20),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Multiple injuries detected',
-                      style: theme.textTheme.titleMedium?.copyWith(
+                      ScreenText.of(context).multipleInjuries,
+                      style: theme.textTheme.titleSmall?.copyWith(
                         color: Colors.white,
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 2),
                     Text(
-                      'Tap the wound you want to focus on for assessment.',
-                      style: theme.textTheme.bodySmall?.copyWith(
+                      ScreenText.of(context).multiTip,
+                      style: theme.textTheme.bodyMedium?.copyWith(
                         color: Colors.white,
                       ),
                     ),
@@ -140,7 +137,7 @@ class _MultiInjuryScreenState extends State<MultiInjuryScreen> {
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     return ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(20),
                       child: Stack(
                         fit: StackFit.expand,
                         children: [
@@ -163,40 +160,34 @@ class _MultiInjuryScreenState extends State<MultiInjuryScreen> {
                                 child: Container(
                                   decoration: BoxDecoration(
                                     border: Border.all(
-                                      color: isSelected
-                                          ? theme.colorScheme.primary
-                                          : Colors.white70,
-                                      width: isSelected ? 3 : 2,
+                                      color: const Color(0xFF700505),
+                                      width: isSelected ? 4 : 2,
                                     ),
-                                    borderRadius: BorderRadius.circular(8),
+                                    borderRadius: BorderRadius.circular(24),
                                     color: isSelected
-                                        ? theme.colorScheme.primary.withValues(
-                                            alpha: 0.15,
-                                          )
-                                        : Colors.white.withValues(alpha: 0.08),
+                                        ? const Color(
+                                            0xFF700505,
+                                          ).withValues(alpha: 0.15)
+                                        : null,
                                   ),
                                   alignment: Alignment.topLeft,
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(
-                                      horizontal: 6,
-                                      vertical: 3,
+                                      horizontal: 14,
+                                      vertical: 4,
                                     ),
-                                    decoration: BoxDecoration(
-                                      color: isSelected
-                                          ? theme.colorScheme.primary
-                                          : Colors.black54,
-                                      borderRadius: const BorderRadius.only(
-                                        topLeft: Radius.circular(6),
-                                        bottomRight: Radius.circular(6),
+                                    decoration: const BoxDecoration(
+                                      color: Color(0xFF700505),
+                                      borderRadius: BorderRadius.only(
+                                        topLeft: Radius.circular(20),
+                                        bottomRight: Radius.circular(20),
                                       ),
                                     ),
                                     child: Text(
-                                      'Wound ${index + 1}',
-                                      style: theme.textTheme.labelSmall
-                                          ?.copyWith(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.normal,
-                                          ),
+                                      ScreenText.of(context).woundN
+                                          .replaceFirst('{n}', '${index + 1}'),
+                                      style: theme.textTheme.labelMedium
+                                          ?.copyWith(color: Colors.white),
                                     ),
                                   ),
                                 ),
@@ -217,7 +208,12 @@ class _MultiInjuryScreenState extends State<MultiInjuryScreen> {
                   vertical: 8,
                 ),
                 child: Text(
-                  'Selected: ${_wounds[_selectedIndex!].label}',
+                  ScreenText.of(context).selectedWound.replaceFirst(
+                    '{label}',
+                    ScreenText.of(
+                      context,
+                    ).woundN.replaceFirst('{n}', '${_selectedIndex! + 1}'),
+                  ),
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.primary,
                     fontWeight: FontWeight.bold,
@@ -249,9 +245,26 @@ class _MultiInjuryScreenState extends State<MultiInjuryScreen> {
                 ),
                 child: Text(
                   _selectedIndex == null
-                      ? 'Select a wound to continue'
-                      : 'Assess Selected Wound',
+                      ? ScreenText.of(context).selectWound
+                      : ScreenText.of(context).assessSelected,
                 ),
+              ),
+            ),
+            // None of the detected conditions is the one to assess: nothing is
+            // assessed and the person goes back to scan again.
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: OutlinedButton(
+                onPressed: () {
+                  final messenger = ScaffoldMessenger.of(context);
+                  final note = ScreenText.of(context).noneChosenNote;
+                  Navigator.pop(context);
+                  messenger.showSnackBar(SnackBar(content: Text(note)));
+                },
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(50),
+                ),
+                child: Text(ScreenText.of(context).noneOfThese),
               ),
             ),
           ],

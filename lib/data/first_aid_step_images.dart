@@ -17,12 +17,21 @@ const String kFirstAidImageExtension = 'png';
 /// The first kind whose keywords appear in the step wins, so the more
 /// specific kinds come first.
 const List<String> firstAidStepImageKeys = [
+  // Named after their files, so these keep the file's exact spelling
+  // (including "are" in the wash one).
+  'prepare_clean_warm_water_and_a_soft_towel_1',
+  'wash_the_affected_are_and_remove_surface_debris_1',
+  'protect_the_face_from_direct_sunlight_1',
+  'consult_a_doctor_if_not_better_1',
+  'consult_a_doctor_for_formal_evaluation_1',
+  'Apply_mild_fragrance_free_moisturizer_1',
   'call_emergency',
   'avoid_harsh_product',
   'avoid_touching',
   'change_dressing',
   'wash_hands',
   'cool_burn',
+  'gather_gauze_or_cloth_1',
   'rinse_water',
   'pat_dry',
   'apply_pressure',
@@ -33,7 +42,17 @@ const List<String> firstAidStepImageKeys = [
   'elevate',
   'rest',
   'watch_infection',
+  'keep_track_of_changes_1',
   'monitor_the_area',
+  // Added last: they only picture steps no kind above matches.
+  'air_dry_do_not_rub_1',
+  'check_what_you_see_1',
+  'keep_area_dry_1',
+  'cool_damp_cloth_1',
+  'sterile_gauze_cover_1',
+  'gauze_or_clean_towel_1',
+  'warning_signs_to_watch_1',
+  'blisters_seek_care_1',
 ];
 
 /// Kinds that only apply to a step that STARTS with a "don't" ("Do not pour
@@ -44,6 +63,58 @@ const Set<String> _warningKeys = {'avoid_harsh_product', 'avoid_touching'};
 // Keywords (lower case) that mark each kind, checked against the action part
 // of the step.
 const Map<String, List<String>> _keywords = {
+  'prepare_clean_warm_water_and_a_soft_towel_1': [
+    'prepare clean warm water',
+    'warm water and a soft towel',
+    'soft towel',
+  ],
+  'wash_the_affected_are_and_remove_surface_debris_1': [
+    'wash the affected area',
+    'remove surface debris',
+  ],
+  'protect_the_face_from_direct_sunlight_1': [
+    'protect the face',
+    'direct sunlight',
+  ],
+  'consult_a_doctor_for_formal_evaluation_1': [
+    'consult a doctor',
+    'formal evaluation',
+  ],
+  'Apply_mild_fragrance_free_moisturizer_1': ['moisturizer', 'moisturiser'],
+  // "Consult a doctor ... if the rash does not get better in a few days".
+  'consult_a_doctor_if_not_better_1': [
+    'does not get better',
+    'keeps coming back',
+  ],
+  // "Get clean running water, clean gauze (or a clean cloth ...)".
+  'gather_gauze_or_cloth_1': ['gauze (or', 'gauze or a clean'],
+  // "Keep track of when the rash started ...".
+  'keep_track_of_changes_1': ['keep track', 'track of when'],
+  // "After washing, let the skin air-dry. Do not rub it ...".
+  'air_dry_do_not_rub_1': ['air-dry', 'air dry', 'let the skin dry'],
+  'check_what_you_see_1': ['what you see', 'inspect', 'examine'],
+  'keep_area_dry_1': [
+    'keep the area dry',
+    'keep it dry',
+    'avoid getting the area wet',
+  ],
+  'cool_damp_cloth_1': [
+    'cool, damp',
+    'cool damp',
+    'cool wet',
+    'cool cloth',
+    'cool compress',
+  ],
+  'sterile_gauze_cover_1': ['sterile gauze', 'gauze pad', 'non-stick gauze'],
+  'gauze_or_clean_towel_1': ['gauze or', 'cloth or gauze', 'towel or gauze'],
+  'warning_signs_to_watch_1': [
+    'fever',
+    'swelling',
+    'spreading',
+    'getting worse',
+    'worsen',
+  ],
+  'blisters_seek_care_1': ['blister'],
   'call_emergency': [
     'emergency',
     'call 911',

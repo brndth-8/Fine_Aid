@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 /// Describes one destination in [CustomBottomNavBar].
@@ -50,6 +51,13 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar>
   static const double _centerDiameter = 60; // the maroon circle
   static const double _centerRing = 5; // the grey ring around it
   static const double _centerRaise = 42; // how far the circle rises above
+  // Room the labels have at the normal text size: two lines of 13sp text. The
+  // bar grows by whatever more a label needs at a larger text size.
+  static const double _labelBase = 30;
+  // How far the icons and labels sit higher than the bottom of the bar (8:
+  // 4 more than the first lift). The
+  // bar itself keeps its height; only what is drawn on it moves up.
+  static const double _contentLift = 8;
   static const Color _maroon = Color(0xFF780000);
   static const Color _inactive = Color(0xFF4A4A4A);
   static const Color _ring = Color(0xFFCCCCCC);
@@ -136,21 +144,56 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar>
     return keys[index];
   }
 
+  /// How much taller than normal the labels need the bar to be: the tallest
+  /// label, wrapped to its column at the phone's current text size, minus the
+  /// room a label has by default. Zero at the normal text size.
+  double _extraLabelHeight(BuildContext context, double columnWidth) {
+    final style = Theme.of(context).textTheme.labelMedium!.copyWith(
+      fontSize: 10,
+      fontWeight: FontWeight.normal,
+      height: 1.15,
+    );
+    var tallest = 0.0;
+    for (final item in widget.items) {
+      final painter = TextPainter(
+        text: TextSpan(text: item.label, style: style),
+        textAlign: TextAlign.center,
+        textDirection: Directionality.of(context),
+        textScaler: MediaQuery.textScalerOf(context),
+      )..layout(maxWidth: math.max(columnWidth, 1));
+      tallest = math.max(tallest, painter.height);
+    }
+    return math.max(0, tallest - _labelBase);
+  }
+
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).padding.bottom;
 
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // 8 = the little space kept on each side of a label.
+        final extra = _extraLabelHeight(
+          context,
+          constraints.maxWidth / widget.items.length - 8,
+        );
+        return _buildBar(context, bottomInset, extra);
+      },
+    );
+  }
+
+  Widget _buildBar(BuildContext context, double bottomInset, double extra) {
     return SizedBox(
-      height: _barHeight + _centerRaise + bottomInset,
+      height: _barHeight + _centerRaise + extra + bottomInset,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          // The white bar itself — fixed, always the same size.
+          // The white bar itself.
           Positioned(
             left: 0,
             right: 0,
             bottom: 0,
-            height: _barHeight + bottomInset,
+            height: _barHeight + extra + bottomInset,
             child: Container(
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -173,8 +216,8 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar>
           Positioned(
             left: 0,
             right: 0,
+            top: -_contentLift,
             bottom: bottomInset,
-            height: _barHeight + _centerRaise,
             child: Row(
               children: List.generate(
                 widget.items.length,
@@ -218,8 +261,8 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar>
                       item.badge!,
                       style: const TextStyle(
                         color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 19,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 20,
                         height: 1,
                       ),
                     ),
@@ -250,22 +293,18 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar>
           Flexible(
             child: AnimatedDefaultTextStyle(
               duration: const Duration(milliseconds: 200),
+              // 10, regular: maroon when chosen, black otherwise (the design).
               style: Theme.of(context).textTheme.labelMedium!.copyWith(
-                fontSize: 13,
-                color: isCenter ? _inactive : color,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                fontSize: 10,
+                color: isSelected ? const Color(0xFF8B0000) : Colors.black,
+                fontWeight: FontWeight.normal,
                 height: 1.15,
               ),
               textAlign: TextAlign.center,
-              child: Text(
-                item.label,
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
+              child: Text(item.label, textAlign: TextAlign.center),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 8 + _contentLift),
         ],
       ),
     );

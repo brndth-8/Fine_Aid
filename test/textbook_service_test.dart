@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -13,6 +14,7 @@ class _FakeRemote implements TextbookRemote {
   final Map<String, int> updated = {};
   bool offline = false;
   bool dropDownload = false; // cut the connection half-way
+  Completer<void>? infoGate; // holds info() until it is completed
   int downloads = 0;
   int infoCalls = 0;
   final List<double> progress = [];
@@ -26,6 +28,7 @@ class _FakeRemote implements TextbookRemote {
   @override
   Future<RemoteFileInfo> info(String storagePath) async {
     infoCalls++;
+    if (infoGate != null) await infoGate!.future;
     if (offline) throw const SocketException('offline');
     final bytes = files[storagePath];
     if (bytes == null) throw TextbookNotFoundException();
@@ -272,6 +275,70 @@ void main() {
         TextbookService.fileNameOf('textbooks/Some Book.pdf'),
         'Some Book.pdf',
       );
+    });
+  });
+
+  group('opening a book already on the phone (refreshInBackground)', () {
+    Future<void> settle() =>
+        Future<void>.delayed(const Duration(milliseconds: 80));
+
+    test('opens at once, without waiting for the network', () async {
+      await service.getFile(path); // first open: downloads it
+      remote.infoGate = Completer<void>(); // the network is "slow"
+      final file = await service
+          .getFile(path, refreshInBackground: true)
+          .timeout(const Duration(seconds: 1)); // would time out if it waited
+      expect(await file.readAsString(), '%PDF-1.4 pretend book contents');
+      remote.infoGate!.complete();
+      await settle();
+    });
+
+    test('a newer copy is fetched in the background for next time', () async {
+      await service.getFile(path);
+      remote.files[path] = utf8.encode('%PDF-1.4 a newer edition of the book');
+      remote.updated[path] = 200;
+      final now = await service.getFile(path, refreshInBackground: true);
+      // this open still shows the copy on the phone ...
+      expect(await now.readAsString(), '%PDF-1.4 pretend book contents');
+      await settle();
+      // ... and the next one has the new edition
+      final next = await service.getFile(path, refreshInBackground: true);
+      expect(await next.readAsString(), '%PDF-1.4 a newer edition of the book');
+    });
+
+    test('an unchanged book is not downloaded again', () async {
+      await service.getFile(path);
+      expect(remote.downloads, 1);
+      await service.getFile(path, refreshInBackground: true);
+      await settle();
+      expect(remote.downloads, 1);
+    });
+
+    test('offline: the copy on the phone is used and nothing throws', () async {
+      await service.getFile(path);
+      remote.offline = true;
+      final file = await service.getFile(path, refreshInBackground: true);
+      await settle();
+      expect(await file.readAsString(), '%PDF-1.4 pretend book contents');
+    });
+
+    test('a dropped background download leaves the old copy intact', () async {
+      await service.getFile(path);
+      remote.files[path] = utf8.encode('%PDF-1.4 the newer edition');
+      remote.updated[path] = 300;
+      remote.dropDownload = true;
+      await service.getFile(path, refreshInBackground: true);
+      await settle();
+      remote.dropDownload = false;
+      remote.offline = true;
+      final file = await service.getFile(path, refreshInBackground: true);
+      expect(await file.readAsString(), '%PDF-1.4 pretend book contents');
+    });
+
+    test('with no copy yet it downloads as usual', () async {
+      final file = await service.getFile(path, refreshInBackground: true);
+      expect(await file.readAsString(), '%PDF-1.4 pretend book contents');
+      expect(remote.downloads, 1);
     });
   });
 

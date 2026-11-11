@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import 'stale_contact_release.dart';
 import 'email_reservation.dart';
+import 'phone_reservation.dart';
 
 /// Why a sign-up did not complete. The screen turns each one into its own
 /// message (see RegistrationStrings) instead of one generic "went wrong".
@@ -17,6 +19,9 @@ enum RegistrationError {
 
   /// Another account already uses this email address.
   emailTaken,
+
+  /// Another account already uses this phone number.
+  phoneTaken,
 
   /// No connection, so nothing could be saved.
   network,
@@ -86,6 +91,13 @@ abstract class RegistrationBackend {
     required Map<String, Object?> profile,
   });
 
+  /// Sign-up says a phone number or email ([kind]: 'phone' or 'email') is
+  /// "already registered". Asks the server to free it when the account that
+  /// holds it is a ghost (never finished, or gone). True when it was freed.
+  /// The default does nothing, so a backend without the server call behaves as
+  /// before.
+  Future<bool> releaseStaleContact(String kind, String value) async => false;
+
   Future<void> deleteCurrentAuthUser();
   Future<void> signOut();
 }
@@ -125,7 +137,9 @@ class RegistrationFlow {
   Future<void> register({
     required String username,
     required String password,
-    required String phoneNumber,
+    // Phone or email: each is optional on its own, but the one the account is
+    // verified with ([verificationMethod]: 'phone' or 'email') must be given.
+    String? phoneNumber,
     String? recoveryEmail,
     String verificationMethod = 'phone',
     // Personal details (all optional here so older callers keep working).
@@ -137,6 +151,14 @@ class RegistrationFlow {
   }) async {
     final name = username.trim();
     final email = emailFor(name);
+
+    // At least one identifier, and the one used to verify the account.
+    final hasPhone = phoneNumber != null && phoneNumber.trim().isNotEmpty;
+    final hasRecoveryEmail =
+        recoveryEmail != null && recoveryEmail.trim().isNotEmpty;
+    if (verificationMethod == 'email' ? !hasRecoveryEmail : !hasPhone) {
+      throw const RegistrationException(RegistrationError.unknown);
+    }
 
     // 1. Nothing is created until this passes.
     String? owner;
@@ -218,7 +240,8 @@ class RegistrationFlow {
       'email': email,
       if (trimmedRecovery != null && trimmedRecovery.isNotEmpty)
         'recoveryEmail': trimmedRecovery,
-      'phoneNumber': phoneNumber.trim(),
+      // Only the identifier that was given is stored (the other stays absent).
+      if (hasPhone) 'phoneNumber': phoneNumber.trim(),
       'verificationMethod': verificationMethod,
       'phoneVerified': false,
       'onboardingComplete': false,
@@ -240,13 +263,40 @@ class RegistrationFlow {
 
     Object? failure;
     var claimed = false;
-    try {
-      claimed = await backend
-          .claim(uid: uid, username: name, email: email, profile: profile)
-          .timeout(claimTimeout);
-      if (claimed) return;
-    } catch (e) {
-      failure = e;
+    // A phone number or email can be "taken" by a ghost: a sign-up that was
+    // never finished, or an account that no longer exists. The server frees
+    // those, then the claim is tried again (at most twice: a number, then an
+    // email).
+    for (var freed = 0; ; freed++) {
+      failure = null;
+      claimed = false;
+      try {
+        claimed = await backend
+            .claim(uid: uid, username: name, email: email, profile: profile)
+            .timeout(claimTimeout);
+        if (claimed) return;
+      } catch (e) {
+        failure = e;
+      }
+      if (freed < 2 &&
+          failure is RegistrationException &&
+          (failure.error == RegistrationError.phoneTaken ||
+              failure.error == RegistrationError.emailTaken)) {
+        final isPhone = failure.error == RegistrationError.phoneTaken;
+        final value = isPhone ? phoneNumber?.trim() : trimmedRecovery;
+        if (value != null && value.isNotEmpty) {
+          try {
+            if (await backend
+                .releaseStaleContact(isPhone ? 'phone' : 'email', value)
+                .timeout(stepTimeout)) {
+              continue;
+            }
+          } catch (_) {
+            // Could not ask: the number stays "taken", as before.
+          }
+        }
+      }
+      break;
     }
 
     if (!claimed && failure == null) {
@@ -255,10 +305,11 @@ class RegistrationFlow {
       throw const RegistrationException(RegistrationError.usernameTaken);
     }
 
-    // The email belongs to another account: nothing was saved, so remove the
-    // sign-in account made for this attempt and say so.
+    // The email or phone number belongs to another account: nothing was
+    // saved, so remove the sign-in account made for this attempt and say so.
     if (failure is RegistrationException &&
-        failure.error == RegistrationError.emailTaken) {
+        (failure.error == RegistrationError.emailTaken ||
+            failure.error == RegistrationError.phoneTaken)) {
       await _rollback();
       throw failure;
     }
@@ -436,16 +487,30 @@ class FirebaseRegistrationBackend implements RegistrationBackend {
         // One account per email: the reservation is claimed in this same
         // transaction (all reads first), and the rules refuse a profile with
         // an email it doesn't hold.
-        final applyEmail = await EmailReservation.prepare(
-          tx,
-          _firestore,
-          uid: uid,
-          newEmail: profile['recoveryEmail'] as String?,
-        ).onError<EmailTakenException>(
-          (e, _) => throw const RegistrationException(
-            RegistrationError.emailTaken,
-          ),
-        );
+        final applyEmail =
+            await EmailReservation.prepare(
+              tx,
+              _firestore,
+              uid: uid,
+              newEmail: profile['recoveryEmail'] as String?,
+            ).onError<EmailTakenException>(
+              (e, _) => throw const RegistrationException(
+                RegistrationError.emailTaken,
+              ),
+            );
+
+        // Same for the phone number: one account per number.
+        final applyPhone =
+            await PhoneReservation.prepare(
+              tx,
+              _firestore,
+              uid: uid,
+              newPhone: profile['phoneNumber'] as String?,
+            ).onError<PhoneTakenException>(
+              (e, _) => throw const RegistrationException(
+                RegistrationError.phoneTaken,
+              ),
+            );
 
         tx.set(_firestore.collection('users').doc(uid), {
           ...profile,
@@ -453,6 +518,7 @@ class FirebaseRegistrationBackend implements RegistrationBackend {
           'registrationComplete': true,
         });
         applyEmail();
+        applyPhone();
         tx.set(exactRef, {
           'email': email,
           'uid': uid,
@@ -464,6 +530,10 @@ class FirebaseRegistrationBackend implements RegistrationBackend {
       maxAttempts: 2,
     );
   }
+
+  @override
+  Future<bool> releaseStaleContact(String kind, String value) =>
+      askServerToReleaseContact(kind, value);
 
   @override
   Future<void> deleteCurrentAuthUser() async {

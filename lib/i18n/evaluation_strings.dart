@@ -27,6 +27,7 @@ class EvaluationStrings {
   final String warningSignsFormat; // {list}
   final String noWarningSigns;
   final String painFormat; // {n} {max} {level}
+  final String itchFormat; // {n} {max} {level}
   final String careLevelFormat; // {level}
   final String careSelfCare;
   final String careFirstAid;
@@ -36,6 +37,8 @@ class EvaluationStrings {
   final String adviceFormat; // {steps}
   final String milestoneBetter;
   final String milestoneNotBetter;
+  final String satisfiedYes;
+  final String satisfiedNo;
   final String monitoredOne;
   final String monitoredManyFormat; // {n}
 
@@ -57,6 +60,7 @@ class EvaluationStrings {
     required this.warningSignsFormat,
     required this.noWarningSigns,
     required this.painFormat,
+    required this.itchFormat,
     required this.careLevelFormat,
     required this.careSelfCare,
     required this.careFirstAid,
@@ -66,6 +70,8 @@ class EvaluationStrings {
     required this.adviceFormat,
     required this.milestoneBetter,
     required this.milestoneNotBetter,
+    required this.satisfiedYes,
+    required this.satisfiedNo,
     required this.monitoredOne,
     required this.monitoredManyFormat,
   });
@@ -75,7 +81,7 @@ class EvaluationStrings {
     footnote:
         'Automatically summarized from what was saved in this entry. It is '
         'not a medical diagnosis.',
-    recordedFormat: '{c} recorded in this entry.',
+    recordedFormat: 'Classification: {c} recorded in this entry.',
     subTypeFormat: 'Injury type: {type}.',
     subTypeDeep: 'Deep',
     subTypeMinor: 'Minor',
@@ -90,6 +96,7 @@ class EvaluationStrings {
     warningSignsFormat: 'Warning signs noted: {list}.',
     noWarningSigns: 'No warning signs were flagged.',
     painFormat: 'Reported pain score: {n}/{max} ({level}).',
+    itchFormat: 'Reported itchiness: {n}/{max} ({level}).',
     careLevelFormat: 'Assessed care level: {level}.',
     careSelfCare: 'Self Care',
     careFirstAid: 'First Aid',
@@ -102,8 +109,10 @@ class EvaluationStrings {
     milestoneNotBetter:
         'At the expected healing time, you reported not feeling better; '
         'professional consultation is recommended.',
-    monitoredOne: 'Monitored for 1 day.',
-    monitoredManyFormat: 'Monitored for {n} days.',
+    satisfiedYes: 'You said you were satisfied with the result.',
+    satisfiedNo: 'You said you were not satisfied with the result.',
+    monitoredOne: 'Monitored: 1 day.',
+    monitoredManyFormat: 'Monitored: {n} days.',
   );
 
   static const tl = EvaluationStrings(
@@ -111,7 +120,7 @@ class EvaluationStrings {
     footnote:
         'Awtomatikong buod mula sa mga na-save sa entry na ito. Hindi ito '
         'isang medikal na diagnosis.',
-    recordedFormat: 'Naitala sa entry na ito ang {c}.',
+    recordedFormat: 'Klasipikasyon: Naitala sa entry na ito ang {c}.',
     subTypeFormat: 'Uri ng pinsala: {type}.',
     subTypeDeep: 'Malalim',
     subTypeMinor: 'Maliit',
@@ -126,6 +135,7 @@ class EvaluationStrings {
     warningSignsFormat: 'Mga babalang palatandaan: {list}.',
     noWarningSigns: 'Walang babalang palatandaan na naitala.',
     painFormat: 'Iniulat na antas ng sakit: {n}/{max} ({level}).',
+    itchFormat: 'Iniulat na antas ng pangangati: {n}/{max} ({level}).',
     careLevelFormat: 'Antas ng pangangalaga ayon sa pagsusuri: {level}.',
     careSelfCare: 'Pangangalaga sa Sarili',
     careFirstAid: 'First Aid',
@@ -139,7 +149,9 @@ class EvaluationStrings {
     milestoneNotBetter:
         'Sa inaasahang oras ng paggaling, iniulat mong hindi pa bumubuti '
         'ang pakiramdam mo; inirerekomenda ang pagkonsulta sa propesyonal.',
-    monitoredOne: 'Binantayan sa loob ng 1 araw.',
-    monitoredManyFormat: 'Binantayan sa loob ng {n} araw.',
+    satisfiedYes: 'Sinabi mong nasiyahan ka sa resulta.',
+    satisfiedNo: 'Sinabi mong hindi ka nasiyahan sa resulta.',
+    monitoredOne: 'Binantayan: 1 araw.',
+    monitoredManyFormat: 'Binantayan: {n} araw.',
   );
 }

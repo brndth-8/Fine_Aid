@@ -5,8 +5,6 @@ import 'package:fine_aid/core/widgets/first_aid_step_image.dart';
 import 'package:fine_aid/data/first_aid_step_images.dart';
 import 'package:fine_aid/i18n/app_language.dart';
 import 'package:fine_aid/i18n/step_image_strings.dart';
-import 'package:fine_aid/i18n/voice_strings.dart';
-import 'package:fine_aid/services/voice_input_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -41,52 +39,6 @@ class _FakeBundle extends CachingAssetBundle {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-
-  group('voice: speech language', () {
-    test('Tagalog picks a Filipino locale when the phone has one', () {
-      final choice = chooseSpeechLocale([
-        'en_US',
-        'fil_PH',
-        'es_ES',
-      ], tagalog: true);
-      expect(choice.id, 'fil_PH');
-      expect(choice.usedFallback, isFalse);
-      expect(chooseSpeechLocale(['tl-PH'], tagalog: true).id, 'tl-PH');
-    });
-
-    test('Tagalog without a Tagalog voice falls back and says so', () {
-      final choice = chooseSpeechLocale(['en_US', 'es_ES'], tagalog: true);
-      expect(choice.id, isNull);
-      expect(choice.usedFallback, isTrue);
-      expect(chooseSpeechLocale([], tagalog: true).usedFallback, isTrue);
-    });
-
-    test('English prefers en_US and never reports a fallback', () {
-      expect(
-        chooseSpeechLocale(['fil_PH', 'en_US'], tagalog: false).id,
-        'en_US',
-      );
-      final other = chooseSpeechLocale(['en_GB'], tagalog: false);
-      expect(other.id, isNull);
-      expect(other.usedFallback, isFalse);
-    });
-
-    test('the voice messages exist in both languages', () {
-      expect(
-        VoiceStrings.tl.tagalogUnavailable,
-        isNot(VoiceStrings.en.tagalogUnavailable),
-      );
-      expect(
-        VoiceStrings.tl.couldNotStart,
-        isNot(VoiceStrings.en.couldNotStart),
-      );
-      expect(VoiceStrings.tl.couldNotPlay, isNot(VoiceStrings.en.couldNotPlay));
-      expect(
-        VoiceStrings.tl.backgroundStopped,
-        isNot(VoiceStrings.en.backgroundStopped),
-      );
-    });
-  });
 
   group('step images: which image goes with which step', () {
     test('the example steps from the design map to their pictures', () {

@@ -12,6 +12,11 @@ import 'help_document.dart';
 class HelpStrings {
   final String heading;
   final String replayTour;
+  final String intro;
+  final String gettingStartedSub;
+  final String privacySub;
+  final String journalSub;
+  final String referencesSub;
   final HelpSection gettingStarted;
   final HelpSection privacy;
   final HelpSection journal;
@@ -20,6 +25,11 @@ class HelpStrings {
   const HelpStrings({
     required this.heading,
     required this.replayTour,
+    required this.intro,
+    required this.gettingStartedSub,
+    required this.privacySub,
+    required this.journalSub,
+    required this.referencesSub,
     required this.gettingStarted,
     required this.privacy,
     required this.journal,
@@ -40,6 +50,12 @@ class HelpStrings {
   static const en = HelpStrings(
     heading: 'How can we help?',
     replayTour: 'Replay Help Tour',
+    intro: 'Find helpful guides, answers, and information about using the app.',
+    gettingStartedSub:
+        'Learn how to set up your account and get started with the app.',
+    privacySub: 'Learn how we protect your data and privacy.',
+    journalSub: 'Step-by-step guide on using the journal feature.',
+    referencesSub: 'Helpful resources and additional information.',
     gettingStarted: helpGettingStartedEn,
     privacy: helpPrivacyEn,
     journal: helpJournalEn,
@@ -49,6 +65,15 @@ class HelpStrings {
   static const tl = HelpStrings(
     heading: 'Paano ka namin matutulungan?',
     replayTour: 'Ulitin ang Help Tour',
+    intro:
+        'Maghanap ng mga kapaki-pakinabang na gabay, sagot, at impormasyon tungkol sa paggamit ng app.',
+    gettingStartedSub:
+        'Alamin kung paano i-set up ang iyong account at magsimula sa app.',
+    privacySub:
+        'Alamin kung paano namin pinoprotektahan ang iyong datos at privacy.',
+    journalSub: 'Hakbang-hakbang na gabay sa paggamit ng journal.',
+    referencesSub:
+        'Mga kapaki-pakinabang na sanggunian at karagdagang impormasyon.',
     gettingStarted: helpGettingStartedTl,
     privacy: helpPrivacyTl,
     journal: helpJournalTl,

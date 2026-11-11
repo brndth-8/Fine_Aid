@@ -140,10 +140,20 @@ class LocalAiScanStatsStore implements AiScanStatsStore {
 /// users/{uid}/aiScanStats/summary, updated with atomic increments.
 class FirestoreAiScanStatsStore implements AiScanStatsStore {
   final String uid;
-  FirestoreAiScanStatsStore(this.uid);
+
+  /// The top-level collection the counters sit under: `users` for an account,
+  /// `guestAiScan` (document `guest`) for Guest Mode.
+  final String collection;
+
+  FirestoreAiScanStatsStore(this.uid, {this.collection = 'users'});
+
+  /// Guest Mode's shared counters (no account): see `guestAiScan` in
+  /// firestore.rules.
+  factory FirestoreAiScanStatsStore.guest() =>
+      FirestoreAiScanStatsStore('guest', collection: 'guestAiScan');
 
   DocumentReference<Map<String, dynamic>> get _doc => FirebaseFirestore.instance
-      .collection('users')
+      .collection(collection)
       .doc(uid)
       .collection('aiScanStats')
       .doc('summary');
@@ -152,9 +162,41 @@ class FirestoreAiScanStatsStore implements AiScanStatsStore {
   Future<void> add(Map<String, int> deltas) {
     // Not awaited by callers: offline, Firestore queues this and sends it
     // later, and the future only completes once it has been sent.
-    return _doc.set({
+    final batch = FirebaseFirestore.instance.batch();
+    batch.set(_doc, {
       for (final e in deltas.entries) e.key: FieldValue.increment(e.value),
     }, SetOptions(merge: true));
+
+    // The counters above are running totals with no dates. For the admin
+    // dashboard's "errors over time" graph, a failed scan or a scan the user
+    // marked wrong (or satisfied) also bumps that day's counter. Only those
+    // events create a day document, so it stays tiny; un-marking a result doesn't subtract
+    // (the graph shows events, the totals above stay exact).
+    final failed = deltas['failed'] ?? 0;
+    final wrong = deltas['ratedWrong'] ?? 0;
+    final right = deltas['ratedCorrect'] ?? 0;
+    if (failed > 0 || wrong > 0 || right > 0) {
+      final now = DateTime.now();
+      final day = DateTime(now.year, now.month, now.day);
+      final key =
+          '${day.year}${day.month.toString().padLeft(2, '0')}'
+          '${day.day.toString().padLeft(2, '0')}';
+      batch.set(
+        FirebaseFirestore.instance
+            .collection(collection)
+            .doc(uid)
+            .collection('aiScanDaily')
+            .doc(key),
+        {
+          'day': Timestamp.fromDate(day),
+          if (failed > 0) 'failed': FieldValue.increment(failed),
+          if (wrong > 0) 'erroneous': FieldValue.increment(wrong),
+          if (right > 0) 'satisfied': FieldValue.increment(right),
+        },
+        SetOptions(merge: true),
+      );
+    }
+    return batch.commit();
   }
 
   @override
@@ -166,6 +208,31 @@ class FirestoreAiScanStatsStore implements AiScanStatsStore {
         if (e.value is num) e.key: (e.value as num).toInt(),
     };
   }
+}
+
+/// Guest Mode: the counters stay on the phone (the guest's own AI scan page
+/// reads them) AND are added to the shared guest counters, so the admin
+/// dashboard counts guests' scans and answers too. The shared write is
+/// best-effort: if it fails, the local count is not lost.
+class GuestAiScanStatsStore implements AiScanStatsStore {
+  GuestAiScanStatsStore(this.local, this.remote);
+
+  final AiScanStatsStore local;
+  final AiScanStatsStore remote;
+
+  @override
+  Future<void> add(Map<String, int> deltas) async {
+    // Not awaited: offline, Firestore queues it and sends it later.
+    unawaited(
+      remote.add(deltas).catchError((Object e) {
+        debugPrint('[AiScanStats] guest counters not sent: $e');
+      }),
+    );
+    await local.add(deltas);
+  }
+
+  @override
+  Future<Map<String, int>> read() => local.read();
 }
 
 /// Counts AI scans and how often they go through. Counting must never get in
@@ -181,7 +248,10 @@ class AiScanStatsService {
   static AiScanStatsStore _defaultStore() {
     final user = FirebaseAuth.instance.currentUser;
     return user == null
-        ? LocalAiScanStatsStore()
+        ? GuestAiScanStatsStore(
+            LocalAiScanStatsStore(),
+            FirestoreAiScanStatsStore.guest(),
+          )
         : FirestoreAiScanStatsStore(user.uid);
   }
 

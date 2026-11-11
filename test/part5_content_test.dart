@@ -108,7 +108,7 @@ void main() {
       expect(_all(firstAidGuides['laceration']!), contains('running water'));
       expect(
         _all(firstAidGuides['abrasion']!),
-        contains('sterile non-stick dressing'),
+        contains('clean non-stick dressing'),
       );
     });
 
@@ -152,7 +152,7 @@ void main() {
         'firstAidSteps': [
           'Before: Wash your hands with soap and water. — Keeps germs away.',
           'During: Cool the burn under cool running water. — Stops it going deeper.',
-          'During: Do not apply ice directly to the burn. — Ice can damage skin.',
+          'During: Do not put ice directly on the burn. — Ice can damage skin.',
           'After: Change the dressing when wet. — Wet dressings grow germs.',
         ],
       }, tagalog: false)!;
@@ -160,7 +160,7 @@ void main() {
         text,
         contains(
           'Advice given: Cool the burn under cool running water; '
-          'Do not apply ice directly to the burn.',
+          'Do not put ice directly on the burn.',
         ),
       );
       expect(text, isNot(contains('Keeps germs')));
@@ -196,12 +196,8 @@ void main() {
       );
       await tester.pump();
 
-      await tester.tap(find.byType(DropdownButtonFormField<int>));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Burn').last);
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.byType(ElevatedButton).first);
+      // tap the Burn card: its questions start straight away
+      await tester.tap(find.text('Burn'));
       await tester.pump(const Duration(milliseconds: 400));
       // answer "No" to every question
       for (var i = 0; i < 5; i++) {
@@ -219,10 +215,7 @@ void main() {
       expect(find.text('Before: Get Ready'), findsOneWidget);
       expect(find.text('During: The Steps'), findsOneWidget);
       expect(find.text('After: Aftercare'), findsOneWidget);
-      expect(
-        find.text('Do not apply ice directly to the burn.'),
-        findsOneWidget,
-      );
+      expect(find.text('Do not put ice directly on the burn.'), findsOneWidget);
       expect(
         find.text('Why: Ice can damage the skin even more.'),
         findsOneWidget,

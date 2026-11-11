@@ -3,8 +3,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'app_language.dart';
 
 /// Wording for the healing check-in notification and everything around it,
-/// English + Tagalog. Deliberately neutral: it only asks "Are you feeling
-/// better?" and never says a wound is better or worse — this is a
+/// English + Tagalog. Deliberately neutral: it only asks how you are
+/// feeling and never says a wound is better or worse — this is a
 /// preliminary check-in, not a diagnosis. Review the Tagalog before release.
 ///
 /// A notification fires without a screen to read the language from, so
@@ -30,6 +30,14 @@ class NotificationStrings {
   final String remindMeTitle;
   final String remindMeSubtitle;
   final String noBenchmark;
+  // The wound-care reminder.
+  final String woundCareTitle;
+  final String woundCareBody;
+  // Shown when notifications are off for the app, and after a reminder is set.
+  final String remindersOff;
+  final String openSettings;
+  final String reminderScheduled; // uses {date}
+  final String reminderSetTitle;
 
   const NotificationStrings({
     required this.checkInTitle,
@@ -49,6 +57,12 @@ class NotificationStrings {
     required this.remindMeTitle,
     required this.remindMeSubtitle,
     required this.noBenchmark,
+    required this.woundCareTitle,
+    required this.woundCareBody,
+    required this.remindersOff,
+    required this.openSettings,
+    required this.reminderScheduled,
+    required this.reminderSetTitle,
   });
 
   static NotificationStrings of(BuildContext context) =>
@@ -70,13 +84,13 @@ class NotificationStrings {
 
   static const en = NotificationStrings(
     checkInTitle: 'Healing check-in',
-    checkInBody: 'Are you feeling better?',
-    actionBetter: 'Feeling Better',
-    actionNotYet: 'Not Yet',
-    actionWorse: 'It\'s Worse',
-    dialogBetter: 'Yes, I\'m feeling better',
-    dialogNotYet: 'Not yet',
-    dialogWorse: 'It\'s getting worse',
+    checkInBody: 'How are you feeling?',
+    actionBetter: 'Feeling better',
+    actionNotYet: 'No change',
+    actionWorse: 'Getting worse',
+    dialogBetter: 'Feeling better',
+    dialogNotYet: 'No change',
+    dialogWorse: 'Getting worse',
     notYetSnack: 'Okay — we\'ll check in again tomorrow.',
     seeProfessional:
         'We recommend getting checked by a healthcare professional.',
@@ -91,17 +105,25 @@ class NotificationStrings {
     noBenchmark:
         'No reminder was set: there is no standard healing time for this '
         'type yet.',
+    woundCareTitle: 'Wound care',
+    woundCareBody: 'It\'s time to clean your wound.',
+    remindersOff:
+        'Notifications are turned off for Fine Aid, so your reminders '
+        'will not show up. Turn them on in Settings.',
+    openSettings: 'Open Settings',
+    reminderScheduled: 'Reminder set: we will check in on {date} at 9:00 AM.',
+    reminderSetTitle: 'Reminder set',
   );
 
   static const tl = NotificationStrings(
     checkInTitle: 'Pagsusuri sa paggaling',
-    checkInBody: 'Bumubuti na ba ang pakiramdam mo?',
+    checkInBody: 'Kumusta ang pakiramdam mo?',
     actionBetter: 'Bumubuti na',
-    actionNotYet: 'Hindi pa',
+    actionNotYet: 'Walang pagbabago',
     actionWorse: 'Lumalala',
-    dialogBetter: 'Oo, bumubuti na ang pakiramdam ko',
-    dialogNotYet: 'Hindi pa',
-    dialogWorse: 'Lumalala ito',
+    dialogBetter: 'Bumubuti na',
+    dialogNotYet: 'Walang pagbabago',
+    dialogWorse: 'Lumalala',
     notYetSnack: 'Sige — kukumustahin ka namin ulit bukas.',
     seeProfessional:
         'Inirerekomenda naming magpatingin sa isang healthcare professional.',
@@ -117,5 +139,14 @@ class NotificationStrings {
     noBenchmark:
         'Walang naitakdang paalala: wala pang karaniwang oras ng paggaling '
         'para sa uri na ito.',
+    woundCareTitle: 'Pag-aalaga ng sugat',
+    woundCareBody: 'Oras na para linisin ang iyong sugat.',
+    remindersOff:
+        'Naka-off ang mga notification para sa Fine Aid, kaya hindi '
+        'lalabas ang iyong mga paalala. I-on ang mga ito sa Settings.',
+    openSettings: 'Buksan ang Settings',
+    reminderScheduled:
+        'Naitakdang paalala: kukumustahin ka namin sa {date} nang 9:00 AM.',
+    reminderSetTitle: 'Naitakdang paalala',
   );
 }

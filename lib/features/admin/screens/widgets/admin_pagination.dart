@@ -200,9 +200,24 @@ class AdminPageError extends StatelessWidget {
 /// "Showing 1–10 of 32 entries" + First / Previous / current page / Next /
 /// Last. Buttons are disabled at the ends and while a page is loading.
 class AdminPager extends StatelessWidget {
-  const AdminPager({super.key, required this.controller});
+  const AdminPager({
+    super.key,
+    required this.controller,
+    this.padding = const EdgeInsets.fromLTRB(16, 12, 16, 12),
+    this.topBorder = false,
+    this.controlGap = 0,
+    this.centered = false,
+  });
 
   final AdminPageController controller;
+
+  /// Space around the row, an optional thin line above it, the gap between
+  /// the page buttons, and whether the controls sit centred under the entry
+  /// count (small screens) instead of at the right.
+  final EdgeInsets padding;
+  final bool topBorder;
+  final double controlGap;
+  final bool centered;
 
   @override
   Widget build(BuildContext context) {
@@ -219,82 +234,114 @@ class AdminPager extends StatelessWidget {
             ? 'Showing ${c.rangeStart}–${c.rangeEnd}'
             : 'Showing ${c.rangeStart}–${c.rangeEnd} of ${c.total} entries';
 
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-          child: Wrap(
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            runSpacing: 8,
-            spacing: 16,
-            children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (c.loading) ...[
-                    const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-                  Text(summary, style: theme.textTheme.bodySmall),
-                ],
-              ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _PagerButton(
-                    icon: Icons.keyboard_double_arrow_left,
-                    tooltip: 'First page',
-                    onPressed: idle && c.hasPrev ? c.goToFirst : null,
-                  ),
-                  _PagerButton(
-                    icon: Icons.chevron_left,
-                    tooltip: 'Previous page',
-                    onPressed: idle && c.hasPrev ? c.previous : null,
-                  ),
-                  Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AdminTheme.maroon,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      '${c.page}',
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                  if (c.totalPages != null)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 4),
-                      child: Text(
-                        'of ${c.totalPages}',
-                        style: theme.textTheme.bodySmall,
-                      ),
-                    ),
-                  _PagerButton(
-                    icon: Icons.chevron_right,
-                    tooltip: 'Next page',
-                    onPressed: idle && c.hasNext ? c.next : null,
-                  ),
-                  _PagerButton(
-                    icon: Icons.keyboard_double_arrow_right,
-                    tooltip: 'Last page',
-                    onPressed: idle && c.hasNext && c.total != null
-                        ? () => c.goToLast()
-                        : null,
-                  ),
-                ],
-              ),
-            ],
+        final controls = <Widget>[
+          _PagerButton(
+            icon: Icons.keyboard_double_arrow_left,
+            tooltip: 'First page',
+            onPressed: idle && c.hasPrev ? c.goToFirst : null,
           ),
+          _PagerButton(
+            icon: Icons.chevron_left,
+            tooltip: 'Previous page',
+            onPressed: idle && c.hasPrev ? c.previous : null,
+          ),
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: AdminTheme.maroon,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              '${c.page}',
+              style: theme.textTheme.labelMedium?.copyWith(color: Colors.white),
+            ),
+          ),
+          if (c.totalPages != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: Text(
+                'of ${c.totalPages}',
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+          _PagerButton(
+            icon: Icons.chevron_right,
+            tooltip: 'Next page',
+            onPressed: idle && c.hasNext ? c.next : null,
+          ),
+          _PagerButton(
+            icon: Icons.keyboard_double_arrow_right,
+            tooltip: 'Last page',
+            onPressed: idle && c.hasNext && c.total != null
+                ? () => c.goToLast()
+                : null,
+          ),
+        ];
+        final count = Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (c.loading) ...[
+              const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              const SizedBox(width: 8),
+            ],
+            // Wraps instead of overflowing if a narrow card can't hold it.
+            Flexible(
+              child: Text(
+                summary,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+          ],
+        );
+        final buttons = centered
+            // On a phone the controls may need more than the card's width;
+            // let them wrap (centred) rather than overflow.
+            ? Wrap(
+                alignment: WrapAlignment.center,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: controlGap,
+                runSpacing: 6,
+                children: controls,
+              )
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (var i = 0; i < controls.length; i++) ...[
+                    if (i > 0 && controlGap > 0) SizedBox(width: controlGap),
+                    controls[i],
+                  ],
+                ],
+              );
+        return Container(
+          // Only the bordered (Content management) style spans the card, so
+          // the other screens' pagers keep their current layout.
+          width: topBorder ? double.infinity : null,
+          padding: padding,
+          decoration: topBorder
+              ? const BoxDecoration(
+                  border: Border(top: BorderSide(color: Color(0xFFEEEEEE))),
+                )
+              : null,
+          child: centered
+              ? SizedBox(
+                  width: double.infinity,
+                  child: Column(
+                    children: [count, const SizedBox(height: 8), buttons],
+                  ),
+                )
+              : Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  runSpacing: 8,
+                  spacing: 16,
+                  children: [count, buttons],
+                ),
         );
       },
     );

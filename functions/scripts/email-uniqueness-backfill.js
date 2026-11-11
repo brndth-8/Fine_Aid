@@ -20,6 +20,14 @@
  *       account keeps the address, then clear it from the others in the
  *       admin portal's Edit dialog, which frees it).
  *
+ *   node scripts/email-uniqueness-backfill.js --apply --oldest-wins
+ *       Same, but for an address shared by several accounts the best
+ *       account (completed registration, then phone-verified, then the
+ *       OLDEST by createdAt) also gets the reservation, so a NEW sign-up
+ *       can't take a shared address. The other accounts are still not
+ *       touched. (Without this flag a shared address has no reservation and
+ *       the first new sign-up to use it would get it.)
+ *
  * Needs GOOGLE_APPLICATION_CREDENTIALS pointing at a service-account key for
  * the project (never commit it; delete it afterwards). --project overrides
  * the project id.
@@ -34,6 +42,7 @@ const admin = require("firebase-admin");
 const args = process.argv.slice(2);
 const APPLY = args.includes("--apply");
 const SHOW = args.includes("--show-emails");
+const OLDEST_WINS = args.includes("--oldest-wins");
 const pi = args.indexOf("--project");
 const projectId = pi >= 0 ? args[pi + 1] : "fine-aid-9e0a9";
 
@@ -63,7 +72,15 @@ const mask = (e) => {
       continue;
     }
     if (!byEmail.has(key)) byEmail.set(key, []);
-    byEmail.get(key).push({ uid: d.id, username: d.get("username"), stored });
+    const created = d.get("createdAt");
+    byEmail.get(key).push({
+      uid: d.id,
+      username: d.get("username"),
+      stored,
+      createdMs: created && created.toMillis ? created.toMillis() : Number.MAX_SAFE_INTEGER,
+      complete: d.get("registrationComplete") === true,
+      verified: d.get("phoneVerified") === true,
+    });
   }
 
   const duplicates = [...byEmail.entries()].filter(([, v]) => v.length > 1);
@@ -114,6 +131,26 @@ const mask = (e) => {
       `${APPLY ? "rewrote" : "would rewrite"} ${rewritten} address(es) to ` +
       `lower-case; ${alreadyReserved} already reserved.`
   );
+  if (OLDEST_WINS) {
+    let sharedReserved = 0;
+    for (const [email, list] of duplicates) {
+      list.sort(
+        (a, b) =>
+          Number(b.complete) - Number(a.complete) ||
+          Number(b.verified) - Number(a.verified) ||
+          a.createdMs - b.createdMs ||
+          a.uid.localeCompare(b.uid)
+      );
+      const ref = db.doc(`emails/${email}`);
+      if ((await ref.get()).exists) continue;
+      if (APPLY) await ref.create({ uid: list[0].uid });
+      sharedReserved++;
+    }
+    console.log(
+      `${APPLY ? "Reserved" : "Would reserve"} ${sharedReserved} shared address(es) ` +
+        "for their oldest account (--oldest-wins); the other accounts were not touched."
+    );
+  }
   console.log(
     `${duplicates.length} duplicated address(es) were left untouched for you ` +
       "to resolve manually. Nothing was deleted or merged."

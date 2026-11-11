@@ -4,7 +4,20 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../../../core/network_error.dart';
 import '../../../i18n/calendar_strings.dart';
+import '../../../services/guest_journal_store.dart';
 import 'entry_detail_screen.dart';
+import 'journal_entry_menu.dart';
+
+/// The date to show under the calendar when [month] is on view: [selected]'s
+/// day of the month, or the month's last day when it is shorter (31 -> 30).
+DateTime dateInMonth(DateTime selected, DateTime month) {
+  final lastDay = DateUtils.getDaysInMonth(month.year, month.month);
+  return DateTime(
+    month.year,
+    month.month,
+    selected.day > lastDay ? lastDay : selected.day,
+  );
+}
 
 class DayEntriesScreen extends StatefulWidget {
   final DateTime initialDate;
@@ -25,6 +38,10 @@ class _DayEntriesScreenState extends State<DayEntriesScreen> {
     final d = widget.initialDate;
     _selectedDate = DateTime(d.year, d.month, d.day);
     _displayedMonth = DateTime(d.year, d.month);
+    // Guest Mode entries live on this phone.
+    if (FirebaseAuth.instance.currentUser == null) {
+      GuestJournalStore.instance.load();
+    }
   }
 
   @override
@@ -33,32 +50,41 @@ class _DayEntriesScreenState extends State<DayEntriesScreen> {
     final user = FirebaseAuth.instance.currentUser;
 
     return Scaffold(
-      backgroundColor: theme.colorScheme.surface,
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        centerTitle: true,
+        title: const Text('Journal Calendar'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios, size: 18),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
       body: SafeArea(
         child: Column(
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 8, 16, 0),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back_ios, size: 18),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                  Expanded(
-                    child: Text(
-                      'Journal Calendar',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.titleMedium,
-                    ),
-                  ),
-                  const SizedBox(width: 40),
-                ],
-              ),
-            ),
             Expanded(
               child: user == null
-                  ? const Center(child: Text('Not signed in'))
+                  ? ValueListenableBuilder<List<GuestJournalEntry>>(
+                      valueListenable: GuestJournalStore.instance.entries,
+                      builder: (context, all, _) {
+                        final byDay =
+                            <DateTime, List<(String, Map<String, dynamic>)>>{};
+                        for (final e in all) {
+                          final d = (e.data['createdAt'] as Timestamp).toDate();
+                          byDay
+                              .putIfAbsent(
+                                DateTime(d.year, d.month, d.day),
+                                () => [],
+                              )
+                              .add((e.id, e.data));
+                        }
+                        return _dayBody(
+                          theme,
+                          markedDates: byDay.keys.toSet(),
+                          selectedEntries: byDay[_selectedDate] ?? const [],
+                        );
+                      },
+                    )
                   : StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                       stream: FirebaseFirestore.instance
                           .collection('users')
@@ -90,63 +116,11 @@ class _DayEntriesScreenState extends State<DayEntriesScreen> {
                         final selectedEntries =
                             entriesByDay[_selectedDate] ?? const [];
 
-                        return ListView(
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-                          children: [
-                            _buildCalendarCard(theme, markedDates),
-                            const SizedBox(height: 20),
-                            Text(
-                              CalendarStrings.of(
-                                context,
-                              ).monthDay(_selectedDate),
-                              style: theme.textTheme.titleLarge?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: theme.colorScheme.primary,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            const Divider(),
-                            const SizedBox(height: 8),
-                            if (snapshot.hasError)
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 24,
-                                ),
-                                child: Text(
-                                  isNetworkError(snapshot.error!)
-                                      ? noInternetMessage
-                                      : 'Could not load entries for this '
-                                            'day. Please try again.',
-                                  textAlign: TextAlign.center,
-                                  style: theme.textTheme.bodyMedium,
-                                ),
-                              )
-                            else if (!snapshot.hasData)
-                              const Padding(
-                                padding: EdgeInsets.symmetric(vertical: 24),
-                                child: Center(
-                                  child: CircularProgressIndicator(),
-                                ),
-                              )
-                            else if (selectedEntries.isEmpty)
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 24,
-                                ),
-                                child: Text(
-                                  'No journal entries for this day.',
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    color: Colors.grey,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                              )
-                            else
-                              ...selectedEntries.map(
-                                (entry) =>
-                                    _buildEntryTile(theme, entry.$1, entry.$2),
-                              ),
-                          ],
+                        return _dayBody(
+                          theme,
+                          markedDates: markedDates,
+                          selectedEntries: selectedEntries,
+                          snapshot: snapshot,
                         );
                       },
                     ),
@@ -154,6 +128,65 @@ class _DayEntriesScreenState extends State<DayEntriesScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  /// The calendar and the day's entries. [snapshot] is only given for a
+  /// signed-in user (it carries the loading / error states); a guest's
+  /// entries are already on the phone.
+  Widget _dayBody(
+    ThemeData theme, {
+    required Set<DateTime> markedDates,
+    required List<(String, Map<String, dynamic>)> selectedEntries,
+    AsyncSnapshot<QuerySnapshot<Map<String, dynamic>>>? snapshot,
+  }) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+      children: [
+        _buildCalendarCard(theme, markedDates),
+        const SizedBox(height: 20),
+        Text(
+          // Month names stay in English, even in Filipino.
+          CalendarStrings.en.monthDay(_selectedDate),
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: theme.colorScheme.primary,
+          ),
+        ),
+        const SizedBox(height: 4),
+        const Divider(),
+        const SizedBox(height: 8),
+        if (snapshot != null && snapshot.hasError)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Text(
+              isNetworkError(snapshot.error!)
+                  ? noInternetMessage
+                  : 'Could not load entries for this '
+                        'day. Please try again.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium,
+            ),
+          )
+        else if (snapshot != null && !snapshot.hasData)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (selectedEntries.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Text(
+              'No journal entries for this day.',
+              style: theme.textTheme.bodyMedium?.copyWith(color: Colors.grey),
+              textAlign: TextAlign.center,
+            ),
+          )
+        else
+          ...selectedEntries.map(
+            (entry) => _buildEntryTile(theme, entry.$1, entry.$2),
+          ),
+      ],
     );
   }
 
@@ -188,9 +221,9 @@ class _DayEntriesScreenState extends State<DayEntriesScreen> {
         child: Row(
           children: [
             Icon(
-              Icons.calendar_today,
+              Icons.edit_calendar_outlined,
               color: theme.colorScheme.primary,
-              size: 20,
+              size: 26,
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -200,15 +233,20 @@ class _DayEntriesScreenState extends State<DayEntriesScreen> {
                   Text(
                     title,
                     style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
                     ),
                   ),
                   if (timeText.isNotEmpty)
-                    Text(timeText, style: theme.textTheme.bodySmall),
+                    Text(
+                      timeText,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right, color: Colors.grey),
+            JournalEntryMenu(entryId: entryId, data: data),
           ],
         ),
       ),
@@ -228,11 +266,14 @@ class _DayEntriesScreenState extends State<DayEntriesScreen> {
     final firstWeekday =
         DateTime(_displayedMonth.year, _displayedMonth.month, 1).weekday % 7;
 
+    // The date shown under the calendar follows the month on view: the same
+    // day of the month (or the last day, in a shorter month).
     void changeMonth(int by) => setState(() {
       _displayedMonth = DateTime(
         _displayedMonth.year,
         _displayedMonth.month + by,
       );
+      _selectedDate = dateInMonth(_selectedDate, _displayedMonth);
     });
 
     return GestureDetector(
@@ -244,160 +285,175 @@ class _DayEntriesScreenState extends State<DayEntriesScreen> {
       },
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 4,
-            ),
-          ],
+          color: const Color(0xFFF1DCDC),
+          borderRadius: BorderRadius.circular(24),
         ),
         child: Column(
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.chevron_left),
-                  onPressed: () {
-                    setState(() {
-                      _displayedMonth = DateTime(
-                        _displayedMonth.year,
-                        _displayedMonth.month - 1,
-                      );
-                    });
-                  },
-                ),
-                Text(
-                  c.months[_displayedMonth.month - 1].toUpperCase(),
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1,
+            Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFFDBADAD),
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  IconButton(
+                    icon: Icon(
+                      Icons.chevron_left,
+                      size: 32,
+                      color: theme.colorScheme.primary,
+                    ),
+                    onPressed: () => changeMonth(-1),
                   ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.chevron_right),
-                  onPressed: () {
-                    setState(() {
-                      _displayedMonth = DateTime(
-                        _displayedMonth.year,
-                        _displayedMonth.month + 1,
-                      );
-                    });
-                  },
-                ),
-              ],
+                  Text(
+                    // The month name stays in English (with the year when it
+                    // is not this year's).
+                    '${CalendarStrings.en.months[_displayedMonth.month - 1].toUpperCase()}'
+                    '${_displayedMonth.year == now.year ? '' : ' ${_displayedMonth.year}'}',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(
+                      Icons.chevron_right,
+                      size: 32,
+                      color: theme.colorScheme.primary,
+                    ),
+                    onPressed: () => changeMonth(1),
+                  ),
+                ],
+              ),
             ),
-            if (!onCurrentMonth)
-              TextButton(
+            // Always takes its room (hidden on the current month), so the card
+            // is the same height in every month.
+            Visibility(
+              visible: !onCurrentMonth,
+              maintainSize: true,
+              maintainAnimation: true,
+              maintainState: true,
+              child: TextButton(
                 onPressed: () => setState(() {
                   _displayedMonth = DateTime(now.year, now.month);
                   _selectedDate = today;
                 }),
                 child: Text(c.jumpToToday),
               ),
+            ),
             const SizedBox(height: 8),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
                 for (var i = 0; i < 7; i++)
                   SizedBox(
-                    width: 32,
+                    width: 38,
                     child: Text(
                       c.weekdays[i],
                       textAlign: TextAlign.center,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: i == 0
-                            ? Colors.red.shade400
-                            : theme.colorScheme.primary,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: (i == 0 || i == 6)
+                            ? theme.colorScheme.primary
+                            : Colors.black,
                       ),
                     ),
                   ),
               ],
             ),
             const SizedBox(height: 4),
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 7,
-                childAspectRatio: 1,
-              ),
-              itemCount: firstWeekday + daysInMonth,
-              itemBuilder: (context, index) {
-                if (index < firstWeekday) return const SizedBox();
-                final day = index - firstWeekday + 1;
-                final thisDate = DateTime(
-                  _displayedMonth.year,
-                  _displayedMonth.month,
-                  day,
-                );
-                final isToday = thisDate == today;
-                final isSelected = thisDate == _selectedDate;
-                final hasEntry = markedDates.contains(thisDate);
-
-                return GestureDetector(
-                  onTap: () {
-                    setState(() => _selectedDate = thisDate);
-                  },
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 30,
-                          height: 30,
-                          alignment: Alignment.center,
-                          decoration: isToday
-                              ? BoxDecoration(
-                                  color: theme.colorScheme.primary,
-                                  shape: BoxShape.circle,
-                                )
-                              : null,
-                          child: Text(
-                            '$day',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              // Days still to come are dimmed.
-                              color: isToday
-                                  ? Colors.white
-                                  : (thisDate.isAfter(today)
-                                        ? Colors.grey.shade500
-                                        : null),
-                              fontWeight: isToday || hasEntry
-                                  ? FontWeight.bold
-                                  : null,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Container(
-                          width: 18,
-                          height: 2,
-                          color: isSelected
-                              ? theme.colorScheme.primary
-                              : Colors.transparent,
-                        ),
-                        if (hasEntry && !isSelected)
-                          Container(
-                            margin: const EdgeInsets.only(top: 2),
-                            width: 4,
-                            height: 4,
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.primary.withValues(
-                                alpha: 0.5,
-                              ),
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                      ],
-                    ),
+            LayoutBuilder(
+              // Always six rows tall, so the card never changes size from one
+              // month to the next.
+              builder: (context, box) => SizedBox(
+                height: 6 * box.maxWidth / 7,
+                child: GridView.builder(
+                  padding: EdgeInsets.zero,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 7,
+                    childAspectRatio: 1,
                   ),
-                );
-              },
+                  itemCount: firstWeekday + daysInMonth,
+                  itemBuilder: (context, index) {
+                    if (index < firstWeekday) return const SizedBox();
+                    final day = index - firstWeekday + 1;
+                    final thisDate = DateTime(
+                      _displayedMonth.year,
+                      _displayedMonth.month,
+                      day,
+                    );
+                    final isToday = thisDate == today;
+                    final isSelected = thisDate == _selectedDate;
+                    final hasEntry = markedDates.contains(thisDate);
+
+                    return GestureDetector(
+                      onTap: () {
+                        setState(() => _selectedDate = thisDate);
+                      },
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 30,
+                              height: 30,
+                              alignment: Alignment.center,
+                              decoration: isToday
+                                  ? BoxDecoration(
+                                      color: theme.colorScheme.primary,
+                                      shape: BoxShape.circle,
+                                    )
+                                  : null,
+                              child: Text(
+                                '$day',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  // Weekends in maroon; days still to come are
+                                  // dimmed.
+                                  color: isToday
+                                      ? Colors.white
+                                      : (thisDate.isAfter(today)
+                                            ? Colors.grey.shade500
+                                            : (thisDate.weekday ==
+                                                          DateTime.saturday ||
+                                                      thisDate.weekday ==
+                                                          DateTime.sunday
+                                                  ? theme.colorScheme.primary
+                                                  : null)),
+                                  fontWeight: isToday || hasEntry
+                                      ? FontWeight.bold
+                                      : null,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Container(
+                              width: 18,
+                              height: 2,
+                              color: isSelected
+                                  ? theme.colorScheme.primary
+                                  : Colors.transparent,
+                            ),
+                            if (hasEntry && !isSelected)
+                              Container(
+                                margin: const EdgeInsets.only(top: 2),
+                                width: 4,
+                                height: 4,
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.primary.withValues(
+                                    alpha: 0.5,
+                                  ),
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
             ),
           ],
         ),

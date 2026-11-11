@@ -1,10 +1,10 @@
-import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../services/api/gemini_service.dart';
+import '../../../data/health_context.dart';
 import '../../../services/firebase/storage_service.dart';
 import '../../../services/image_compressor.dart';
 import '../../camera/screens/ai_camera_screen.dart';
@@ -14,15 +14,16 @@ import '../../../core/nearby_intent.dart';
 import '../../../core/widgets/nearby_healthcare_sheet.dart';
 import '../../../i18n/nearby_strings.dart';
 import '../../../services/firebase/first_aid_content_service.dart';
-import '../../../services/voice_input_service.dart';
+import '../../../i18n/app_language.dart';
+import '../../../i18n/chat_strings.dart';
 import '../../../services/otc_filter_service.dart';
 import '../../../services/connectivity_service.dart';
 import '../../../services/guest_usage_service.dart';
-import '../../../core/widgets/voice_message_bubble.dart';
 import '../../../core/widgets/otc_suggestions_block.dart';
 import '../../../core/widgets/guest_gate_dialogs.dart';
 import '../../../core/widgets/guest_usage_badge.dart';
 import '../../../core/network_error.dart';
+import '../../../services/local_profile_photo.dart';
 import '../../../core/scope_check.dart';
 
 class _ChatMessage {
@@ -31,10 +32,6 @@ class _ChatMessage {
   final bool isUser;
   final bool isUrgent;
   final List<OtcSuggestion> otcSuggestions;
-  // Set only for a voice message — the recorded clip's local file path, so
-  // it can be replayed as a chat bubble. `text` is always the transcript
-  // either way.
-  final String? audioPath;
   // Set only for a photo the user attached — its local file path, shown as
   // an image in the bubble.
   final String? imagePath;
@@ -48,7 +45,6 @@ class _ChatMessage {
     required this.isUser,
     this.isUrgent = false,
     this.otcSuggestions = const [],
-    this.audioPath,
     this.imagePath,
     this.showNearby = false,
   });
@@ -84,31 +80,33 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
   final ScrollController _scrollController = ScrollController();
   final List<_ChatMessage> _messages = [];
   bool _isTyping = false;
-  bool _showTagalog = false;
 
   // A photo the user picked but hasn't sent yet (preview + remove), and
   // whether it's being uploaded to Firebase Storage right now.
   XFile? _attachment;
   bool _isUploading = false;
 
-  final VoiceInputService _voiceInput = VoiceInputService();
-  bool _isRecording = false;
-  Duration _recordingElapsed = Duration.zero;
-  double _recordingLevel = 0;
-  Timer? _recordingTimer;
-  StreamSubscription<double>? _amplitudeSubscription;
+  // What the person already saved (Health Profile, latest journal entries),
+  // sent with every question so the answers fit them. Null = nothing stored.
+  String? _healthContext;
 
   @override
   void initState() {
     super.initState();
-    final greeting = widget.initialContext != null
-        ? "Hi! I see you're asking about a ${widget.initialContext} entry. "
-              "How can I help. Are you noticing any new symptoms, or do you "
-              "have a question about care steps?"
-        : "Hi! I'm the Fine Aid Assistant. I can help answer questions about "
-              "first aid, wound care, and what to expect during healing. "
-              "What's on your mind?";
-    _messages.add(_ChatMessage(text: greeting, isUser: false));
+    loadChatHealthContext().then((text) {
+      if (mounted) _healthContext = text;
+    });
+    _messages.add(
+      _ChatMessage(
+        text: widget.initialContext != null
+            ? ChatStrings.en.greetingFor(widget.initialContext!)
+            : ChatStrings.en.greetingGeneral,
+        tagalog: widget.initialContext != null
+            ? ChatStrings.tl.greetingFor(widget.initialContext!)
+            : ChatStrings.tl.greetingGeneral,
+        isUser: false,
+      ),
+    );
     if (widget.showNearbyFirst) {
       _messages.add(
         _ChatMessage(
@@ -125,9 +123,6 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
   void dispose() {
     _inputController.dispose();
     _scrollController.dispose();
-    _recordingTimer?.cancel();
-    _amplitudeSubscription?.cancel();
-    _voiceInput.dispose();
     super.dispose();
   }
 
@@ -254,98 +249,14 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     }
   }
 
-  String _formatElapsed(Duration d) {
-    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return '$m:$s';
-  }
-
-  Future<void> _startVoiceRecording() async {
-    if (_isTyping || _isRecording) return;
-
-    final available = await _voiceInput.isAvailable;
-    if (!available) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            "I couldn't access speech recognition on this device - check "
-            'that microphone permission is allowed, or type your question '
-            'instead.',
-          ),
-        ),
-      );
-      return;
-    }
-
-    await _voiceInput.start();
-    if (!mounted) return;
-    _amplitudeSubscription = _voiceInput.amplitudeStream().listen((level) {
-      if (mounted) setState(() => _recordingLevel = level);
-    });
-    _recordingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) {
-        setState(() => _recordingElapsed += const Duration(seconds: 1));
-      }
-    });
-    setState(() {
-      _isRecording = true;
-      _recordingElapsed = Duration.zero;
-    });
-  }
-
-  Future<void> _cancelVoiceRecording() async {
-    _recordingTimer?.cancel();
-    await _amplitudeSubscription?.cancel();
-    await _voiceInput.cancel();
-    if (!mounted) return;
-    setState(() {
-      _isRecording = false;
-      _recordingElapsed = Duration.zero;
-      _recordingLevel = 0;
-    });
-  }
-
-  Future<void> _finishVoiceRecording() async {
-    _recordingTimer?.cancel();
-    await _amplitudeSubscription?.cancel();
-    final result = await _voiceInput.stop();
-    if (!mounted) return;
-    setState(() {
-      _isRecording = false;
-      _recordingElapsed = Duration.zero;
-      _recordingLevel = 0;
-    });
-
-    if (result.transcript.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            result.audioPath == null
-                ? "I couldn't record that - check microphone permission "
-                      'and try again, or type your question instead.'
-                : "I recorded that, but couldn't make out the words - try "
-                      'again, speak a bit closer to the mic, or type your '
-                      'question instead.',
-          ),
-        ),
-      );
-      return;
-    }
-
-    await _sendMessage(result.transcript, audioPath: result.audioPath);
-  }
-
-  Future<void> _sendMessage(String text, {String? audioPath}) async {
+  Future<void> _sendMessage(String text) async {
     if (text.isEmpty || _isTyping) return;
 
     // Scope check first — free, no network, no quota — so it works
     // offline and never counts against a guest's daily limit.
     if (looksObviouslyOutOfScope(text)) {
       setState(() {
-        _messages.add(
-          _ChatMessage(text: text, isUser: true, audioPath: audioPath),
-        );
+        _messages.add(_ChatMessage(text: text, isUser: true));
         _messages.add(
           _ChatMessage(text: outOfScopeRefusalMessage, isUser: false),
         );
@@ -362,9 +273,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     }
 
     setState(() {
-      _messages.add(
-        _ChatMessage(text: text, isUser: true, audioPath: audioPath),
-      );
+      _messages.add(_ChatMessage(text: text, isUser: true));
       _isTyping = true;
     });
     _scrollToBottom();
@@ -412,6 +321,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
       final raw = await GeminiService().sendChatMessage(
         text,
         referenceContext: referenceContext,
+        healthContext: _healthContext,
       );
       final parsed = parseBilingualReply(raw);
       english = parsed.english;
@@ -562,183 +472,171 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
+      backgroundColor: Colors.white,
+      body: Column(
+        children: [
+          // Maroon header: back, title, language.
+          Container(
+            width: double.infinity,
+            color: theme.colorScheme.primary,
+            child: SafeArea(
+              bottom: false,
+              child: SizedBox(
+                height: 60,
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(
+                        Icons.arrow_back_ios_new,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                    Expanded(
+                      child: Text(
+                        ChatStrings.of(context).title,
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    // Keeps the title centred.
+                    const SizedBox(width: 48),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // The reminder that this is general guidance only.
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFBE9E7),
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  size: 20,
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    ChatStrings.of(context).banner,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.primary,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: ListView.builder(
+              controller: _scrollController,
               padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back_ios, size: 18),
-                    onPressed: () => Navigator.pop(context),
+              itemCount: _messages.length + (_isTyping ? 1 : 0),
+              itemBuilder: (context, index) {
+                if (index == _messages.length) {
+                  return _buildTypingIndicator(theme);
+                }
+                return _buildBubble(theme, _messages[index]);
+              },
+            ),
+          ),
+          SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: GuestUsageBadge(),
                   ),
-                  Expanded(
-                    child: Text(
-                      'Fine Aid Assistant',
-                      style: theme.textTheme.titleMedium,
+                ),
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border(
+                      top: BorderSide(color: Colors.grey.shade300),
                     ),
                   ),
-                  TextButton.icon(
-                    onPressed: () =>
-                        setState(() => _showTagalog = !_showTagalog),
-                    icon: const Icon(Icons.translate, size: 16),
-                    label: Text(
-                      _showTagalog ? 'English' : 'Tagalog',
-                      style: theme.textTheme.bodySmall,
-                    ),
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      minimumSize: const Size(0, 32),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                  ),
-                ],
-              ),
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                  child: _buildFollowUpInputBar(theme),
+                ),
+              ],
             ),
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.symmetric(horizontal: 16),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                'This assistant provides general first aid guidance only and is '
-                'not a substitute for professional medical advice.',
-                style: theme.textTheme.bodySmall,
-                textAlign: TextAlign.center,
-              ),
-            ),
-            Expanded(
-              child: ListView.builder(
-                controller: _scrollController,
-                padding: const EdgeInsets.all(16),
-                itemCount: _messages.length + (_isTyping ? 1 : 0),
-                itemBuilder: (context, index) {
-                  if (index == _messages.length) {
-                    return _buildTypingIndicator(theme);
-                  }
-                  return _buildBubble(theme, _messages[index]);
-                },
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: GuestUsageBadge(),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: _buildFollowUpInputBar(theme),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildFollowUpInputBar(ThemeData theme) {
-    if (_isRecording) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(30),
-        ),
-        child: Row(
-          children: [
-            IconButton(
-              icon: const Icon(Icons.close, color: Colors.grey),
-              tooltip: 'Cancel recording',
-              onPressed: _cancelVoiceRecording,
-            ),
-            TweenAnimationBuilder<double>(
-              tween: Tween(begin: 0.85, end: 0.85 + _recordingLevel * 0.45),
-              duration: const Duration(milliseconds: 150),
-              builder: (context, scale, child) => Transform.scale(
-                scale: scale,
-                child: const SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                'Listening… ${_formatElapsed(_recordingElapsed)}',
-                style: theme.textTheme.bodyMedium,
-              ),
-            ),
-            IconButton(
-              icon: Icon(Icons.check_circle, color: theme.colorScheme.primary),
-              tooltip: 'Stop and send',
-              onPressed: _finishVoiceRecording,
-            ),
-          ],
-        ),
-      );
-    }
-
     final hasText = _inputController.text.trim().isNotEmpty;
     final upload = ChatUploadStrings.of(context);
     final canSend = hasText || _attachment != null;
     final attachment = _attachment;
-    final bar = Container(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(30),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: TextField(
-                controller: _inputController,
-                decoration: const InputDecoration(
-                  hintText: 'Describe your concern...',
-                  border: InputBorder.none,
+    final bar = Row(
+      children: [
+        IconButton(
+          icon: Icon(
+            Icons.add_photo_alternate_outlined,
+            size: 30,
+            color: theme.colorScheme.primary,
+          ),
+          tooltip: upload.addFile,
+          onPressed: (_isTyping || _isUploading) ? null : _pickAttachment,
+        ),
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF5F3F4),
+              borderRadius: BorderRadius.circular(26),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _inputController,
+                    decoration: InputDecoration(
+                      hintText: ChatStrings.of(context).inputHint,
+                      border: InputBorder.none,
+                    ),
+                    onChanged: (_) => setState(() {}),
+                    onSubmitted: (_) => _handleSend(),
+                  ),
                 ),
-                onChanged: (_) => setState(() {}),
-                onSubmitted: (_) => _handleSend(),
-              ),
+              ],
             ),
           ),
-          IconButton(
-            icon: Icon(
-              Icons.add_photo_alternate_outlined,
-              color: theme.colorScheme.primary,
-            ),
-            tooltip: upload.addFile,
-            onPressed: (_isTyping || _isUploading) ? null : _pickAttachment,
+        ),
+        const SizedBox(width: 8),
+        IconButton.filled(
+          icon: const Icon(Icons.send_rounded, size: 22),
+          tooltip: ChatStrings.of(context).send,
+          style: IconButton.styleFrom(
+            backgroundColor: theme.colorScheme.primary,
+            foregroundColor: Colors.white,
+            fixedSize: const Size(48, 48),
           ),
-          IconButton(
-            icon: Icon(Icons.mic, color: theme.colorScheme.primary),
-            tooltip: 'Record a follow-up question',
-            onPressed: (_isTyping || _isUploading)
-                ? null
-                : _startVoiceRecording,
-          ),
-          IconButton(
-            icon: Icon(Icons.send, color: theme.colorScheme.primary),
-            tooltip: 'Send',
-            onPressed: (_isTyping || _isUploading || !canSend)
-                ? null
-                : _handleSend,
-          ),
-        ],
-      ),
+          onPressed: (_isTyping || _isUploading || !canSend)
+              ? null
+              : _handleSend,
+        ),
+      ],
     );
 
     if (attachment == null) return bar;
@@ -795,122 +693,144 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     );
   }
 
+  // The round picture beside a message: the Fine Aid mark for the assistant,
+  // the person's profile photo (kept on this phone) for the user.
+  Widget _avatar(ThemeData theme, {required bool isUser}) {
+    final localPath = isUser ? LocalProfilePhoto().path : null;
+    return CircleAvatar(
+      radius: 20,
+      backgroundColor: const Color(0xFFE6E6E6),
+      backgroundImage: localPath != null ? FileImage(File(localPath)) : null,
+      child: localPath != null
+          ? null
+          : isUser
+          ? Icon(Icons.person, color: Colors.grey.shade600)
+          : Padding(
+              padding: const EdgeInsets.all(8),
+              child: Image.asset(
+                'assets/images/FINE_AID_Logo_Icon.png',
+                fit: BoxFit.contain,
+                excludeFromSemantics: true,
+              ),
+            ),
+    );
+  }
+
   Widget _buildBubble(ThemeData theme, _ChatMessage message) {
     final urgent = !message.isUser && message.isUrgent;
-    return Align(
-      alignment: message.isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.75,
-        ),
-        margin: const EdgeInsets.symmetric(vertical: 6),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          color: message.isUser
-              ? theme.colorScheme.primary
-              : urgent
-              ? Colors.red.shade50
-              : theme.colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(18),
-          border: urgent ? Border.all(color: Colors.red.shade300) : null,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (message.audioPath != null) ...[
-              VoiceMessageBubble(
-                audioPath: message.audioPath!,
-                isUser: message.isUser,
-              ),
-              const SizedBox(height: 6),
-            ],
-            if (message.imagePath != null)
-              Padding(
-                padding: EdgeInsets.only(
-                  bottom: message.text.isNotEmpty ? 8 : 0,
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Image.file(
-                    File(message.imagePath!),
-                    width: 200,
-                    fit: BoxFit.cover,
-                  ),
+    final bubble = Container(
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.of(context).size.width * 0.68,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: message.isUser
+            ? const Color(0xFFFDEEEC)
+            : urgent
+            ? Colors.red.shade50
+            : const Color(0xFFEFEFEF),
+        borderRadius: BorderRadius.circular(20),
+        border: urgent ? Border.all(color: Colors.red.shade300) : null,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (message.imagePath != null)
+            Padding(
+              padding: EdgeInsets.only(bottom: message.text.isNotEmpty ? 8 : 0),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.file(
+                  File(message.imagePath!),
+                  width: 200,
+                  fit: BoxFit.cover,
                 ),
               ),
-            if (message.text.isNotEmpty)
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (urgent) ...[
-                    Icon(
-                      Icons.warning_amber_rounded,
-                      size: 18,
-                      color: Colors.red.shade700,
-                    ),
-                    const SizedBox(width: 6),
-                  ],
-                  Flexible(
-                    child: Text(
-                      (!message.isUser &&
-                              _showTagalog &&
-                              message.tagalog != null)
-                          ? message.tagalog!
-                          : message.text,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: message.isUser
-                            ? Colors.white
-                            : urgent
-                            ? Colors.red.shade700
-                            : null,
-                        fontWeight: urgent ? FontWeight.bold : null,
-                        fontStyle: message.audioPath != null
-                            ? FontStyle.italic
-                            : null,
-                      ),
-                    ),
+            ),
+          if (message.text.isNotEmpty)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (urgent) ...[
+                  Icon(
+                    Icons.warning_amber_rounded,
+                    size: 18,
+                    color: Colors.red.shade700,
                   ),
+                  const SizedBox(width: 6),
                 ],
-              ),
-            if (!message.isUser && message.otcSuggestions.isNotEmpty)
-              OtcSuggestionsBlock(suggestions: message.otcSuggestions),
-            if (!message.isUser && message.showNearby)
-              const Padding(
-                padding: EdgeInsets.only(top: 8),
-                child: NearbyHealthcareButton(),
-              ),
+                Flexible(
+                  child: Text(
+                    (!message.isUser &&
+                            AppLanguageScope.isTagalog(context) &&
+                            message.tagalog != null)
+                        ? message.tagalog!
+                        : message.text,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: urgent ? Colors.red.shade700 : Colors.black87,
+                      fontWeight: urgent ? FontWeight.bold : null,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          if (!message.isUser && message.otcSuggestions.isNotEmpty)
+            OtcSuggestionsBlock(suggestions: message.otcSuggestions),
+          if (!message.isUser && message.showNearby)
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: NearbyHealthcareButton(),
+            ),
+        ],
+      ),
+    );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        mainAxisAlignment: message.isUser
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (!message.isUser) ...[
+            _avatar(theme, isUser: false),
+            const SizedBox(width: 8),
           ],
-        ),
+          Flexible(child: bubble),
+          if (message.isUser) ...[
+            const SizedBox(width: 8),
+            _avatar(theme, isUser: true),
+          ],
+        ],
       ),
     );
   }
 
   Widget _buildTypingIndicator(ThemeData theme) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 6),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: SizedBox(
-          width: 24,
-          height: 12,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: List.generate(
-              3,
-              (i) => CircleAvatar(
-                radius: 3,
-                backgroundColor: theme.colorScheme.primary,
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          _avatar(theme, isUser: false),
+          const SizedBox(width: 12),
+          SizedBox(
+            width: 38,
+            height: 12,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: List.generate(
+                3,
+                (i) => CircleAvatar(
+                  radius: 5,
+                  backgroundColor: theme.colorScheme.primary,
+                ),
               ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }

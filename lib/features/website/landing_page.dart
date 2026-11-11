@@ -9,7 +9,7 @@ import 'package:url_launcher/link.dart';
 
 import 'site_config.dart';
 
-enum LandingSection { about, download, experts, contact }
+enum LandingSection { about, download, experts, profiles, contact }
 
 class LandingPage extends StatefulWidget {
   const LandingPage({super.key});
@@ -91,8 +91,11 @@ class _LandingPageState extends State<LandingPage> {
                     key: _keys[LandingSection.download],
                     onSeeMore: () => _scrollTo(LandingSection.experts),
                   ),
-                  ExpertsIntroSection(key: _keys[LandingSection.experts]),
-                  const MeetExpertsSection(),
+                  ExpertsIntroSection(
+                    key: _keys[LandingSection.experts],
+                    onExplore: () => _scrollTo(LandingSection.profiles),
+                  ),
+                  MeetExpertsSection(key: _keys[LandingSection.profiles]),
                   const ConsultationSection(),
                   const BrandStatementSection(),
                   LandingFooter(
@@ -165,7 +168,11 @@ class _NavBar extends StatelessWidget {
               cursor: SystemMouseCursors.click,
               child: GestureDetector(
                 onTap: onLogoTap,
-                child: AnimatedLogo(width: mobile ? 110 : 170),
+                child: Image.asset(
+                  AnimatedLogo.defaultAsset,
+                  width: mobile ? 110 : 170,
+                  semanticLabel: 'Fine Aid',
+                ),
               ),
             ),
             const Spacer(),
@@ -267,9 +274,13 @@ class _MobileMenu extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 16, 16, 24),
-              child: AnimatedLogo(width: 140),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+              child: Image.asset(
+                AnimatedLogo.defaultAsset,
+                width: 140,
+                semanticLabel: 'Fine Aid',
+              ),
             ),
             item('ABOUT', LandingSection.about),
             item('EXPERTS', LandingSection.experts),
@@ -282,8 +293,9 @@ class _MobileMenu extends StatelessWidget {
 }
 
 class _Img {
-  static const hero = 'assets/web/hero.jpg'; // wooden medical blocks
-  static const qr = 'assets/web/qr-code.png'; // app download QR code
+  static const hero = 'assets/web/hero.jpg'; // scanning an arm with the app
+  static const about = 'assets/web/about.jpg'; // heart held in two hands
+  static const qr = 'assets/web/qr.png'; // app download QR code
   static const phoneFrame = 'assets/web/phone-frame.png'; // About phone
   static const phoneAngled = 'assets/web/phone-frame-angled.png'; // Download
   static const group1 = 'assets/web/expert-1.jpg'; // Galderma, Makati
@@ -291,6 +303,9 @@ class _Img {
   static const deanne = 'assets/web/expert-deanne.jpg';
   static const samuel = 'assets/web/expert-samuel.jpg';
   static const morallas = 'assets/web/expert-morallas.jpg';
+  static const alfred = 'assets/web/nurse-alfred.jpg';
+  static const adrian = 'assets/web/nurse-adrian.jpg';
+  static const khelsea = 'assets/web/nurse-khelsea.jpg';
   static const consultationBg = 'assets/web/experts-bg.jpg'; // maroon waves
   static const worldMap = 'assets/web/world-map.png';
   static const footerBadge = 'assets/web/footer-badge.jpg'; // first-aid badge
@@ -409,7 +424,7 @@ class HeroSection extends StatelessWidget {
         children: [
           const AssetOr(
             _Img.hero,
-            alignment: Alignment(-0.35, 0),
+            alignment: Alignment(-0.2, 0),
             placeholder: PhotoPlaceholder(
               colors: [Color(0xFFDCE6F2), Color(0xFFB9CBE0)],
             ),
@@ -422,8 +437,10 @@ class HeroSection extends StatelessWidget {
                 end: Alignment.centerRight,
                 colors: [
                   Colors.white.withValues(alpha: mobile ? 0.55 : 0),
-                  Colors.white.withValues(alpha: mobile ? 0.55 : 0.35),
+                  Colors.white.withValues(alpha: mobile ? 0.55 : 0.5),
+                  Colors.white.withValues(alpha: mobile ? 0.55 : 0.55),
                 ],
+                stops: const [0.25, 0.55, 1],
               ),
             ),
           ),
@@ -532,7 +549,7 @@ class _FeatureCardState extends State<_FeatureCard> {
         transform: Matrix4.translationValues(_hover ? 6 : 0, 0, 0),
         padding: const EdgeInsets.fromLTRB(22, 16, 18, 16),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.96),
+          color: const Color(0xFFF0F1F3).withValues(alpha: 0.96),
           borderRadius: BorderRadius.circular(26),
           boxShadow: [
             BoxShadow(
@@ -630,11 +647,11 @@ class AboutSection extends StatelessWidget {
       ],
     );
     const photo = AssetOr(
-      _Img.hero,
-      alignment: Alignment(0.6, 0),
+      _Img.about,
+      alignment: Alignment.centerRight,
       placeholder: PhotoPlaceholder(),
     );
-    final panelColor = const Color(0xFFE9E5E5).withValues(alpha: 0.9);
+    final panelColor = const Color(0xFFF0F1F3).withValues(alpha: 0.88);
 
     if (mobile) {
       return Padding(
@@ -911,14 +928,11 @@ class _DownloadPhone extends StatelessWidget {
                         target: LinkTarget.blank,
                         builder: (context, open) => SizedBox(
                           width: double.infinity,
-                          child: OutlinedButton(
+                          child: FilledButton(
                             onPressed: open,
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: LandingColors.maroon,
-                              side: const BorderSide(
-                                color: LandingColors.maroon,
-                                width: 2,
-                              ),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFF7A1A1F),
+                              foregroundColor: Colors.white,
                               shape: const StadiumBorder(),
                               padding: EdgeInsets.symmetric(
                                 vertical: screenW * 0.035,
@@ -927,7 +941,7 @@ class _DownloadPhone extends StatelessWidget {
                             child: Text(
                               'SCAN',
                               style: LandingText.body(
-                                color: LandingColors.maroon,
+                                color: Colors.white,
                                 size: screenW * 0.08,
                               ).copyWith(letterSpacing: 3, height: 1.2),
                             ),
@@ -1027,7 +1041,10 @@ class _ScanBracketsPainter extends CustomPainter {
 }
 
 class ExpertsIntroSection extends StatelessWidget {
-  const ExpertsIntroSection({super.key});
+  const ExpertsIntroSection({super.key, required this.onExplore});
+
+  /// Scrolls to the "Meet Our Experts" profiles.
+  final VoidCallback onExplore;
 
   @override
   Widget build(BuildContext context) {
@@ -1042,21 +1059,20 @@ class ExpertsIntroSection extends StatelessWidget {
             children: [
               Text(
                 'EXPERTS',
-                style: LandingText.body(
-                  color: LandingColors.maroon,
-                  size: 20,
-                ).copyWith(letterSpacing: 1),
+                style: LandingText.heading(
+                  20,
+                ).copyWith(letterSpacing: 0.5, height: 1),
               ),
               const SizedBox(width: 12),
-              Container(width: 100, height: 1.5, color: LandingColors.maroon),
+              Container(width: 130, height: 2, color: LandingColors.maroon),
             ],
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 28),
           Text(
             'Backed by Credentials\nBuilt for Safety',
-            style: LandingText.heading(_fluid(context, 32, 50)),
+            style: LandingText.heading(_fluid(context, 30, 50)),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 26),
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 440),
             child: Text(
@@ -1067,6 +1083,13 @@ class ExpertsIntroSection extends StatelessWidget {
                 size: _fluid(context, 16, 19),
               ),
             ),
+          ),
+          const SizedBox(height: 40),
+          PillButton(
+            label: 'EXPLORE PROFILES',
+            onPressed: onExplore,
+            rounded: false,
+            fontSize: 20,
           ),
         ],
       ),
@@ -1087,26 +1110,36 @@ class ExpertsIntroSection extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             ContentWidth(child: text),
-            const SizedBox(height: 32),
+            const SizedBox(height: 40),
             const SizedBox(height: 460, child: photos),
           ],
         ),
       );
     }
 
-    return SizedBox(
-      height: 640,
+    // Layers along the slanted edge, left to right as in the design:
+    // thin maroon line, white gap, thick maroon band, then the photos.
+    Widget slanted(double left, Widget child) => Padding(
+      padding: EdgeInsets.only(left: left),
+      child: ClipPath(clipper: const _SlantClipper(), child: child),
+    );
+
+    // At least 660px tall, taller if the text needs it (narrow desktops),
+    // so the text can never overflow; the photos fill the full height.
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 660),
       child: Stack(
+        alignment: AlignmentDirectional.centerStart,
         children: [
-          Positioned.fill(
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 80),
             child: ContentWidth(
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: FractionallySizedBox(widthFactor: 0.45, child: text),
+                child: FractionallySizedBox(widthFactor: 0.46, child: text),
               ),
             ),
           ),
-          // Maroon stripe peeking out along the slanted edge, then photos.
           Positioned(
             top: 0,
             bottom: 0,
@@ -1115,17 +1148,10 @@ class ExpertsIntroSection extends StatelessWidget {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                ClipPath(
-                  clipper: const _SlantClipper(),
-                  child: const ColoredBox(color: LandingColors.maroon),
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(left: 30),
-                  child: ClipPath(
-                    clipper: const _SlantClipper(),
-                    child: photos,
-                  ),
-                ),
+                slanted(0, const ColoredBox(color: LandingColors.maroon)),
+                slanted(7, const ColoredBox(color: Colors.white)),
+                slanted(15, const ColoredBox(color: LandingColors.maroon)),
+                slanted(40, photos),
               ],
             ),
           ),
@@ -1135,6 +1161,7 @@ class ExpertsIntroSection extends StatelessWidget {
   }
 }
 
+/// Parallelogram-ish clip: left edge slants from top-right to bottom-left.
 class _SlantClipper extends CustomClipper<Path> {
   const _SlantClipper();
 
@@ -1154,20 +1181,45 @@ class _SlantClipper extends CustomClipper<Path> {
 }
 
 class _Expert {
-  const _Expert(this.name, this.role, this.photo);
+  const _Expert(this.name, this.role, this.photo, {this.headshot = true});
   final String name;
   final String role;
   final String photo;
+
+  /// Headshots are framed from the top; group photos from the centre.
+  final bool headshot;
 }
 
 const _experts = [
-  _Expert('Dr. Deanne Asdala', 'Medical Affairs Manager', _Img.deanne),
   _Expert(
-    'Mr. Samuel Evan Pacamparra,',
+    'Dr. Deanne Asdala',
+    'Medical Affairs Manager\nDermatologist',
+    _Img.deanne,
+  ),
+  _Expert(
+    'Mr. Samuel Evan Pacamparra',
     'RPh, Regulatory Affairs Manager',
     _Img.samuel,
   ),
   _Expert('Dr. Anthony Morallas', 'Physician (Anesthesiology)', _Img.morallas),
+  _Expert(
+    'Mr. Alfred James Dorotan',
+    'Registered Nurse',
+    _Img.alfred,
+    headshot: false,
+  ),
+  _Expert(
+    'Mr. Adrian L. Bacolod',
+    'Registered Nurse',
+    _Img.adrian,
+    headshot: false,
+  ),
+  _Expert(
+    'Ms. Khelsea B. Ignacio',
+    'Registered Nurse',
+    _Img.khelsea,
+    headshot: false,
+  ),
 ];
 
 class MeetExpertsSection extends StatelessWidget {
@@ -1176,79 +1228,112 @@ class MeetExpertsSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final mobile = Breakpoints.isMobile(context);
-    final title = Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Flexible(
-          child: Container(
-            width: 100,
-            height: 1.5,
-            color: LandingColors.maroon,
-          ),
-        ),
-        const SizedBox(width: 16),
-        Flexible(
-          flex: 4,
-          child: Text(
-            'MEET OUR EXPERTS',
-            textAlign: TextAlign.center,
-            style: LandingText.heading(_fluid(context, 22, 30)),
-          ),
-        ),
-        const SizedBox(width: 16),
-        Flexible(
-          child: Container(
-            width: 100,
-            height: 1.5,
-            color: LandingColors.maroon,
-          ),
-        ),
-      ],
-    );
     final cards = [
       for (var i = 0; i < _experts.length; i++)
         Reveal(
-          delay: Duration(milliseconds: mobile ? 0 : 100 * i),
+          delay: Duration(milliseconds: mobile ? 0 : 100 * (i % 3)),
           child: _ExpertCard(expert: _experts[i]),
         ),
     ];
 
-    return ColoredBox(
-      color: LandingColors.pinkBg,
+    Widget row(List<Widget> three) => IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < three.length; i++) ...[
+            if (i > 0) const SizedBox(width: 48),
+            Expanded(child: three[i]),
+          ],
+        ],
+      ),
+    );
+
+    return CustomPaint(
+      painter: mobile ? null : const _ExpertWavesPainter(),
       child: Padding(
-        padding: EdgeInsets.symmetric(vertical: mobile ? 56 : 72),
+        padding: EdgeInsets.symmetric(vertical: mobile ? 56 : 88),
         child: ContentWidth(
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Reveal(child: title),
+              Reveal(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'MEET OUR EXPERTS',
+                      style: LandingText.heading(_fluid(context, 24, 34)),
+                    ),
+                    Text(
+                      'Developed alongside medical professionals',
+                      style: LandingText.body(
+                        color: LandingColors.maroon,
+                        size: _fluid(context, 15, 19),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               const SizedBox(height: 44),
               if (mobile)
                 for (final card in cards)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 24),
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 360),
-                      child: card,
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 380),
+                        child: card,
+                      ),
                     ),
                   )
-              else
-                IntrinsicHeight(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      for (var i = 0; i < cards.length; i++) ...[
-                        if (i > 0) const SizedBox(width: 44),
-                        Expanded(child: cards[i]),
-                      ],
-                    ],
-                  ),
-                ),
+              else ...[
+                row(cards.sublist(0, 3)),
+                const SizedBox(height: 120),
+                row(cards.sublist(3)),
+              ],
             ],
           ),
         ),
       ),
     );
   }
+}
+
+/// Maroon swooshes from the design: bottom-left of the first row and down
+/// the right edge beside the second row. Painted behind the (opaque) cards.
+class _ExpertWavesPainter extends CustomPainter {
+  const _ExpertWavesPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width, h = size.height;
+    final dark = Paint()..color = const Color(0xFF6E1414);
+    final light = Paint()..color = const Color(0xFF8B2626);
+
+    // Bottom-left of the first row.
+    Path leftWave(double dx) => Path()
+      ..moveTo(0, h * 0.36)
+      ..quadraticBezierTo(w * 0.07, h * 0.50, w * 0.42 - dx, h * 0.52)
+      ..lineTo(0, h * 0.52)
+      ..close();
+    canvas.drawPath(leftWave(0), dark);
+    canvas.drawPath(leftWave(w * 0.08), light);
+
+    // Crescent down the right edge of the second row.
+    Path rightWave(double inset) => Path()
+      ..moveTo(w * 0.62, h * 0.52)
+      ..quadraticBezierTo(w * 0.97, h * 0.50, w, h * 0.62)
+      ..lineTo(w, h)
+      ..lineTo(w * 0.58 + inset, h)
+      ..quadraticBezierTo(w * 0.95, h * 0.96, w * 0.965 - inset * 0.2, h * 0.76)
+      ..quadraticBezierTo(w * 0.975, h * 0.56, w * 0.62, h * 0.52)
+      ..close();
+    canvas.drawPath(rightWave(0), dark);
+    canvas.drawPath(rightWave(w * 0.05), light);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _ExpertCard extends StatefulWidget {
@@ -1291,13 +1376,15 @@ class _ExpertCardState extends State<_ExpertCard> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             AspectRatio(
-              aspectRatio: 1,
+              aspectRatio: 1.08,
               child: Semantics(
                 image: true,
                 label: 'Photo of ${e.name}',
                 child: AssetOr(
                   e.photo,
-                  alignment: Alignment.topCenter,
+                  alignment: e.headshot
+                      ? Alignment.topCenter
+                      : Alignment.center,
                   placeholder: const ColoredBox(
                     color: Color(0xFFEDE3E4),
                     child: Icon(
@@ -1310,21 +1397,21 @@ class _ExpertCardState extends State<_ExpertCard> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 22),
+              padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
               child: Column(
                 children: [
                   Text(
                     e.name,
                     textAlign: TextAlign.center,
-                    style: LandingText.heading(22),
+                    style: LandingText.heading(_fluid(context, 20, 24)),
                   ),
                   const SizedBox(height: 12),
                   Row(
                     children: [
                       Container(
-                        width: 50,
-                        height: 50,
-                        padding: const EdgeInsets.all(11),
+                        width: 52,
+                        height: 52,
+                        padding: const EdgeInsets.all(12),
                         decoration: const BoxDecoration(
                           color: LandingColors.maroon,
                           shape: BoxShape.circle,
@@ -1344,7 +1431,7 @@ class _ExpertCardState extends State<_ExpertCard> {
                           textAlign: TextAlign.center,
                           style: LandingText.body(
                             color: LandingColors.ink,
-                            size: 17,
+                            size: 18,
                           ).copyWith(height: 1.45),
                         ),
                       ),
@@ -1360,17 +1447,35 @@ class _ExpertCardState extends State<_ExpertCard> {
   }
 }
 
+/// `**bold**` marks the names, as in the design.
 const _consultationParagraphs = [
   'On March 10, 2026, our team conducted an expert review and consultation '
-      'with Dr. Deanne Asdala, Medical Affairs Manager, and Mr. Samuel Evan '
-      'Pacamparra, RPh, Regulatory Affairs Manager from Galderma Philippines '
-      'located at Guadalupe Viejo, Makati City.',
-  'This consultative process continued on March 11, 2026, during an expert '
-      'advisory session with Dr. Anthony Morallas, MD, a specialist physician '
-      'in Anesthesiology, held at Dear Joe Cafe in Aspen, San Jose Del Monte, '
-      'Bulacan.',
-  'This engagement ensured that our medical safety frameworks align with '
-      'high professional benchmarks and current healthcare standards.',
+      'with **Dr. Deanne Asdala, Medical Affairs Manager,** and **Mr. Samuel '
+      'Evan Pacamparra, RPh, Regulatory Affairs Manager** from Galderma '
+      'Philippines located at Guadalupe Viejo, Makati City. This consultative '
+      'process continued on March 11, 2026, during an expert advisory session '
+      'with **Dr. Anthony Morallas, MD, a specialist physician in '
+      'Anesthesiology**, held at Dear Joe Cafe in Aspen, San Jose Del Monte, '
+      'Bulacan. This engagement ensured that our medical safety frameworks '
+      'align with high professional benchmarks and current healthcare '
+      'standards.',
+  'On October 21, 2026, our team conducted another interview for medical '
+      'validation with **Mr. Adrian L. Bacolod, RN** at the STI Altaraza Town '
+      'Center clinic in San Jose del Monte. This foundational session allowed '
+      'us to evaluate core safety protocols and clinical response pathways. '
+      'This validation process continued on October 22, 2026, with **Mr. '
+      'Alfred James Dorotan, RN** and **Ms. Khelsea B. Ignacio, RN** at SM '
+      'City San Jose del Monte, Bulacan, focusing on practical first-aid '
+      'scenarios and user guidance accuracy. Thoroughly validating the medical '
+      'reliability of the system is important to ensure your safety, strictly '
+      'ground our application workflows in evidence-based clinical practices, '
+      'and build lasting professional trust in our safety protocols.',
+];
+
+/// Splits `**bold**` markup into spans.
+List<TextSpan> _boldSpans(String text, TextStyle bold) => [
+  for (final (i, part) in text.split('**').indexed)
+    if (part.isNotEmpty) TextSpan(text: part, style: i.isOdd ? bold : null),
 ];
 
 class ConsultationSection extends StatelessWidget {
@@ -1379,6 +1484,10 @@ class ConsultationSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final mobile = Breakpoints.isMobile(context);
+    final paragraphStyle = LandingText.body(
+      color: Colors.white,
+      size: _fluid(context, 16, 19),
+    );
 
     Widget feature(Widget icon, String label) => SizedBox(
       width: mobile ? 96 : 150,
@@ -1414,7 +1523,7 @@ class ConsultationSection extends StatelessWidget {
               ),
             ),
             Padding(
-              padding: EdgeInsets.symmetric(vertical: mobile ? 56 : 88),
+              padding: EdgeInsets.symmetric(vertical: mobile ? 56 : 80),
               child: ContentWidth(
                 child: Padding(
                   padding: EdgeInsets.symmetric(horizontal: mobile ? 0 : 60),
@@ -1430,20 +1539,24 @@ class ConsultationSection extends StatelessWidget {
                           ),
                         ),
                       ),
-                      SizedBox(height: mobile ? 28 : 64),
+                      SizedBox(height: mobile ? 24 : 36),
                       for (final p in _consultationParagraphs)
                         Reveal(
                           child: Padding(
-                            padding: const EdgeInsets.only(bottom: 24),
-                            child: Text(
-                              p,
+                            padding: const EdgeInsets.only(bottom: 22),
+                            child: Text.rich(
+                              TextSpan(
+                                children: _boldSpans(
+                                  p,
+                                  paragraphStyle.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
                               textAlign: mobile
                                   ? TextAlign.start
                                   : TextAlign.justify,
-                              style: LandingText.body(
-                                color: Colors.white,
-                                size: _fluid(context, 16, 19),
-                              ),
+                              style: paragraphStyle,
                             ),
                           ),
                         ),
@@ -1551,27 +1664,24 @@ class LandingFooter extends StatelessWidget {
     final brand = Column(
       crossAxisAlignment: align,
       children: [
-        const AnimatedLogo(width: 200, trigger: LogoTrigger.scroll),
-        Text(
-          'YOUR SMART FIRST AID ASSISTANT',
-          style: LandingText.body(color: LandingColors.footerRed, size: 15),
+        const AnimatedLogo(width: 240, trigger: LogoTrigger.scroll),
+        // Tagline tucked under the "INE AID" letters, as in the design.
+        Transform.translate(
+          offset: Offset(mobile ? 0 : 66, -8),
+          child: Text(
+            'YOUR SMART FIRST AID ASSISTANT',
+            style: LandingText.body(color: LandingColors.accent, size: 16),
+          ),
         ),
-        const SizedBox(height: 28),
-        // First-aid badge, dimmed onto gray as in the design.
-        Container(
-          width: 220,
-          height: 210,
-          color: const Color(0xFF8E8E8E),
-          padding: const EdgeInsets.all(18),
-          child: Opacity(
-            opacity: 0.62,
-            child: Image.asset(
-              _Img.footerBadge,
-              fit: BoxFit.contain,
-              color: const Color(0xFF8E8E8E),
-              colorBlendMode: BlendMode.multiply,
-              errorBuilder: (_, _, _) => const SizedBox.shrink(),
-            ),
+        const SizedBox(height: 36),
+        Padding(
+          padding: EdgeInsets.only(left: mobile ? 0 : 66),
+          child: Image.asset(
+            _Img.footerBadge,
+            width: 230,
+            height: 230,
+            fit: BoxFit.contain,
+            errorBuilder: (_, _, _) => const SizedBox.shrink(),
           ),
         ),
       ],
@@ -1607,27 +1717,6 @@ class LandingFooter extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: 36),
-        _ContactRow(
-          icon: Icons.copyright,
-          center: mobile,
-          child: Text.rich(
-            TextSpan(
-              children: [
-                const TextSpan(text: '2026 '),
-                TextSpan(
-                  text: 'Fine Aid',
-                  style: _footerText.copyWith(
-                    color: LandingColors.footerRed,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const TextSpan(text: '. All rights reserved'),
-              ],
-            ),
-            style: _footerText,
-          ),
-        ),
       ],
     );
 
@@ -1637,18 +1726,18 @@ class LandingFooter extends StatelessWidget {
         Text(
           'Main Menu',
           style: LandingText.body(
-            color: LandingColors.footerRed,
-            size: 21,
+            color: LandingColors.accent,
+            size: 22,
           ).copyWith(fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 22),
         _FooterLink('About', onTap: () => onNavigate(LandingSection.about)),
-        const SizedBox(height: 14),
+        const SizedBox(height: 16),
         _FooterLink(
           'Validity',
           onTap: () => onNavigate(LandingSection.experts),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 16),
         _FooterLink(
           'Contact Us',
           onTap: () => onNavigate(LandingSection.contact),
@@ -1656,50 +1745,90 @@ class LandingFooter extends StatelessWidget {
       ],
     );
 
-    return ColoredBox(
-      color: LandingColors.footer,
-      child: Padding(
-        padding: EdgeInsets.symmetric(vertical: mobile ? 48 : 64),
-        child: ContentWidth(
-          child: mobile
-              ? Column(
-                  children: [
-                    brand,
-                    const SizedBox(height: 40),
-                    contact,
-                    const SizedBox(height: 40),
-                    menu,
-                  ],
-                )
-              : Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(flex: 9, child: brand),
-                    Expanded(
-                      flex: 11,
-                      child: Padding(
-                        padding: const EdgeInsets.only(top: 76),
-                        child: contact,
-                      ),
-                    ),
-                    Expanded(
-                      flex: 5,
-                      child: Padding(
-                        padding: const EdgeInsets.only(top: 76),
-                        child: menu,
-                      ),
-                    ),
-                  ],
+    final copyright = Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Icon(Icons.copyright, color: Colors.white, size: 26),
+        const SizedBox(width: 14),
+        Flexible(
+          child: Text.rich(
+            TextSpan(
+              children: [
+                const TextSpan(text: '2026 '),
+                TextSpan(
+                  text: 'Fine Aid.',
+                  style: _footerText.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
+                const TextSpan(text: ' All rights reserved'),
+              ],
+            ),
+            style: _footerText.copyWith(color: Colors.white),
+          ),
         ),
-      ),
+      ],
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ColoredBox(
+          color: Colors.white,
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: mobile ? 48 : 80),
+            child: ContentWidth(
+              child: mobile
+                  ? Column(
+                      children: [
+                        brand,
+                        const SizedBox(height: 40),
+                        contact,
+                        const SizedBox(height: 32),
+                        menu,
+                      ],
+                    )
+                  : Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(flex: 9, child: brand),
+                        Expanded(
+                          flex: 11,
+                          child: Padding(
+                            padding: const EdgeInsets.only(top: 96),
+                            child: contact,
+                          ),
+                        ),
+                        Expanded(
+                          flex: 6,
+                          child: Padding(
+                            padding: const EdgeInsets.only(top: 96, left: 48),
+                            child: menu,
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+          ),
+        ),
+        ColoredBox(
+          color: LandingColors.footerBar,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 16),
+            child: copyright,
+          ),
+        ),
+        Container(height: 2, color: Colors.white),
+        Container(height: 14, color: LandingColors.footerBar),
+      ],
     );
   }
 }
 
 final _footerText = GoogleFonts.hind(
-  color: Colors.white,
-  fontSize: 18,
+  color: LandingColors.footerText,
+  fontSize: 19,
   height: 1.45,
 );
 
@@ -1719,7 +1848,7 @@ class _ContactRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 22),
+      padding: const EdgeInsets.only(bottom: 30),
       child: Row(
         mainAxisSize: center ? MainAxisSize.min : MainAxisSize.max,
         mainAxisAlignment: center
@@ -1729,7 +1858,7 @@ class _ContactRow extends StatelessWidget {
         children: [
           RotationTransition(
             turns: AlwaysStoppedAnimation(iconTurns),
-            child: Icon(icon, color: LandingColors.footerRed, size: 26),
+            child: Icon(icon, color: LandingColors.footerText, size: 30),
           ),
           const SizedBox(width: 16),
           Flexible(child: child),
@@ -1739,6 +1868,9 @@ class _ContactRow extends StatelessWidget {
   }
 }
 
+/// Footer text link. With [uri] it renders a real `<a href>` on the web
+/// (reliable for mailto:/tel:, and supports right-click → copy link);
+/// otherwise [onTap] runs in-page navigation.
 class _FooterLink extends StatefulWidget {
   const _FooterLink(this.label, {this.onTap, this.uri})
     : assert((onTap == null) != (uri == null));
@@ -1764,9 +1896,9 @@ class _FooterLinkState extends State<_FooterLink> {
         child: Text(
           widget.label,
           style: _footerText.copyWith(
-            color: _hover ? LandingColors.footerRed : Colors.white,
+            color: _hover ? LandingColors.red600 : LandingColors.footerText,
             decoration: _hover ? TextDecoration.underline : null,
-            decorationColor: LandingColors.footerRed,
+            decorationColor: LandingColors.red600,
           ),
         ),
       ),
@@ -1787,6 +1919,7 @@ class _FooterLinkState extends State<_FooterLink> {
   }
 }
 
+/// Copies the contact email — a fallback for visitors with no email app set up.
 class _CopyEmailButton extends StatelessWidget {
   const _CopyEmailButton();
 
@@ -1796,8 +1929,8 @@ class _CopyEmailButton extends StatelessWidget {
       tooltip: 'Copy email address',
       visualDensity: VisualDensity.compact,
       iconSize: 16,
-      color: Colors.white70,
-      hoverColor: Colors.white12,
+      color: LandingColors.footerText.withValues(alpha: 0.7),
+      hoverColor: LandingColors.mauve,
       icon: const Icon(Icons.copy_rounded),
       onPressed: () async {
         await Clipboard.setData(const ClipboardData(text: SiteConfig.email));
@@ -1820,9 +1953,9 @@ class LandingColors {
   static const accent = Color(0xFF8D2F2F); // subtitles
   static const deep = Color(0xFF790000); // quote
   static const bandDark = Color(0xFF4A0606); // consultation icon band
-  static const pinkBg = Color(0xFFFDF1F0); // Meet Our Experts background
-  static const footer = Color(0xFF1C1C1E);
-  static const footerRed = Color(0xFFB0302C);
+  static const pinkBg = Color(0xFFFDF1F0); // mobile hero card strip
+  static const footerText = Color(0xFF7B1C1C); // footer contact + links
+  static const footerBar = Color(0xFF8B2E2E); // footer copyright bar
 
   static const red900 = Color(0xFF6E0F0F);
   static const red800 = Color(0xFF8B1A1A);
@@ -1903,11 +2036,15 @@ class PillButton extends StatefulWidget {
     required this.label,
     required this.onPressed,
     this.rounded = true,
+    this.fontSize,
   });
 
   final String label;
   final VoidCallback onPressed;
   final bool rounded;
+
+  /// Overrides the default size (20 pill / 28 rectangle) for smaller buttons.
+  final double? fontSize;
 
   @override
   State<PillButton> createState() => _PillButtonState();
@@ -1932,7 +2069,9 @@ class _PillButtonState extends State<PillButton> {
                 : LandingColors.maroon,
             foregroundColor: Colors.white,
             padding: EdgeInsets.symmetric(
-              horizontal: widget.rounded ? 40 : 76,
+              horizontal: widget.rounded
+                  ? 40
+                  : (widget.fontSize != null ? 48 : 76),
               vertical: widget.rounded ? 22 : 18,
             ),
             shape: widget.rounded
@@ -1942,7 +2081,7 @@ class _PillButtonState extends State<PillButton> {
                   ),
             elevation: _hover ? 8 : 2,
             textStyle: GoogleFonts.leagueSpartan(
-              fontSize: widget.rounded ? 20 : 28,
+              fontSize: widget.fontSize ?? (widget.rounded ? 20 : 28),
               fontWeight: FontWeight.w700,
               letterSpacing: widget.rounded ? 1 : 0.5,
             ),
@@ -2255,11 +2394,11 @@ class FeatureSlide {
 }
 
 const featureSlides = [
-  FeatureSlide(asset: 'assets/web/screen-1.jpg', title: 'AI Vision Camera'),
+  FeatureSlide(asset: 'assets/web/screen-1.jpg', title: 'Health Profile'),
   FeatureSlide(asset: 'assets/web/screen-2.jpg', title: 'First Aid Dashboard'),
-  FeatureSlide(asset: 'assets/web/screen-4.jpg', title: 'Health Profile'),
+  FeatureSlide(asset: 'assets/web/screen-3.jpg', title: 'AI Vision Camera'),
+  FeatureSlide(asset: 'assets/web/screen-4.jpg', title: 'New Journal Entry'),
   FeatureSlide(asset: 'assets/web/screen-5.jpg', title: 'Health Journal'),
-  FeatureSlide(asset: 'assets/web/screen-3.jpg', title: 'Journal Entry'),
 ];
 
 class PhoneCarousel extends StatefulWidget {

@@ -211,75 +211,97 @@ class _HelpTourOverlayState extends State<HelpTourOverlay>
             ),
           ],
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
+        child: Stack(
+          clipBehavior: Clip.none,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Icon(step.icon, color: theme.colorScheme.primary),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Text(
-                    step.title,
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              step.description,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  '${_index + 1} / ${widget.steps.length}',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: Colors.grey,
-                  ),
-                ),
-                // Wraps instead of overflowing when the (longer) Tagalog
-                // button labels don't fit beside the counter.
-                Flexible(
-                  child: Wrap(
-                    alignment: WrapAlignment.end,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    spacing: 4,
+                // Room on both sides, so a long title never runs under the close
+                // button in the corner.
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      // Skip Tour sits to the left of Next, side by side
-                      // (the last step has "Done" instead, so no Skip).
-                      if (_index < widget.steps.length - 1)
-                        ElevatedButton(
-                          onPressed: widget.onFinished,
-                          child: Text(widget.skipLabel),
-                        ),
-                      if (_index > 0)
-                        TextButton(
-                          onPressed: _back,
-                          child: Text(widget.backLabel),
-                        ),
-                      ElevatedButton(
-                        onPressed: _next,
+                      Icon(step.icon, color: theme.colorScheme.primary),
+                      const SizedBox(width: 8),
+                      Flexible(
                         child: Text(
-                          _index == widget.steps.length - 1
-                              ? widget.doneLabel
-                              : widget.nextLabel,
+                          step.title,
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
+                const SizedBox(height: 8),
+                Text(
+                  step.description,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '${_index + 1} / ${widget.steps.length}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: Colors.grey,
+                      ),
+                    ),
+                    // Wraps instead of overflowing when the (longer) Tagalog
+                    // button labels don't fit beside the counter.
+                    Flexible(
+                      child: Wrap(
+                        alignment: WrapAlignment.end,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 4,
+                        children: [
+                          if (_index > 0)
+                            TextButton(
+                              onPressed: _back,
+                              child: Text(widget.backLabel),
+                            ),
+                          ElevatedButton(
+                            onPressed: _next,
+                            child: Text(
+                              _index == widget.steps.length - 1
+                                  ? widget.doneLabel
+                                  : widget.nextLabel,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
+            // Skip Tour: a close (x) in the top-right corner of the card. It
+            // ends the tour the same way as before (the last step has "Done"
+            // instead, so no x there).
+            if (_index < widget.steps.length - 1)
+              Positioned(
+                top: -12,
+                right: -12,
+                child: IconButton(
+                  onPressed: widget.onFinished,
+                  tooltip: widget.skipLabel,
+                  icon: const Icon(Icons.close, size: 20),
+                  color: Colors.grey.shade600,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 32,
+                    height: 32,
+                  ),
+                ),
+              ),
           ],
         ),
       ),

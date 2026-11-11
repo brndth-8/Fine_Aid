@@ -3,6 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../data/healthcare_facilities.dart';
 import '../../i18n/nearby_strings.dart';
 import '../../services/api/nearby_healthcare_service.dart';
+import '../../i18n/screen_text_strings.dart';
 
 Future<void> showNearbyHealthcareSheet(BuildContext context) {
   return showModalBottomSheet(
@@ -62,7 +63,13 @@ class _NearbyHealthcareSheetState extends State<NearbyHealthcareSheet> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not open the dialer for $phoneNumber.')),
+        SnackBar(
+          content: Text(
+            ScreenText.of(
+              context,
+            ).couldNotOpenDialer.replaceFirst('{number}', phoneNumber),
+          ),
+        ),
       );
     }
   }
@@ -84,88 +91,126 @@ class _NearbyHealthcareSheetState extends State<NearbyHealthcareSheet> {
       builder: (context, scrollController) {
         return Padding(
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.local_hospital, color: theme.colorScheme.primary),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Nearby Healthcare',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _searchController,
-                decoration: InputDecoration(
-                  hintText: 'Search by name or area...',
-                  prefixIcon: const Icon(Icons.search),
-                  suffixIcon: _query.isEmpty
-                      ? null
-                      : IconButton(
-                          icon: const Icon(Icons.close),
-                          onPressed: () {
-                            _searchController.clear();
-                            setState(() => _query = '');
-                          },
+          // One scrolling list (header, results, note): when the text is large
+          // the header can be taller than the sheet, and it then scrolls
+          // instead of overflowing.
+          child: CustomScrollView(
+            controller: scrollController,
+            slivers: [
+              SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.local_hospital,
+                          color: theme.colorScheme.primary,
                         ),
-                ),
-                onChanged: (value) => setState(() => _query = value),
-              ),
-              const SizedBox(height: 8),
-              DropdownButtonFormField<String?>(
-                initialValue: _selectedCategory,
-                decoration: const InputDecoration(
-                  labelText: 'Category',
-                  prefixIcon: Icon(Icons.category_outlined),
-                ),
-                items: [
-                  const DropdownMenuItem<String?>(
-                    value: null,
-                    child: Text('All Categories'),
-                  ),
-                  ...categories.map(
-                    (c) => DropdownMenuItem<String?>(value: c, child: Text(c)),
-                  ),
-                ],
-                onChanged: (value) => setState(() => _selectedCategory = value),
-              ),
-              const SizedBox(height: 8),
-              Expanded(
-                child: results.isEmpty
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
+                        const SizedBox(width: 8),
+                        // Shares the row, so a long title wraps instead of
+                        // overflowing on a narrow screen or at a large text size.
+                        Expanded(
                           child: Text(
-                            _query.isEmpty
-                                ? 'No facilities in this category.'
-                                : 'No facilities match "$_query".',
-                            textAlign: TextAlign.center,
-                            style: theme.textTheme.bodyMedium,
+                            'Nearby Healthcare',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
-                      )
-                    : ListView.separated(
-                        controller: scrollController,
-                        itemCount: results.length,
-                        separatorBuilder: (_, _) => const Divider(),
-                        itemBuilder: (context, index) =>
-                            _buildFacilityTile(theme, results[index]),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _searchController,
+                      // The search stops at 50 characters (typing or pasting).
+                      maxLength: 50,
+                      decoration: InputDecoration(
+                        counterText: '',
+                        hintText: ScreenText.of(context).searchHint,
+                        prefixIcon: const Icon(Icons.search),
+                        suffixIcon: _query.isEmpty
+                            ? null
+                            : IconButton(
+                                icon: const Icon(Icons.close),
+                                onPressed: () {
+                                  _searchController.clear();
+                                  setState(() => _query = '');
+                                },
+                              ),
                       ),
+                      onChanged: (value) => setState(() => _query = value),
+                    ),
+                    const SizedBox(height: 8),
+                    // The label sits on its own line above the field (like the
+                    // labels on the app's forms), not inside it.
+                    Text(
+                      ScreenText.of(context).category,
+                      style: theme.textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<String?>(
+                      initialValue: _selectedCategory,
+                      // Fill the row, so a long name wraps to an ellipsis instead of
+                      // overflowing on a narrow screen or at a large text size.
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        prefixIcon: Icon(Icons.category_outlined),
+                      ),
+                      items: [
+                        DropdownMenuItem<String?>(
+                          value: null,
+                          child: Text(
+                            ScreenText.of(context).allCategories,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        ...categories.map(
+                          (c) => DropdownMenuItem<String?>(
+                            value: c,
+                            child: Text(c, overflow: TextOverflow.ellipsis),
+                          ),
+                        ),
+                      ],
+                      onChanged: (value) =>
+                          setState(() => _selectedCategory = value),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                'Directory data may change — call ahead to confirm before '
-                'traveling, and use emergency services directly for '
-                'urgent situations.',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: Colors.grey.shade600,
-                  fontStyle: FontStyle.italic,
+              if (results.isEmpty)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(
+                      _query.isEmpty
+                          ? ScreenText.of(context).noFacilitiesInCategory
+                          : ScreenText.of(
+                              context,
+                            ).noFacilitiesMatch.replaceFirst('{query}', _query),
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ),
+                )
+              else
+                SliverList.separated(
+                  itemCount: results.length,
+                  separatorBuilder: (_, _) => const Divider(),
+                  itemBuilder: (context, index) =>
+                      _buildFacilityTile(theme, results[index]),
+                ),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    ScreenText.of(context).directoryNote,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: Colors.grey.shade600,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
                 ),
               ),
             ],

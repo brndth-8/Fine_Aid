@@ -1,4 +1,4 @@
-const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret } = require("firebase-functions/params");
@@ -7,6 +7,9 @@ const fetch = require("node-fetch");
 const nodemailer = require("nodemailer");
 const { buildAuditEntry } = require("./lib/audit");
 const jobs = require("./lib/jobs");
+const { handleGeminiProxy } = require("./lib/gemini_proxy");
+const { sendAccountVerificationOtpSms } = require("./lib/sms_otp");
+const crypto = require("crypto");
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -14,6 +17,10 @@ const db = admin.firestore();
 // Set this before deploying:
 //   firebase functions:secrets:set SEMAPHORE_API_KEY
 const SEMAPHORE_API_KEY = defineSecret("SEMAPHORE_API_KEY");
+
+// The Gemini key: kept here, never in the app. Set before deploying:
+//   firebase functions:secrets:set GEMINI_API_KEY
+const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
 
 // Set these before deploying, for the email half of "forgot password":
 //   firebase functions:secrets:set SMTP_USER
@@ -393,6 +400,34 @@ exports.sendAccountVerificationOtpEmail = onCall(
 );
 
 /**
+ * The SMS twin of sendAccountVerificationOtpEmail: sends the code by
+ * Semaphore. The key is a server secret, so the app never holds it. With no
+ * `phoneNumber` it texts the number on the account (sign-up); Edit Profile
+ * passes the new number it wants to check. The code is checked by
+ * verifyAccountVerificationOtp below, same as the email one.
+ */
+exports.sendAccountVerificationOtpSms = onCall(
+  { secrets: [SEMAPHORE_API_KEY] },
+  async (request) => {
+    const uid = request.auth && request.auth.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "You must be signed in.");
+    }
+    return sendAccountVerificationOtpSms({
+      db,
+      uid,
+      phoneNumber: request.data && request.data.phoneNumber,
+      apiKey: SEMAPHORE_API_KEY.value(),
+      fetchImpl: fetch,
+      now: Date.now(),
+      generateCode: () => String(crypto.randomInt(100000, 1000000)),
+      timestampFromMillis: (ms) => admin.firestore.Timestamp.fromMillis(ms),
+      serverTime: () => admin.firestore.FieldValue.serverTimestamp(),
+    });
+  }
+);
+
+/**
  * Verifies the code from sendAccountVerificationOtpEmail above and, if
  * correct, marks the account verified â€” reuses the same `phoneVerified`
  * flag AuthGate already checks to gate onboarding, regardless of which
@@ -471,6 +506,13 @@ exports.sendSystemNotificationPush = onDocumentCreated(
     await admin.messaging().send({
       topic: "all_users",
       notification: { title, body },
+      // Where a tap opens the app (a fixed list; anything else is ignored).
+      data: {
+        link: ["fineaid://notifications", "fineaid://journal"].includes(data.link)
+          ? data.link
+          : "fineaid://notifications",
+        notificationId: event.params.notifId || "",
+      },
       android: { priority: "high" },
     });
   }
@@ -567,6 +609,20 @@ exports.processScheduledDeactivations = onSchedule(
   }
 );
 
+/**
+ * Sign-up says a phone number / email is "already registered": frees it when
+ * the account holding it is a ghost (never finished, or gone). See
+ * releaseStaleContact in lib/jobs.js.
+ */
+exports.releaseStaleContact = onCall(async (request) =>
+  jobs.releaseStaleContact({
+    db,
+    auth: admin.auth(),
+    request,
+    data: request.data,
+  })
+);
+
 /** Re-enables a deactivated account (Auth + profile). */
 exports.reactivateAccount = onCall(async (request) =>
   jobs.reactivateAccount({
@@ -583,5 +639,125 @@ exports.cancelScheduledNotification = onCall(async (request) =>
     db,
     request,
     notificationId: request.data && request.data.notificationId,
+    collection: request.data && request.data.collection,
   })
+);
+
+/**
+ * Admin portal sign-in events for the audit log. The first runs after any
+ * sign-in (the server decides success vs refused); the second runs signed
+ * out after a failed sign-in and only logs when the email is an admin's.
+ * Both always answer { ok: true } so they reveal nothing.
+ */
+exports.recordAdminSignIn = onCall(async (request) =>
+  jobs.recordAdminSignIn({ db, request })
+);
+
+exports.recordAdminSignInFailure = onCall(async (request) =>
+  jobs.recordAdminSignInFailure({
+    db,
+    auth: admin.auth(),
+    data: request.data,
+  })
+);
+
+/**
+ * Saves the idle-timeout setting from the System Security page. Validated,
+ * written and audit-logged together; the page only reports success after
+ * this returns.
+ */
+exports.updateSecuritySettings = onCall(async (request) =>
+  jobs.updateSecuritySettings({ db, request, data: request.data })
+);
+
+/**
+ * Saves edits to a user's profile from User management: validated, kept
+ * unique (username, email) and audit-logged in one transaction.
+ */
+exports.updateUserProfile = onCall(async (request) =>
+  jobs.updateUserProfile({ db, request, data: request.data })
+);
+
+/**
+ * Sends a notice to one user (found by username) in their private in-app
+ * inbox. The audience choice "A specific user" on the Notifications page.
+ */
+exports.sendNotificationToUser = onCall(async (request) =>
+  jobs.sendNotificationToUser({
+    db,
+    request,
+    data: request.data,
+    messaging: admin.messaging(),
+  })
+);
+
+/**
+ * Admin-only: schedules a notification for specific users (private queue,
+ * sent as a push by sendScheduledSystemNotifications) and edits a pending
+ * one. See jobs.scheduleNotification / jobs.updateScheduledNotification.
+ */
+exports.scheduleNotification = onCall(async (request) =>
+  jobs.scheduleNotification({ db, request, data: request.data || {} })
+);
+
+exports.updateScheduledNotification = onCall(async (request) =>
+  jobs.updateScheduledNotification({ db, request, data: request.data || {} })
+);
+
+/**
+ * Admin-only: saves an admin's reply to a feedback item, marks it "responded"
+ * and delivers it to the user's in-app inbox, all in one transaction (see
+ * jobs.respondToFeedback).
+ */
+exports.respondToFeedback = onCall(async (request) =>
+  jobs.respondToFeedback({ db, request, data: request.data })
+);
+
+/**
+ * Admin-only: requires (or stops requiring) an authenticator code for every
+ * admin sign-in. Can only be turned on by an admin who is signed in with a
+ * code themselves (see jobs.setAdminTwoStepRequired).
+ */
+exports.setAdminTwoStepRequired = onCall(async (request) =>
+  jobs.setAdminTwoStepRequired({ db, request, data: request.data })
+);
+
+/**
+ * Marks every new feedback item as "open". The app doesn't set a status when
+ * it saves feedback, and a missing field can't be filtered on, so without this
+ * the Admin portal's "Open" filter couldn't list new items. Never changes an
+ * item that already has a status.
+ */
+exports.markFeedbackOpen = onDocumentCreated(
+  "feedback/{feedbackId}",
+  async (event) => {
+    const snap = event.data;
+    if (!snap || snap.get("status") !== undefined) return;
+    await snap.ref.update({ status: "open" });
+  }
+);
+
+/**
+ * The app's Gemini requests come here instead of going to Google, so the key
+ * stays on the server. Signed-in people send their sign-in token (limit per
+ * person); guests are limited per device address. See lib/gemini_proxy.js.
+ */
+exports.geminiProxy = onRequest(
+  {
+    region: "us-central1",
+    secrets: [GEMINI_API_KEY],
+    cors: true,
+    memory: "512MiB",
+    timeoutSeconds: 120,
+    maxInstances: 20,
+  },
+  async (req, res) => {
+    const result = await handleGeminiProxy({
+      db,
+      auth: admin.auth(),
+      req,
+      apiKey: GEMINI_API_KEY.value(),
+    });
+    res.status(result.status).type("application/json").send(result.body);
+  }
 );

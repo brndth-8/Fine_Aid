@@ -12,8 +12,8 @@ void main() {
         expect(c.weekdays.toSet().length, 7);
       }
       expect(CalendarStrings.en.weekdays.first, 'Su');
-      expect(CalendarStrings.tl.weekdays.first, 'Li'); // Linggo
-      expect(CalendarStrings.tl.weekdays.last, 'Sa'); // Sabado
+      // The weekday headings stay in English in Tagalog.
+      expect(CalendarStrings.tl.weekdays, CalendarStrings.en.weekdays);
     },
   );
 

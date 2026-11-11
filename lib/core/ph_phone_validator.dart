@@ -1,27 +1,31 @@
 /// Validates and normalizes Philippine mobile numbers for registration.
-/// Accepts 9XXXXXXXXX, 09XXXXXXXXX, or +639XXXXXXXXX and normalizes every
-/// valid input to +639XXXXXXXXX for storage, so the rest of the app only
-/// ever deals with one format.
+/// Accepts 9XXXXXXXXX, 09XXXXXXXXX or +639XXXXXXXXX (and the 08 numbers, see
+/// below) and normalizes every valid input to +63XXXXXXXXXX for storage, so
+/// the rest of the app only ever deals with one format.
 library;
 
-// 3-digit mobile prefixes (the digits right after the leading 9) actually
-// allocated to a PH mobile carrier, per published Globe/Smart/Sun/DITO
-// numbering. Not exhaustive of every future allocation — add a prefix here
-// if a real number is ever wrongly rejected.
-const Set<String> knownPhMobilePrefixes = {
-  // Globe/TM
-  '905', '906', '915', '916', '917', '926', '927', '935', '936', '937',
-  '945', '953', '954', '955', '956', '957', '965', '966', '967', '975',
-  '976', '977', '978', '979', '995', '996', '997',
-  // Smart/TNT
-  '907', '908', '909', '910', '912', '918', '919', '920', '921', '928',
-  '929', '930', '938', '939', '946', '947', '948', '949', '950', '951',
-  '961', '963', '968', '970', '989', '998', '999',
-  // Sun (merged into Smart; legacy numbers still active)
-  '922', '923', '924', '925', '931', '932', '933', '940', '941', '942',
-  '943',
-  // DITO
-  '991', '992', '993', '994',
+// Why there is no list of allowed 09 prefixes any more: the NTC does not
+// publish a machine-readable table, carriers receive new prefixes all the
+// time, and with number portability a prefix no longer says which network a
+// SIM is on. A list therefore kept refusing real SIMs (Smart, Sun, TNT,
+// postpaid...). A real number is proven by the SMS code anyway, so every 09
+// number is accepted here, and only numbers that cannot be real are refused
+// (wrong length, all one digit, keyboard-mash sequences, prefix 900).
+
+/// 09 prefixes (the digits right after the leading 9) that are never mobile
+/// numbers.
+const Set<String> unusedPhMobilePrefixes = {'900'};
+
+/// The 08 mobile numbers (0811, 0813, 0817, DITO's 0895-0898): the three digits
+/// after the leading 8 (these are not 09 numbers, so they are listed).
+const Set<String> phEightMobilePrefixes = {
+  '811',
+  '813',
+  '817',
+  '895',
+  '896',
+  '897',
+  '898',
 };
 
 const String phPhoneErrorMessage =
@@ -44,30 +48,36 @@ bool _isSequential(String tenDigits) {
   return ascending || descending;
 }
 
-/// Returns the normalized "+639XXXXXXXXX" form of [raw] if it's a
-/// plausible Philippine mobile number in one of the three accepted input
-/// formats, or null if it isn't (wrong shape, fake pattern, or a prefix
-/// not allocated to a known carrier).
+/// Whether [tenDigits] (the number without country code or leading 0) can be a
+/// real Philippine mobile number: 9XXXXXXXXX (any 09 prefix but the unused
+/// ones) or 8XXXXXXXXX with one of [phEightMobilePrefixes].
+bool isPlausiblePhMobile(String tenDigits) {
+  if (!RegExp(r'^[89]\d{9}$').hasMatch(tenDigits)) return false;
+  if (_isAllSameDigit(tenDigits)) return false;
+  if (_isSequential(tenDigits)) return false;
+  final prefix = tenDigits.substring(0, 3);
+  return tenDigits.startsWith('9')
+      ? !unusedPhMobilePrefixes.contains(prefix)
+      : phEightMobilePrefixes.contains(prefix);
+}
+
+/// Returns the normalized "+63XXXXXXXXXX" form of [raw] if it's a plausible
+/// Philippine mobile number in one of the accepted input formats, or null if
+/// it isn't (wrong shape or a fake pattern).
 String? normalizePhMobileNumber(String raw) {
   final cleaned = raw.trim().replaceAll(RegExp(r'[\s-]'), '');
 
-  String? tenDigits; // "9XXXXXXXXX" — no country/trunk prefix
-  if (RegExp(r'^\+639\d{9}$').hasMatch(cleaned)) {
+  String? tenDigits; // "9XXXXXXXXX" / "8XXXXXXXXX" — no country/trunk prefix
+  if (RegExp(r'^\+63[89]\d{9}$').hasMatch(cleaned)) {
     tenDigits = cleaned.substring(3);
-  } else if (RegExp(r'^639\d{9}$').hasMatch(cleaned)) {
+  } else if (RegExp(r'^63[89]\d{9}$').hasMatch(cleaned)) {
     tenDigits = cleaned.substring(2);
-  } else if (RegExp(r'^09\d{9}$').hasMatch(cleaned)) {
+  } else if (RegExp(r'^0[89]\d{9}$').hasMatch(cleaned)) {
     tenDigits = cleaned.substring(1);
-  } else if (RegExp(r'^9\d{9}$').hasMatch(cleaned)) {
+  } else if (RegExp(r'^[89]\d{9}$').hasMatch(cleaned)) {
     tenDigits = cleaned;
   }
-  if (tenDigits == null) return null;
-
-  if (_isAllSameDigit(tenDigits)) return null;
-  if (_isSequential(tenDigits)) return null;
-  if (!knownPhMobilePrefixes.contains(tenDigits.substring(0, 3))) {
-    return null;
-  }
+  if (tenDigits == null || !isPlausiblePhMobile(tenDigits)) return null;
 
   return '+63$tenDigits';
 }

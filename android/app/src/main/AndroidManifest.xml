@@ -1,14 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Lets the healing check-in reminder survive a phone reboot: without
          this, Android clears all scheduled alarms (including our
          zonedSchedule notifications) whenever the device restarts. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <!-- Voice follow-up questions in the First Aid Kit: recording the clip
-         and on-device transcription both need mic access. -->
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Lets the healing check-in reminder fire at the exact scheduled
          moment when the OS already permits it (declaring this is required
          for that check to ever succeed) instead of only the looser,
@@ -95,9 +93,6 @@
         <intent>
             <action android:name="android.intent.action.DIAL"/>
             <data android:scheme="tel"/>
-        </intent>
-        <intent>
-            <action android:name="android.speech.RecognitionService" />
         </intent>
     </queries>
 </manifest>

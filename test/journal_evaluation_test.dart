@@ -31,14 +31,15 @@ void main() {
     test('an AI-camera entry becomes a predictable, template-based summary', () {
       expect(
         buildJournalEvaluation(_aiEntry(), tagalog: false, monitoredDays: 3),
-        'Laceration recorded in this entry. '
-        'Assessment noted: no visible bleeding; the wound appears superficial. '
-        'No warning signs were flagged. '
-        'Reported pain score: 2/10 (Mild). '
-        'Assessed care level: Self Care. '
+        // one item per line
+        'Classification: Laceration recorded in this entry.\n'
+        'Assessment noted: no visible bleeding; the wound appears superficial.\n'
+        'No warning signs were flagged.\n'
+        'Reported pain score: 2/10 (Mild).\n'
+        'Assessed care level: Self Care.\n'
         'Advice given: Rinse the wound gently with clean water; '
-        'Cover with a sterile non-stick dressing; Keep the area clean and dry. '
-        'Monitored for 3 days.',
+        'Cover with a sterile non-stick dressing; Keep the area clean and dry.\n'
+        'Monitored: 3 days.',
       );
     });
 
@@ -59,7 +60,7 @@ void main() {
       final text = buildJournalEvaluation({
         'classification': 'Burns',
       }, tagalog: false)!;
-      expect(text, 'Burns recorded in this entry.');
+      expect(text, 'Classification: Burns recorded in this entry.');
     });
 
     test('a manual entry: classification and days monitored only', () {
@@ -73,7 +74,8 @@ void main() {
           tagalog: false,
           monitoredDays: 1,
         ),
-        'Skin Issues recorded in this entry. Monitored for 1 day.',
+        'Classification: Skin Issues recorded in this entry.\n'
+        'Monitored: 1 day.',
       );
     });
 
@@ -251,8 +253,8 @@ void main() {
       };
       expect(
         buildJournalEvaluation(deep, tagalog: false)!,
-        'Injury (Wounds/laceration/Abrasion) recorded in this entry. '
-        'Injury type: Deep.',
+        'Classification: Injury (Wounds/laceration/Abrasion) recorded in this '
+        'entry.\nInjury type: Deep.',
       );
       expect(
         buildJournalEvaluation({...deep, 'severity': 'Minor'}, tagalog: true)!,
@@ -279,8 +281,8 @@ void main() {
       }, tagalog: false)!;
       expect(
         text,
-        'Injury (Wounds/laceration/Abrasion) recorded in this entry. '
-        'Injury type: Minor. Reported pain score: 2/5 (Minor).',
+        'Classification: Injury (Wounds/laceration/Abrasion) recorded in this '
+        'entry.\nInjury type: Minor.\nReported pain score: 2/5 (Minor).',
       );
     });
   });
@@ -289,14 +291,14 @@ void main() {
     test('the same entry in Tagalog', () {
       expect(
         buildJournalEvaluation(_aiEntry(), tagalog: true, monitoredDays: 3),
-        'Naitala sa entry na ito ang Laceration. '
-        'Napansin sa pagsusuri: walang nakikitang pagdurugo; mukhang mababaw ang sugat. '
-        'Walang babalang palatandaan na naitala. '
-        'Iniulat na antas ng sakit: 2/10 (Banayad). '
-        'Antas ng pangangalaga ayon sa pagsusuri: Pangangalaga sa Sarili. '
+        'Klasipikasyon: Naitala sa entry na ito ang Laceration.\n'
+        'Napansin sa pagsusuri: walang nakikitang pagdurugo; mukhang mababaw ang sugat.\n'
+        'Walang babalang palatandaan na naitala.\n'
+        'Iniulat na antas ng sakit: 2/10 (Banayad).\n'
+        'Antas ng pangangalaga ayon sa pagsusuri: Pangangalaga sa Sarili.\n'
         'Mga payong ibinigay: Rinse the wound gently with clean water; '
-        'Cover with a sterile non-stick dressing; Keep the area clean and dry. '
-        'Binantayan sa loob ng 3 araw.',
+        'Cover with a sterile non-stick dressing; Keep the area clean and dry.\n'
+        'Binantayan: 3 araw.',
       );
     });
 
@@ -356,11 +358,17 @@ void main() {
       await pump(tester, _aiEntry());
       expect(find.text('Evaluation'), findsOneWidget);
       expect(
-        find.textContaining('Laceration recorded in this entry.'),
+        find.textContaining(
+          'Laceration recorded in this entry.',
+          findRichText: true,
+        ),
         findsOneWidget,
       );
       expect(
-        find.textContaining('Reported pain score: 2/10 (Mild).'),
+        find.textContaining(
+          'Reported pain score: 2/10 (Mild).',
+          findRichText: true,
+        ),
         findsOneWidget,
       );
       expect(find.textContaining('not a medical diagnosis'), findsOneWidget);
@@ -371,7 +379,10 @@ void main() {
       expect(find.text('Ebalwasyon'), findsOneWidget);
       expect(find.text('Evaluation'), findsNothing);
       expect(
-        find.textContaining('Naitala sa entry na ito ang Laceration.'),
+        find.textContaining(
+          'Naitala sa entry na ito ang Laceration.',
+          findRichText: true,
+        ),
         findsOneWidget,
       );
     });

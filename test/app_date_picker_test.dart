@@ -5,6 +5,8 @@ import 'package:fine_aid/i18n/date_picker_strings.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'date_boxes_helpers.dart';
+
 void main() {
   final en = DatePickerStrings.en;
 
@@ -96,19 +98,68 @@ void main() {
   ElevatedButton okButton(WidgetTester tester) =>
       tester.widget<ElevatedButton>(find.widgetWithText(ElevatedButton, en.ok));
 
+  group('three boxes: month, day, year', () {
+    testWidgets('each number can be changed on its own', (tester) async {
+      await open(tester, initial: DateTime(2026, 10, 5));
+      expect(shownDate(tester, 'start'), '10/05/2026');
+      // change only the day
+      await tester.enterText(
+        find.byKey(const ValueKey('start-field-dd')),
+        '14',
+      );
+      await tester.pump();
+      expect(shownDate(tester, 'start'), '10/14/2026');
+      // the calendar follows, and OK gives the new date
+      await tester.tap(find.text(en.ok));
+      await tester.pumpAndSettle();
+      expect(result, DateTime(2026, 10, 14));
+    });
+
+    testWidgets('only digits, two for month and day, four for the year', (
+      tester,
+    ) async {
+      await open(tester, initial: DateTime(2026, 10, 5));
+      await tester.enterText(
+        find.byKey(const ValueKey('start-field-mm')),
+        '1a2',
+      );
+      final year = find.byKey(const ValueKey('start-field-yyyy'));
+      await tester.enterText(year, ''); // (a full box keeps what it has)
+      await tester.enterText(year, '20277');
+      await tester.pump();
+      expect(shownDate(tester, 'start'), '12/05/2027');
+    });
+
+    testWidgets('a one-digit month or day still makes a date', (tester) async {
+      await open(tester, initial: DateTime(2026, 10, 5));
+      await tester.enterText(find.byKey(const ValueKey('start-field-mm')), '3');
+      await tester.enterText(find.byKey(const ValueKey('start-field-dd')), '8');
+      await tester.pump();
+      expect(okButton(tester).onPressed, isNotNull);
+      await tester.tap(find.text(en.ok));
+      await tester.pumpAndSettle();
+      expect(result, DateTime(2026, 3, 8));
+    });
+
+    testWidgets('an unfinished date shows no error yet', (tester) async {
+      await open(tester, initial: DateTime(2026, 10, 5));
+      await tester.enterText(
+        find.byKey(const ValueKey('start-field-yyyy')),
+        '20',
+      );
+      await tester.pump();
+      expect(find.text(en.invalidDate), findsNothing);
+      expect(okButton(tester).onPressed, isNull);
+    });
+  });
+
   group('single date', () {
     testWidgets('tap a day on the calendar, press OK', (tester) async {
       await open(tester, initial: DateTime(2026, 10, 5));
       await tester.tap(day(2026, 10, 14));
       await tester.pump();
       // the typed field follows the calendar
-      expect(
-        tester
-            .widget<TextField>(find.byKey(const ValueKey('start-field')))
-            .controller!
-            .text,
-        '10/14/2026',
-      );
+      expect(shownDate(tester, 'start'), '10/14/2026');
       await tester.tap(find.text(en.ok));
       await tester.pumpAndSettle();
       expect(result, DateTime(2026, 10, 14));
@@ -116,13 +167,10 @@ void main() {
 
     testWidgets('type a date and the calendar follows', (tester) async {
       await open(tester, initial: DateTime(2026, 10, 5));
-      await tester.enterText(
-        find.byKey(const ValueKey('start-field')),
-        '03082026',
-      );
+      await enterDate(tester, 'start', '03082026');
       await tester.pumpAndSettle();
       // formatted with slashes while typing, and the calendar moved to March
-      expect(find.text('03/08/2026'), findsOneWidget);
+      expect(shownDate(tester, 'start'), '03/08/2026');
       expect(find.text('${CalendarStrings.en.months[2]} 2026'), findsOneWidget);
       await tester.tap(find.text(en.ok));
       await tester.pumpAndSettle();
@@ -131,10 +179,7 @@ void main() {
 
     testWidgets('an invalid date shows an error and blocks OK', (tester) async {
       await open(tester, initial: DateTime(2026, 10, 5));
-      await tester.enterText(
-        find.byKey(const ValueKey('start-field')),
-        '02302026',
-      );
+      await enterDate(tester, 'start', '02302026');
       await tester.pump();
       expect(find.text(en.invalidDate), findsOneWidget);
       expect(okButton(tester).onPressed, isNull);
@@ -147,18 +192,12 @@ void main() {
         first: DateTime(2026, 6, 1),
         last: DateTime(2026, 10, 20),
       );
-      await tester.enterText(
-        find.byKey(const ValueKey('start-field')),
-        '12252026',
-      );
+      await enterDate(tester, 'start', '12252026');
       await tester.pump();
       expect(find.textContaining('on or before 10/20/2026'), findsOneWidget);
       expect(okButton(tester).onPressed, isNull);
 
-      await tester.enterText(
-        find.byKey(const ValueKey('start-field')),
-        '01012026',
-      );
+      await enterDate(tester, 'start', '01012026');
       await tester.pump();
       expect(find.textContaining('on or after 06/01/2026'), findsOneWidget);
     });
@@ -173,13 +212,7 @@ void main() {
       await tester.tap(day(2026, 10, 25), warnIfMissed: false); // too late
       await tester.tap(day(2026, 10, 1), warnIfMissed: false); // too early
       await tester.pump();
-      expect(
-        tester
-            .widget<TextField>(find.byKey(const ValueKey('start-field')))
-            .controller!
-            .text,
-        '10/05/2026',
-      );
+      expect(shownDate(tester, 'start'), '10/05/2026');
     });
 
     testWidgets('month arrows stop at the limits', (tester) async {
@@ -215,7 +248,13 @@ void main() {
     testWidgets('two taps pick the range and it is highlighted', (
       tester,
     ) async {
-      await open(tester, range: true);
+      // October, whatever today's date is.
+      await open(
+        tester,
+        range: true,
+        first: DateTime(2026, 10, 1),
+        last: DateTime(2026, 10, 31),
+      );
       expect(okButton(tester).onPressed, isNull);
       await tester.tap(day(2026, 10, 10));
       await tester.pump();
@@ -223,8 +262,8 @@ void main() {
       await tester.tap(day(2026, 10, 15));
       await tester.pump();
       expect(okButton(tester).onPressed, isNotNull);
-      expect(find.text('10/10/2026'), findsOneWidget);
-      expect(find.text('10/15/2026'), findsOneWidget);
+      expect(shownDate(tester, 'start'), '10/10/2026');
+      expect(shownDate(tester, 'end'), '10/15/2026');
 
       await tester.tap(find.text(en.ok));
       await tester.pumpAndSettle();
@@ -240,16 +279,28 @@ void main() {
     testWidgets('tapping an earlier day second makes it the new start', (
       tester,
     ) async {
-      await open(tester, range: true);
+      // October, whatever today's date is.
+      await open(
+        tester,
+        range: true,
+        first: DateTime(2026, 10, 1),
+        last: DateTime(2026, 10, 31),
+      );
       await tester.tap(day(2026, 10, 15));
       await tester.tap(day(2026, 10, 10));
       await tester.pump();
-      expect(find.text('10/10/2026'), findsOneWidget);
+      expect(shownDate(tester, 'start'), '10/10/2026');
       expect(okButton(tester).onPressed, isNull, reason: 'end still needed');
     });
 
     testWidgets('a single day is a valid range', (tester) async {
-      await open(tester, range: true);
+      // October, whatever today's date is.
+      await open(
+        tester,
+        range: true,
+        first: DateTime(2026, 10, 1),
+        last: DateTime(2026, 10, 31),
+      );
       await tester.tap(day(2026, 10, 12));
       await tester.tap(day(2026, 10, 12));
       await tester.pump();
@@ -268,22 +319,13 @@ void main() {
       tester,
     ) async {
       await open(tester, range: true);
-      await tester.enterText(
-        find.byKey(const ValueKey('start-field')),
-        '10202026',
-      );
-      await tester.enterText(
-        find.byKey(const ValueKey('end-field')),
-        '10102026',
-      );
+      await enterDate(tester, 'start', '10202026');
+      await enterDate(tester, 'end', '10102026');
       await tester.pump();
       expect(find.text(en.endBeforeStart), findsOneWidget);
       expect(okButton(tester).onPressed, isNull);
 
-      await tester.enterText(
-        find.byKey(const ValueKey('end-field')),
-        '10252026',
-      );
+      await enterDate(tester, 'end', '10252026');
       await tester.pump();
       expect(find.text(en.endBeforeStart), findsNothing);
       expect(okButton(tester).onPressed, isNotNull);
@@ -298,8 +340,8 @@ void main() {
           end: DateTime(2026, 10, 9),
         ),
       );
-      expect(find.text('10/03/2026'), findsOneWidget);
-      expect(find.text('10/09/2026'), findsOneWidget);
+      expect(shownDate(tester, 'start'), '10/03/2026');
+      expect(shownDate(tester, 'end'), '10/09/2026');
       expect(okButton(tester).onPressed, isNotNull);
     });
   });
@@ -312,13 +354,14 @@ void main() {
         language: AppLanguage.tl,
       );
       final tl = DatePickerStrings.tl;
-      expect(find.text('Oktubre 2026'), findsOneWidget);
+      // Month names stay in English, even in Filipino.
+      expect(find.text('October 2026'), findsOneWidget);
       for (final name in CalendarStrings.tl.weekdays.toSet()) {
         expect(find.text(name), findsWidgets, reason: name);
       }
       expect(find.text(tl.titleSingle), findsOneWidget);
       expect(find.text(tl.cancel), findsOneWidget);
-      expect(find.text('October 2026'), findsNothing);
+      expect(find.text('Oktubre 2026'), findsNothing);
     });
 
     test('every text is translated', () {

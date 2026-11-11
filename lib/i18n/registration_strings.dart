@@ -8,6 +8,7 @@ class RegistrationStrings {
   final String usernameTaken;
   final String alreadyRegistered;
   final String emailTaken;
+  final String phoneTaken;
   final String network;
   final String timeout;
   final String weakPassword;
@@ -34,14 +35,29 @@ class RegistrationStrings {
   final String dobFuture;
   final String dobInvalid;
   final String genderRequired;
+  final String usernameTooLong; // uses {max}
+  final String nameTooLong; // uses {max}
   final String underageTitle;
   final String underageBody;
   final String underageButton;
+  // Under 16 (shown when the birthdate is entered).
+  final String under16Title;
+  final String under16Body;
+  final String under16Button;
+  final String stepBasic;
+  final String stepAccount;
+  final String stepOf;
+  final String nextButton;
+  final String backButton;
+  final String accountCreatedTitle;
+  final String accountCreatedBody;
+  final String continueButton;
 
   const RegistrationStrings({
     required this.usernameTaken,
     required this.alreadyRegistered,
     required this.emailTaken,
+    required this.phoneTaken,
     required this.network,
     required this.timeout,
     required this.weakPassword,
@@ -68,9 +84,22 @@ class RegistrationStrings {
     required this.dobFuture,
     required this.dobInvalid,
     required this.genderRequired,
+    required this.usernameTooLong,
+    required this.nameTooLong,
     required this.underageTitle,
     required this.underageBody,
     required this.underageButton,
+    required this.under16Title,
+    required this.under16Body,
+    required this.under16Button,
+    required this.stepBasic,
+    required this.stepAccount,
+    required this.stepOf,
+    required this.nextButton,
+    required this.backButton,
+    required this.accountCreatedTitle,
+    required this.accountCreatedBody,
+    required this.continueButton,
   });
 
   static RegistrationStrings of(BuildContext context) =>
@@ -80,6 +109,7 @@ class RegistrationStrings {
     RegistrationError.usernameTaken => usernameTaken,
     RegistrationError.alreadyRegistered => alreadyRegistered,
     RegistrationError.emailTaken => emailTaken,
+    RegistrationError.phoneTaken => phoneTaken,
     RegistrationError.network => network,
     RegistrationError.timeout => timeout,
     RegistrationError.weakPassword => weakPassword,
@@ -95,6 +125,7 @@ class RegistrationStrings {
         'it earlier, enter the same password you used then to continue. '
         'Otherwise, choose another username.',
     emailTaken: 'This email is already registered.',
+    phoneTaken: 'This phone number is already registered.',
     network:
         'No internet connection. Nothing was saved. Please check your '
         'connection and try again.',
@@ -128,10 +159,26 @@ class RegistrationStrings {
     dobFuture: 'Date of birth can\'t be in the future',
     dobInvalid: 'Please enter a valid date of birth',
     genderRequired: 'Please select a gender',
+    usernameTooLong: 'Username can be at most {max} characters',
+    nameTooLong: 'Name can be at most {max} characters',
     underageTitle: 'Underage Access & Supervision Disclaimer',
     underageBody:
         'Notice: Users under the age of 18 must access and operate Fine Aid under the active supervision of a parent or lawful guardian.\n\nWhile Fine Aid offers evidence-based first-aid protocols, users under 18 should always consult an adult guardian or licensed medical professional before performing any first-aid intervention or health decision.',
     underageButton: 'I Acknowledge & Proceed',
+    under16Title: 'You must be 16 or older',
+    under16Body:
+        'You must be 16 or older to use this app independently. Please ask '
+        'a parent or guardian to help set things up for you.',
+    under16Button: 'I understand',
+    stepBasic: 'Basic information',
+    stepAccount: 'Account details',
+    stepOf: 'Step {n} of {total}',
+    nextButton: 'Next',
+    backButton: 'Back',
+    accountCreatedTitle: 'Account Created Successfully!',
+    accountCreatedBody:
+        'Your account has been created. You can now start using FINEAID.',
+    continueButton: 'Continue',
   );
 
   static const tl = RegistrationStrings(
@@ -141,6 +188,7 @@ class RegistrationStrings {
         'gamitin sa pag-sign up kanina, ilagay ang parehong password na '
         'ginamit mo para magpatuloy. Kung hindi, pumili ng ibang username.',
     emailTaken: 'Nakarehistro na ang email na ito.',
+    phoneTaken: 'Nakarehistro na ang numero ng telepono na ito.',
     network:
         'Walang koneksyon sa internet. Walang nai-save. Pakisuri ang iyong '
         'koneksyon at subukang muli.',
@@ -175,9 +223,26 @@ class RegistrationStrings {
     dobFuture: 'Hindi maaaring nasa hinaharap ang petsa ng kapanganakan',
     dobInvalid: 'Maglagay ng wastong petsa ng kapanganakan',
     genderRequired: 'Pumili ng kasarian',
+    usernameTooLong: 'Hanggang {max} character lang ang username',
+    nameTooLong: 'Hanggang {max} character lang ang pangalan',
     underageTitle: 'Paunawa sa Pag-access at Pangangasiwa ng mga Menor de Edad',
     underageBody:
         'Paunawa: Ang mga gumagamit na wala pang 18 taong gulang ay dapat gumamit ng Fine Aid sa aktibong pangangasiwa ng magulang o legal na tagapag-alaga.\n\nBagaman nag-aalok ang Fine Aid ng mga protocol sa first aid na batay sa ebidensya, ang mga wala pang 18 taong gulang ay dapat laging sumangguni sa nasa hustong gulang na tagapag-alaga o lisensyadong propesyonal sa kalusugan bago gumawa ng anumang first aid o magdesisyon tungkol sa kalusugan.',
     underageButton: 'Kinikilala Ko at Magpapatuloy',
+    under16Title: 'Dapat 16 taong gulang pataas',
+    under16Body:
+        'Dapat 16 taong gulang o mas matanda ka para magamit ang app na ito '
+        'nang mag-isa. Pakihingi ang tulong ng magulang o tagapag-alaga '
+        'para sa pag-setup.',
+    under16Button: 'Naiintindihan ko',
+    stepBasic: 'Pangunahing impormasyon',
+    stepAccount: 'Detalye ng account',
+    stepOf: 'Hakbang {n} sa {total}',
+    nextButton: 'Susunod',
+    backButton: 'Bumalik',
+    accountCreatedTitle: 'Matagumpay na Nagawa ang Account!',
+    accountCreatedBody:
+        'Nagawa na ang iyong account. Maaari mo nang simulang gamitin ang FINEAID.',
+    continueButton: 'Magpatuloy',
   );
 }

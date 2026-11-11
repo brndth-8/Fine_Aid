@@ -1,5 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:intl/intl.dart';
+import '../widgets/admin_audit_pdf.dart';
+import '../widgets/admin_audit_text.dart';
+import '../widgets/admin_file_download_stub.dart'
+    if (dart.library.js_interop) '../widgets/admin_file_download_web.dart';
 import '../widgets/admin_name_lookup.dart';
 import '../widgets/admin_pagination.dart';
 import '../widgets/admin_shared_widgets.dart';
@@ -12,6 +18,11 @@ class AdminAuditLogs extends StatefulWidget {
 }
 
 class _AdminAuditLogsState extends State<AdminAuditLogs> {
+  /// The PDF holds the newest entries up to this many (readable, and quick
+  /// to build in the browser).
+  static const int _pdfLimit = 5000;
+  static const int _pdfBatch = 500;
+
   late final Query<Map<String, dynamic>> _logsQuery = FirebaseFirestore.instance
       .collection('auditLogs')
       .orderBy('timestamp', descending: true);
@@ -51,30 +62,76 @@ class _AdminAuditLogsState extends State<AdminAuditLogs> {
 
   String _actor(Map<String, dynamic> data) => auditActorLabel(data, _names);
 
+  String _time(Timestamp? ts) =>
+      ts == null ? '' : DateFormat('MMM d, y h:mm a').format(ts.toDate());
+
+  /// Builds a PDF of the log (plain-language text, same columns as the
+  /// screen) and saves it straight to the device as a download.
   Future<void> _exportLogs() async {
+    if (_exporting) return;
     setState(() => _exporting = true);
     try {
-      final snapshot = await _logsQuery.get();
-      await _names.ensure(snapshot.docs.map((d) => auditActorUid(d.data())));
-      await exportAdminCsv(
-        filename: 'fine_aid_audit_logs.csv',
-        headers: const ['Timestamp', 'Action', 'User', 'Type'],
-        rows: snapshot.docs.map((doc) {
+      final rows = <List<String>>[];
+      DocumentSnapshot<Map<String, dynamic>>? last;
+      var truncated = false;
+      while (true) {
+        var q = _logsQuery.limit(_pdfBatch);
+        if (last != null) q = q.startAfterDocument(last);
+        final snap = await q.get();
+        if (snap.docs.isEmpty) break;
+        await _names.ensure(snap.docs.map((d) => auditActorUid(d.data())));
+        for (final doc in snap.docs) {
           final data = doc.data();
-          final ts = data['timestamp'] as Timestamp?;
-          return [
-            ts?.toDate().toIso8601String() ?? '',
-            data['action'] ?? '',
+          rows.add([
+            _time(data['timestamp'] as Timestamp?),
+            describeAudit(data, _actor(data)),
             _actor(data),
-            data['type'] ?? 'UPDATE',
-          ];
-        }).toList(),
+            auditActionLabel(data),
+          ]);
+        }
+        last = snap.docs.last;
+        if (rows.length >= _pdfLimit) {
+          truncated = snap.docs.length == _pdfBatch;
+          break;
+        }
+        if (snap.docs.length < _pdfBatch) break;
+        // Let the page breathe between batches.
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      final now = DateTime.now();
+      final bytes = await buildAuditLogPdf(
+        rows: rows,
+        generatedAt: now,
+        generatedBy: FirebaseAuth.instance.currentUser?.email ?? 'an admin',
+        truncated: truncated,
       );
+      final name =
+          'fine_aid_audit_log_${DateFormat('yyyy-MM-dd').format(now)}.pdf';
+      await downloadFile(
+        filename: name,
+        bytes: bytes,
+        mimeType: 'application/pdf',
+      );
+      logAdminAction('Exported the audit log', reason: 'pdf_export');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              truncated
+                  ? 'Downloaded $name (the newest $_pdfLimit entries).'
+                  : 'Downloaded $name.',
+            ),
+          ),
+        );
+      }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Export failed: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Couldn't create the PDF: ${adminErrorMessage(e)}"),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _exporting = false);
@@ -90,7 +147,7 @@ class _AdminAuditLogsState extends State<AdminAuditLogs> {
         AdminHeader(
           title: 'Audit logs',
           subtitle:
-              'Complete record of all admin activities â€” from account changes to notifications â€” for accountability and security.',
+              'A plain-language record of what admins do in the portal, for accountability and security.',
           action: OutlinedButton.icon(
             onPressed: _exporting ? null : _exportLogs,
             icon: _exporting
@@ -99,8 +156,8 @@ class _AdminAuditLogsState extends State<AdminAuditLogs> {
                     height: 14,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.download_outlined, size: 16),
-            label: Text(_exporting ? 'Exportingâ€¦' : 'Export logs'),
+                : const Icon(Icons.picture_as_pdf_outlined, size: 16),
+            label: Text(_exporting ? 'Preparing PDF…' : 'Export log'),
           ),
         ),
         Expanded(
@@ -108,7 +165,7 @@ class _AdminAuditLogsState extends State<AdminAuditLogs> {
             controller: _pager,
             builder: (context, docs) {
               return SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
+                padding: EdgeInsets.all(adminIsNarrow(context) ? 16 : 24),
                 child: Container(
                   decoration: BoxDecoration(
                     color: Colors.white,
@@ -117,100 +174,89 @@ class _AdminAuditLogsState extends State<AdminAuditLogs> {
                   ),
                   child: Column(
                     children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
-                        color: Colors.grey.shade50,
-                        child: Row(
+                      AdminHScroll(
+                        minWidth: 760,
+                        child: Column(
                           children: [
-                            _th(context, 'Timestamp', flex: 2),
-                            _th(context, 'Action', flex: 4),
-                            _th(context, 'User'),
-                            _th(context, 'Type'),
-                          ],
-                        ),
-                      ),
-                      const Divider(height: 1),
-                      if (docs.isEmpty)
-                        Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Text(
-                            'No audit logs yet. Admin actions will appear here automatically.',
-                            style: theme.textTheme.bodySmall,
-                          ),
-                        ),
-                      ...docs.map((doc) {
-                        final data = doc.data();
-                        final ts = data['timestamp'] as Timestamp?;
-                        final timeText = ts != null
-                            ? '${ts.toDate().day}/${ts.toDate().month}/${ts.toDate().year} ${ts.toDate().hour}:${ts.toDate().minute.toString().padLeft(2, '0')}'
-                            : '';
-                        final actionType = data['type'] as String? ?? 'UPDATE';
-                        final typeColor =
-                            {
-                              'CREATE': Colors.green,
-                              'UPDATE': Colors.blue,
-                              'DELETE': Colors.red,
-                              'LOGIN': Colors.purple,
-                            }[actionType] ??
-                            Colors.grey;
-
-                        return Column(
-                          children: [
-                            Padding(
+                            Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 16,
-                                vertical: 10,
+                                vertical: 12,
                               ),
+                              color: Colors.grey.shade50,
                               child: Row(
                                 children: [
-                                  Expanded(
-                                    flex: 2,
-                                    child: Text(
-                                      timeText,
-                                      style: theme.textTheme.bodySmall
-                                          ?.copyWith(color: Colors.grey),
-                                    ),
-                                  ),
-                                  Expanded(
-                                    flex: 4,
-                                    child: Text(
-                                      data['action'] ?? '',
-                                      style: theme.textTheme.bodySmall,
-                                    ),
-                                  ),
-                                  Expanded(
-                                    child: Text(
-                                      _actor(data),
-                                      style: theme.textTheme.bodySmall,
-                                    ),
-                                  ),
-                                  Expanded(
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 3,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: typeColor.withValues(alpha: 0.1),
-                                        borderRadius: BorderRadius.circular(20),
-                                      ),
-                                      child: Text(
-                                        actionType,
-                                        style: theme.textTheme.labelSmall
-                                            ?.copyWith(color: typeColor),
-                                      ),
-                                    ),
-                                  ),
+                                  _th(context, 'Timestamp', flex: 2),
+                                  _th(context, 'Details', flex: 5),
+                                  _th(context, 'User', flex: 2),
+                                  _th(context, 'Action', flex: 2),
                                 ],
                               ),
                             ),
                             const Divider(height: 1),
+                            if (docs.isEmpty)
+                              Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Text(
+                                  'No audit logs yet. Admin actions will appear here automatically.',
+                                  style: theme.textTheme.bodySmall,
+                                ),
+                              ),
+                            ...docs.map((doc) {
+                              final data = doc.data();
+                              final actor = _actor(data);
+                              return Column(
+                                children: [
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 10,
+                                    ),
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Expanded(
+                                          flex: 2,
+                                          child: Text(
+                                            _time(
+                                              data['timestamp'] as Timestamp?,
+                                            ),
+                                            style: theme.textTheme.bodySmall
+                                                ?.copyWith(color: Colors.grey),
+                                          ),
+                                        ),
+                                        Expanded(
+                                          flex: 5,
+                                          child: Text(
+                                            describeAudit(data, actor),
+                                            style: theme.textTheme.bodySmall,
+                                          ),
+                                        ),
+                                        Expanded(
+                                          flex: 2,
+                                          child: Text(
+                                            actor,
+                                            style: theme.textTheme.bodySmall,
+                                          ),
+                                        ),
+                                        Expanded(
+                                          flex: 2,
+                                          child: Text(
+                                            auditActionLabel(data),
+                                            style: theme.textTheme.bodySmall,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const Divider(height: 1),
+                                ],
+                              );
+                            }),
                           ],
-                        );
-                      }),
+                        ),
+                      ),
                       AdminPager(controller: _pager),
                     ],
                   ),

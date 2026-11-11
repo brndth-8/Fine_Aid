@@ -6,8 +6,12 @@ import '../../../services/firebase/notification_service.dart';
 import '../../../core/network_error.dart';
 import '../../../core/widgets/app_date_picker.dart';
 import '../../../i18n/journal_entry_strings.dart';
+import '../../../i18n/guest_journal_strings.dart';
+import '../../../services/guest_journal_store.dart';
 import 'new_entry_screen.dart';
 import 'entry_detail_screen.dart';
+import 'journal_entry_menu.dart';
+import '../../../i18n/screen_text_strings.dart';
 
 class JournalListScreen extends StatefulWidget {
   const JournalListScreen({super.key});
@@ -21,11 +25,11 @@ class JournalListScreen extends StatefulWidget {
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Delete Entry'),
-        content: const Text('Are you sure you want to delete this entry?'),
+        content: Text(ScreenText.of(context).deleteEntryBody),
         actions: [
           OutlinedButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text(ScreenText.of(context).cancel),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
@@ -33,7 +37,7 @@ class JournalListScreen extends StatefulWidget {
               backgroundColor: Colors.grey.shade700,
               foregroundColor: Colors.white,
             ),
-            child: const Text('Delete'),
+            child: Text(ScreenText.of(context).delete),
           ),
         ],
       ),
@@ -42,7 +46,11 @@ class JournalListScreen extends StatefulWidget {
     if (confirmed != true) return false;
 
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return false;
+    // A guest's entries are on this phone only.
+    if (user == null) {
+      await GuestJournalStore.instance.remove(entryId);
+      return true;
+    }
 
     try {
       await FirebaseFirestore.instance
@@ -51,15 +59,13 @@ class JournalListScreen extends StatefulWidget {
           .collection('journalEntries')
           .doc(entryId)
           .delete()
-          .timeout(const Duration(seconds: 10));
+          .timeout(Duration(seconds: 10));
       await NotificationService().cancelHealingCheckIn(entryId);
       return true;
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Could not delete entry. Please try again.'),
-          ),
+          SnackBar(content: Text(ScreenText.of(context).couldNotDeleteEntry)),
         );
       }
       return false;
@@ -73,6 +79,15 @@ class JournalListScreen extends StatefulWidget {
 class _JournalListScreenState extends State<JournalListScreen> {
   // Only entries between these two dates (inclusive) are shown; null = all.
   DateTimeRange? _range;
+
+  @override
+  void initState() {
+    super.initState();
+    // Guest Mode entries live on this phone.
+    if (FirebaseAuth.instance.currentUser == null) {
+      GuestJournalStore.instance.load();
+    }
+  }
 
   Future<void> _pickRange() async {
     final today = DateUtils.dateOnly(DateTime.now());
@@ -104,166 +119,174 @@ class _JournalListScreenState extends State<JournalListScreen> {
     final user = FirebaseAuth.instance.currentUser;
 
     return Scaffold(
+      appBar: AppBar(
+        centerTitle: true,
+        title: Text(
+          ScreenText.of(context).journalBannerTitle,
+          style: const TextStyle(fontWeight: FontWeight.normal),
+        ),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios, size: 18),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
       body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back_ios, size: 18),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                  Expanded(
-                    child: Text(
-                      'Health Journal',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.titleMedium,
-                    ),
-                  ),
-                  const SizedBox(width: 48),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primary,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Health Journal',
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        color: Colors.white,
+        child: LayoutBuilder(
+          builder: (context, box) => Column(
+            children: [
+              // The heading and the date filter take at most half the screen and
+              // scroll when they are taller (large text), so the list below never
+              // overflows.
+              ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: box.maxHeight * 0.5),
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      // What the journal is for, under the top bar.
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            ScreenText.of(context).journalBannerSubtitle,
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              color: Colors.black,
+                              fontWeight: FontWeight.normal,
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'A Self-Monitoring Guide with an Auto-Referral System for '
-                      'Healing Duration Reminders',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: Colors.white,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            // Date-range filter.
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _pickRange,
-                      icon: const Icon(Icons.date_range_outlined, size: 18),
-                      label: Text(
-                        _range == null
-                            ? JournalEntryStrings.of(context).filterByDate
-                            : '${formatDateInput(_range!.start)} – '
-                                  '${formatDateInput(_range!.end)}',
-                      ),
-                    ),
-                  ),
-                  if (_range != null)
-                    IconButton(
-                      tooltip: JournalEntryStrings.of(context).clearFilter,
-                      icon: const Icon(Icons.close),
-                      onPressed: () => setState(() => _range = null),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            Expanded(
-              child: user == null
-                  ? const Center(child: Text('Not signed in'))
-                  : StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                      stream: FirebaseFirestore.instance
-                          .collection('users')
-                          .doc(user.uid)
-                          .collection('journalEntries')
-                          .orderBy('createdAt', descending: true)
-                          .snapshots(),
-                      builder: (context, snapshot) {
-                        if (snapshot.hasError) {
-                          // Never surface a raw exception (eg a bare
-                          // SocketException when there's no cache yet to
-                          // fall back on) — always a friendly message.
-                          final error = snapshot.error;
-                          return Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(24),
-                              child: Text(
-                                error != null && isNetworkError(error)
-                                    ? noInternetMessage
-                                    : 'Could not load your journal. '
-                                          'Please try again.',
-                                textAlign: TextAlign.center,
-                                style: theme.textTheme.bodyMedium,
+                      // Date-range filter.
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: _pickRange,
+                                style: OutlinedButton.styleFrom(
+                                  backgroundColor: Colors.white,
+                                  foregroundColor: const Color(0xFF303130),
+                                  side: BorderSide(
+                                    color: theme.colorScheme.primary,
+                                    width: 1.2,
+                                  ),
+                                  shape: const StadiumBorder(),
+                                  textStyle: theme.textTheme.titleMedium
+                                      ?.copyWith(fontWeight: FontWeight.normal),
+                                ),
+                                icon: Icon(
+                                  Icons.date_range_outlined,
+                                  size: 18,
+                                  color: theme.colorScheme.primary,
+                                ),
+                                label: Text(
+                                  _range == null
+                                      ? JournalEntryStrings.of(
+                                          context,
+                                        ).filterByDate
+                                      : '${formatDateInput(_range!.start)} – '
+                                            '${formatDateInput(_range!.end)}',
+                                ),
                               ),
                             ),
-                          );
-                        }
-                        if (!snapshot.hasData) {
-                          return const Center(
-                            child: CircularProgressIndicator(),
-                          );
-                        }
-                        final all = snapshot.data!.docs;
-                        final docs = _filtered(all);
-                        if (all.isEmpty) {
-                          return Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(24),
-                              child: Text(
-                                'No journal entries yet. Tap "Add Entry" to start '
-                                'tracking your recovery.',
-                                textAlign: TextAlign.center,
-                                style: theme.textTheme.bodyMedium,
-                              ),
-                            ),
-                          );
-                        }
-                        if (docs.isEmpty) {
-                          return Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(24),
-                              child: Text(
-                                JournalEntryStrings.of(
+                            if (_range != null)
+                              IconButton(
+                                tooltip: JournalEntryStrings.of(
                                   context,
-                                ).noEntriesInRange,
-                                textAlign: TextAlign.center,
-                                style: theme.textTheme.bodyMedium,
+                                ).clearFilter,
+                                icon: const Icon(Icons.close),
+                                onPressed: () => setState(() => _range = null),
                               ),
-                            ),
-                          );
-                        }
-                        return ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
-                          itemCount: docs.length,
-                          itemBuilder: (context, index) {
-                            final doc = docs[index];
-                            return _entryCard(
-                              context,
-                              theme,
-                              doc.id,
-                              doc.data(),
+                          ],
+                        ),
+                      ),
+                      SizedBox(height: 12),
+                    ],
+                  ),
+                ),
+              ),
+              Expanded(
+                child: user == null
+                    ? _guestList(theme)
+                    : StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                        stream: FirebaseFirestore.instance
+                            .collection('users')
+                            .doc(user.uid)
+                            .collection('journalEntries')
+                            .orderBy('createdAt', descending: true)
+                            .snapshots(),
+                        builder: (context, snapshot) {
+                          if (snapshot.hasError) {
+                            // Never surface a raw exception (eg a bare
+                            // SocketException when there's no cache yet to
+                            // fall back on) — always a friendly message.
+                            final error = snapshot.error;
+                            return Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Text(
+                                  error != null && isNetworkError(error)
+                                      ? noInternetMessage
+                                      : 'Could not load your journal. '
+                                            'Please try again.',
+                                  textAlign: TextAlign.center,
+                                  style: theme.textTheme.bodyMedium,
+                                ),
+                              ),
                             );
-                          },
-                        );
-                      },
-                    ),
-            ),
-          ],
+                          }
+                          if (!snapshot.hasData) {
+                            return const Center(
+                              child: CircularProgressIndicator(),
+                            );
+                          }
+                          final all = snapshot.data!.docs;
+                          final docs = _filtered(all);
+                          if (all.isEmpty) {
+                            return Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Text(
+                                  ScreenText.of(context).journalEmpty,
+                                  textAlign: TextAlign.center,
+                                  style: theme.textTheme.bodyMedium,
+                                ),
+                              ),
+                            );
+                          }
+                          if (docs.isEmpty) {
+                            return Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Text(
+                                  JournalEntryStrings.of(
+                                    context,
+                                  ).noEntriesInRange,
+                                  textAlign: TextAlign.center,
+                                  style: theme.textTheme.bodyMedium,
+                                ),
+                              ),
+                            );
+                          }
+                          return ListView.builder(
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
+                            itemCount: docs.length,
+                            itemBuilder: (context, index) {
+                              final doc = docs[index];
+                              return _entryCard(
+                                context,
+                                theme,
+                                doc.id,
+                                doc.data(),
+                              );
+                            },
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -275,8 +298,49 @@ class _JournalListScreenState extends State<JournalListScreen> {
         },
         backgroundColor: theme.colorScheme.primary,
         icon: const Icon(Icons.add, color: Colors.white),
-        label: const Text('Add Entry', style: TextStyle(color: Colors.white)),
+        label: Text(
+          ScreenText.of(context).addEntry,
+          style: theme.textTheme.titleSmall?.copyWith(color: Colors.white),
+        ),
       ),
+    );
+  }
+
+  /// Guest Mode: the entries kept on this phone, newest first.
+  Widget _guestList(ThemeData theme) {
+    return ValueListenableBuilder<List<GuestJournalEntry>>(
+      valueListenable: GuestJournalStore.instance.entries,
+      builder: (context, all, _) {
+        final range = _range;
+        final shown = range == null
+            ? all
+            : all.where((e) {
+                final day = DateUtils.dateOnly(
+                  (e.data['createdAt'] as Timestamp).toDate(),
+                );
+                return !day.isBefore(range.start) && !day.isAfter(range.end);
+              }).toList();
+        if (all.isEmpty || shown.isEmpty) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                all.isEmpty
+                    ? ScreenText.of(context).journalEmpty
+                    : JournalEntryStrings.of(context).noEntriesInRange,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium,
+              ),
+            ),
+          );
+        }
+        return ListView.builder(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
+          itemCount: shown.length,
+          itemBuilder: (context, index) =>
+              _entryCard(context, theme, shown[index].id, shown[index].data),
+        );
+      },
     );
   }
 
@@ -323,6 +387,17 @@ class _JournalListScreenState extends State<JournalListScreen> {
                       width: 90,
                       height: 90,
                       fit: BoxFit.cover,
+                      // Offline (or a photo that is gone): a quiet placeholder,
+                      // never an error message.
+                      errorBuilder: (_, _, _) => Container(
+                        width: 90,
+                        height: 90,
+                        color: theme.colorScheme.surfaceContainerHighest,
+                        child: const Icon(
+                          Icons.cloud_off_outlined,
+                          color: Colors.grey,
+                        ),
+                      ),
                     )
                   : Container(
                       width: 90,
@@ -341,13 +416,25 @@ class _JournalListScreenState extends State<JournalListScreen> {
                 children: [
                   Text(
                     title,
-                    style: theme.textTheme.titleMedium?.copyWith(
+                    style: theme.textTheme.titleLarge?.copyWith(
                       color: theme.colorScheme.primary,
-                      fontWeight: FontWeight.bold,
                     ),
                   ),
                   const SizedBox(height: 2),
-                  Text(dateText, style: theme.textTheme.bodySmall),
+                  Text(
+                    dateText,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                  if (data['isLocal'] == true)
+                    Text(
+                      GuestJournalStrings.of(context).onThisDevice,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: Colors.grey.shade700,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
                   const SizedBox(height: 4),
                   Text(
                     description,
@@ -358,12 +445,7 @@ class _JournalListScreenState extends State<JournalListScreen> {
                 ],
               ),
             ),
-            IconButton(
-              icon: Icon(Icons.delete_outline, color: Colors.grey.shade700),
-              tooltip: 'Delete entry',
-              onPressed: () =>
-                  JournalListScreen.confirmAndDeleteEntry(context, entryId),
-            ),
+            JournalEntryMenu(entryId: entryId, data: data),
           ],
         ),
       ),

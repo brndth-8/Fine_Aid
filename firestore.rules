@@ -10,11 +10,27 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == uid;
     }
 
-    // Admins are the uids that have a doc in /admins (created manually in the
-    // console; clients can never write it). Enforced here, not just in the UI.
+    // An admin needs BOTH: the server-set `admin` custom claim in the sign-in
+    // token AND a doc in /admins. Clients can never write either (the claim
+    // is set only by the Admin SDK, see functions/scripts/set-admin-claims.js;
+    // /admins is write-protected below), and removing either one revokes
+    // access. Enforced here, not just in the UI.
+    // When appConfig/adminAuth says admins must use two-step verification,
+    // the sign-in has to have gone through the authenticator code (Firebase
+    // puts sign_in_second_factor in the token; nothing a client can fake).
+    // Until that flag is switched on (it is off by default), nothing changes.
+    function twoStepSatisfied() {
+      return !exists(/databases/$(database)/documents/appConfig/adminAuth) ||
+        !get(/databases/$(database)/documents/appConfig/adminAuth).data
+          .get('requireTotp', false) ||
+        request.auth.token.firebase.get('sign_in_second_factor', '') == 'totp';
+    }
+
     function isAdmin() {
       return isSignedIn() &&
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+        request.auth.token.admin == true &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) &&
+        twoStepSatisfied();
     }
 
     // USERNAMES
@@ -71,11 +87,96 @@ service cloud.firestore {
       allow update, list: if false;
     }
 
+    // PHONE UNIQUENESS
+    // One account per phone number, kept exactly like email above: each number
+    // is reserved by a document `phones/{+639XXXXXXXXX}` = {uid}. A profile
+    // may only set or change `phoneNumber` if it is in the standard
+    // +63 + 10 digits form and reserved for the same account once the write
+    // (or transaction) is done, and a reservation can't be taken from another
+    // account. Profiles that already have a number are not affected until
+    // they change it.
+    // STAGED ROLLOUT: the profile check below only applies once
+    // appConfig/phoneUniqueness has `enforce: true` (off until it is
+    // switched on, see functions/scripts/phone-uniqueness-switch.js). That
+    // lets the app update go out first: the new app already reserves numbers,
+    // while older app versions, which don't, keep working until the switch is
+    // turned on. The `phones` collection itself is always active.
+    function phoneEnforced() {
+      return exists(/databases/$(database)/documents/appConfig/phoneUniqueness) &&
+        get(/databases/$(database)/documents/appConfig/phoneUniqueness).data
+          .get('enforce', false) == true;
+    }
+
+    function phoneReservedFor(uid) {
+      return request.resource.data.phoneNumber.matches('^[+]63[0-9]{10}$') &&
+        getAfter(/databases/$(database)/documents/phones/$(request.resource.data.phoneNumber)).data.uid == uid;
+    }
+
+    function phoneOkOnCreate(uid) {
+      return !('phoneNumber' in request.resource.data) ||
+        !phoneEnforced() || phoneReservedFor(uid);
+    }
+
+    function phoneOkOnUpdate(uid) {
+      return !('phoneNumber' in request.resource.data) ||
+        !phoneEnforced() ||
+        ('phoneNumber' in resource.data &&
+          resource.data.phoneNumber == request.resource.data.phoneNumber) ||
+        phoneReservedFor(uid);
+    }
+
+    match /phones/{phone} {
+      // A signed-in user can check one number (needed to say "already
+      // registered"); the list can't be read or scanned.
+      allow get: if isSignedIn();
+      allow create: if isSignedIn() &&
+        request.resource.data.keys().hasOnly(['uid']) &&
+        request.resource.data.uid is string &&
+        (request.resource.data.uid == request.auth.uid || isAdmin()) &&
+        getAfter(/databases/$(database)/documents/users/$(request.resource.data.uid))
+          .data.get('phoneNumber', '') == phone;
+      // Released when the owner changes their number (or an admin does it for
+      // them) - only if that profile no longer holds the number afterwards.
+      // Reservations are never overwritten.
+      allow delete: if isSignedIn() &&
+        (resource.data.uid == request.auth.uid || isAdmin()) &&
+        getAfter(/databases/$(database)/documents/users/$(resource.data.uid))
+          .data.get('phoneNumber', '') != phone;
+      allow update, list: if false;
+    }
+
+    // SMS VERIFICATION (server side)
+    // The sign-up / phone-change text is sent, and the code checked, by Cloud
+    // Functions (sendAccountVerificationOtpSms / verifyAccountVerificationOtp),
+    // which also set `phoneVerified`. STAGED ROLLOUT, like the phone rule above:
+    // once appConfig/smsVerification has `enforce: true` (see
+    // functions/scripts/sms-verification-switch.js), the app can no longer read
+    // or write `otpVerifications` and can no longer mark ITSELF verified. Switch
+    // it on only after the new app build is out, because older builds still do
+    // both from the phone.
+    function smsEnforced() {
+      return exists(/databases/$(database)/documents/appConfig/smsVerification) &&
+        get(/databases/$(database)/documents/appConfig/smsVerification).data
+          .get('enforce', false) == true;
+    }
+
+    function notSelfVerifiedOnCreate() {
+      return !smsEnforced() ||
+        request.resource.data.get('phoneVerified', false) == false;
+    }
+
+    function notSelfVerifiedOnUpdate() {
+      return !smsEnforced() ||
+        !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['phoneVerified']);
+    }
+
     // USERS
     // Profiles hold phone number and health data: owner or admin only.
     match /users/{uid} {
       allow read: if isOwner(uid) || isAdmin();
-      allow create: if isOwner(uid) && emailOkOnCreate(uid);
+      allow create: if isOwner(uid) && emailOkOnCreate(uid) &&
+        phoneOkOnCreate(uid) && notSelfVerifiedOnCreate();
       // Owners cannot touch their own deactivation state (the flag, the
       // scheduled date, or who/when requested it) — otherwise a user could
       // simply delete `deactivateAt` to cancel their own deactivation.
@@ -84,7 +185,8 @@ service cloud.firestore {
             .hasAny(['deactivated', 'deactivateAt', 'deactivatedAt',
                      'deactivationRequestedBy',
                      'deactivationRequestedAt'])) || isAdmin()) &&
-        emailOkOnUpdate(uid);
+        emailOkOnUpdate(uid) && phoneOkOnUpdate(uid) &&
+        (isAdmin() || notSelfVerifiedOnUpdate());
       allow delete: if false;
 
       match /journalEntries/{entryId} {
@@ -105,10 +207,86 @@ service cloud.firestore {
         allow read, write: if isOwner(uid);
       }
 
+      // Push-notification devices: one small document per phone this account
+      // is signed in on (the FCM token the server sends to). Only the owner
+      // can read or change them; the server (Admin SDK) deletes tokens FCM
+      // reports as expired.
+      match /devices/{deviceId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid) &&
+          request.resource.data.keys().hasOnly(['token', 'platform', 'updatedAt']) &&
+          request.resource.data.token is string &&
+          request.resource.data.token.size() > 0 &&
+          request.resource.data.token.size() <= 4096 &&
+          request.resource.data.get('platform', '') is string;
+      }
+
       // AI-scan reliability counters (one summary doc): owner only.
       match /aiScanStats/{statsId} {
         allow read, write: if isOwner(uid);
       }
+
+      // One small doc per day on which a scan failed, was marked wrong or was
+      // marked satisfied (feeds the admin dashboard's graph). Counts only.
+      match /aiScanDaily/{dayId} {
+        allow read: if isOwner(uid);
+        allow write: if isOwner(uid) &&
+          request.resource.data.keys().hasOnly(
+            ['day', 'failed', 'erroneous', 'satisfied']);
+      }
+    }
+
+    // GUEST AI-SCAN COUNTERS
+    // A guest has no account, but their scans and "satisfied / not satisfied"
+    // answers should count in the admin dashboard too. They are written to
+    // guestAiScan/guest/aiScanStats/summary and .../aiScanDaily/{yyyymmdd}: the
+    // SAME collection names the per-account counters use, so the admin's
+    // existing collection-group reads (see below) include them with no change.
+    // A signed-out visitor may only create/update these two kinds of document,
+    // with counts only: a fixed set of fields, whole numbers, never negative,
+    // and each write moves a counter by at most 1 (up or down), so one request
+    // can't inflate the numbers. Reading stays admin-only.
+    function stepOk(d, old, key) {
+      return !(key in d) ||
+        (d[key] is int && d[key] >= 0 &&
+          d[key] - old.get(key, 0) <= 1 && d[key] - old.get(key, 0) >= -1);
+    }
+
+    function guestScanCountersOk() {
+      let d = request.resource.data;
+      let old = resource == null ? {} : resource.data;
+      return d.keys().hasOnly(['total', 'success', 'noWound', 'failed',
+          'failed_offline', 'failed_timeout', 'failed_serverError',
+          'failed_unreadableResponse', 'failed_unreadableImage',
+          'failed_lowConfidence', 'ratedCorrect', 'ratedWrong']) &&
+        stepOk(d, old, 'total') && stepOk(d, old, 'success') &&
+        stepOk(d, old, 'noWound') && stepOk(d, old, 'failed') &&
+        stepOk(d, old, 'failed_offline') && stepOk(d, old, 'failed_timeout') &&
+        stepOk(d, old, 'failed_serverError') &&
+        stepOk(d, old, 'failed_unreadableResponse') &&
+        stepOk(d, old, 'failed_unreadableImage') &&
+        stepOk(d, old, 'failed_lowConfidence') &&
+        stepOk(d, old, 'ratedCorrect') && stepOk(d, old, 'ratedWrong');
+    }
+
+    function guestScanDayOk() {
+      let d = request.resource.data;
+      let old = resource == null ? {} : resource.data;
+      return d.keys().hasOnly(['day', 'failed', 'erroneous', 'satisfied']) &&
+        d.day is timestamp &&
+        d.day > request.time - duration.value(3, 'd') &&
+        d.day <= request.time + duration.value(1, 'd') &&
+        stepOk(d, old, 'failed') && stepOk(d, old, 'erroneous') &&
+        stepOk(d, old, 'satisfied');
+    }
+
+    match /guestAiScan/guest/aiScanStats/summary {
+      allow create, update: if !isSignedIn() && guestScanCountersOk();
+    }
+
+    match /guestAiScan/guest/aiScanDaily/{dayId} {
+      allow create, update: if !isSignedIn() &&
+        dayId.matches('^[0-9]{8}$') && guestScanDayOk();
     }
 
     // ADMINS
@@ -140,8 +318,10 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Older app builds keep their own code here until smsVerification is
+    // enforced (see SMS VERIFICATION above); after that, server only.
     match /otpVerifications/{uid} {
-      allow read, write: if isOwner(uid);
+      allow read, write: if isOwner(uid) && !smsEnforced();
     }
 
     // FEEDBACK
@@ -150,8 +330,28 @@ service cloud.firestore {
     // respondedAt) can be written once: it must be 1-1000 characters, credit
     // the admin saving it, and can't be changed after that. Other fields
     // (eg status) stay freely editable by admins.
+    //
+    // Guest Mode has no account, so a signed-out visitor may also CREATE (never
+    // read or change) one feedback item, with strict checks: a fixed set of
+    // fields, `userId` null, `source` 'guest', a 1-100 character message, a
+    // 1-5 rating or none, and the server's own timestamp.
+    function validGuestFeedback() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['userId', 'message', 'rating', 'submittedAt', 'source']) &&
+        d.keys().hasAll(['userId', 'message', 'submittedAt', 'source']) &&
+        d.userId == null &&
+        d.source == 'guest' &&
+        d.message is string &&
+        d.message.size() > 0 &&
+        d.message.size() <= 100 &&
+        (!('rating' in d) || d.rating == null ||
+          (d.rating is int && d.rating >= 1 && d.rating <= 5)) &&
+        d.submittedAt == request.time;
+    }
+
     match /feedback/{feedbackId} {
-      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow create: if (isSignedIn() && request.resource.data.userId == request.auth.uid) ||
+        (!isSignedIn() && validGuestFeedback());
       allow read, delete: if isAdmin();
       allow update: if isAdmin() &&
         (
@@ -159,7 +359,11 @@ service cloud.firestore {
             .hasAny(['response', 'respondedBy', 'respondedByName', 'respondedAt'])
           ||
           (
+            // A resolved item takes no new response, and a response can't
+            // be slipped in while resolving it in the same write.
             !('response' in resource.data) &&
+            resource.data.get('status', 'open') != 'resolved' &&
+            request.resource.data.get('status', 'open') != 'resolved' &&
             request.resource.data.response is string &&
             request.resource.data.response.size() > 0 &&
             request.resource.data.response.size() <= 1000 &&
@@ -202,6 +406,39 @@ service cloud.firestore {
     match /auditLogs/{logId} {
       allow read: if isAdmin();
       allow write: if false;
+    }
+
+    // ADMIN SETTINGS
+    // Security settings (eg the idle-timeout switch). Any admin can read them
+    // (the portal applies them on load); only the updateSecuritySettings
+    // Cloud Function writes, so each change is validated and audit-logged.
+    match /adminSettings/{settingId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // APP CONFIG
+    // Settings the app needs BEFORE anyone is signed in (the sign-in screen's
+    // failed-login lockout). Public read, nothing secret in it; written only
+    // by the updateSecuritySettings Cloud Function.
+    // SCHEDULED NOTIFICATIONS FOR SPECIFIC USERS
+    // Admin-only to read (who it is for and what it says stay private);
+    // written only by the scheduleNotification / updateScheduledNotification /
+    // cancelScheduledNotification functions and the scheduler, never a client.
+    match /scheduledNotifications/{notifId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /appConfig/{configId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // COLLECTION GROUP: aiScanDaily
+    // Dashboard graph only (per-day error counts, no personal content).
+    match /{path=**}/aiScanDaily/{dayId} {
+      allow read: if isAdmin();
     }
 
     // COLLECTION GROUP: aiScanStats

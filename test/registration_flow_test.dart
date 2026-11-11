@@ -13,6 +13,7 @@ class FakeBackend implements RegistrationBackend {
   final Map<String, Map<String, Object?>> users = {};
   final Map<String, String> usernames = {}; // username -> uid
   final Map<String, String> emails = {}; // reserved email -> uid
+  final Map<String, String> phones = {}; // reserved +63 number -> uid
   String? signedInUid;
   int _next = 1;
 
@@ -102,6 +103,15 @@ class FakeBackend implements RegistrationBackend {
       }
       emails[recovery] = uid;
     }
+    // And the phone number the same way: one account per number.
+    final phone = profile['phoneNumber'] as String?;
+    if (phone != null) {
+      final holder = phones[phone];
+      if (holder != null && holder != uid) {
+        throw const RegistrationException(RegistrationError.phoneTaken);
+      }
+      phones[phone] = uid;
+    }
     users[uid] = {...profile, 'registrationComplete': true};
     usernames[username] = uid;
     if (claimHangsAfterCommit) await Completer<void>().future;
@@ -116,6 +126,27 @@ class FakeBackend implements RegistrationBackend {
 
   @override
   Future<void> signOut() async => signedInUid = null;
+
+  // What the server's "free a ghost number" call does in these tests.
+  final Set<String> ghostPhones = {}; // reservations held by a ghost
+  final Set<String> ghostEmails = {};
+  final List<String> releaseCalls = [];
+  bool releaseFails = false;
+
+  @override
+  Future<bool> releaseStaleContact(String kind, String value) async {
+    releaseCalls.add('$kind:$value');
+    if (releaseFails) throw Exception('functions unavailable');
+    if (kind == 'phone' && ghostPhones.remove(value)) {
+      phones.remove(value);
+      return true;
+    }
+    if (kind == 'email' && ghostEmails.remove(value)) {
+      emails.remove(value);
+      return true;
+    }
+    return false;
+  }
 
   bool get hasNothing => auth.isEmpty && users.isEmpty && usernames.isEmpty;
 }
@@ -175,11 +206,205 @@ void main() {
     expect(b.emails['user@email.com'], 'someoneElse');
   });
 
+  test('a phone number already used by another account is refused and '
+      'the new sign-in account is removed', () async {
+    final b = FakeBackend()..phones['+639171234567'] = 'someoneElse';
+    await expectLater(
+      signUp(flowFor(b)),
+      failsWith(RegistrationError.phoneTaken),
+    );
+    expect(b.hasNothing, isTrue);
+    expect(b.phones['+639171234567'], 'someoneElse');
+    expect(b.signedInUid, isNull);
+  });
+
+  group('a number held by a ghost account is freed', () {
+    test(
+      'the phone number held by a ghost: the sign-up goes through',
+      () async {
+        final b = FakeBackend()
+          ..phones['+639171234567'] = 'ghostUid'
+          ..ghostPhones.add('+639171234567');
+        await signUp(flowFor(b));
+        expect(b.releaseCalls, ['phone:+639171234567']);
+        expect(b.users.length, 1);
+        expect(b.phones['+639171234567'], b.users.keys.single);
+      },
+    );
+
+    test('a number held by a REAL account is still refused', () async {
+      final b = FakeBackend()..phones['+639171234567'] = 'realUid';
+      await expectLater(
+        signUp(flowFor(b)),
+        failsWith(RegistrationError.phoneTaken),
+      );
+      expect(b.releaseCalls, ['phone:+639171234567']); // asked, said no
+      expect(b.phones['+639171234567'], 'realUid');
+      expect(b.hasNothing, isTrue);
+    });
+
+    test(
+      'if the server cannot be asked, it stays "taken", as before',
+      () async {
+        final b = FakeBackend()
+          ..phones['+639171234567'] = 'ghostUid'
+          ..ghostPhones.add('+639171234567')
+          ..releaseFails = true;
+        await expectLater(
+          signUp(flowFor(b)),
+          failsWith(RegistrationError.phoneTaken),
+        );
+        expect(b.hasNothing, isTrue);
+      },
+    );
+
+    test('a ghost email is freed the same way', () async {
+      final b = FakeBackend()
+        ..emails['juan@example.com'] = 'ghostUid'
+        ..ghostEmails.add('juan@example.com');
+      await flowFor(b).register(
+        username: 'Juan',
+        password: 'Passw0rd!x',
+        phoneNumber: '+639171234567',
+        recoveryEmail: ' Juan@Example.com ',
+      );
+      expect(b.releaseCalls, ['email:juan@example.com']);
+      expect(b.users.length, 1);
+    });
+
+    test('a ghost number and a ghost email in one sign-up', () async {
+      final b = FakeBackend()
+        ..phones['+639171234567'] = 'g1'
+        ..emails['juan@example.com'] = 'g2'
+        ..ghostPhones.add('+639171234567')
+        ..ghostEmails.add('juan@example.com');
+      await flowFor(b).register(
+        username: 'Juan',
+        password: 'Passw0rd!x',
+        phoneNumber: '+639171234567',
+        recoveryEmail: 'juan@example.com',
+      );
+      expect(b.users.length, 1);
+    });
+  });
+
+  test(
+    'your own earlier attempt keeps its phone reservation on a retry',
+    () async {
+      final b = FakeBackend()..goOfflineAfterCreate = true;
+      final flow = flowFor(b);
+      await expectLater(signUp(flow), failsWith(RegistrationError.network));
+      b.offline = false;
+      b.goOfflineAfterCreate = false;
+      await signUp(flow);
+      expect(b.phones['+639171234567'], b.users.keys.single);
+    },
+  );
+
   test('no email at all is still fine (it is optional)', () async {
     final b = FakeBackend();
     await signUp(flowFor(b));
     expect(b.emails, isEmpty);
     expect(b.users.values.single.containsKey('recoveryEmail'), isFalse);
+  });
+
+  group('phone OR email (either one is enough)', () {
+    test('email only: no phone is stored or reserved', () async {
+      final b = FakeBackend();
+      await flowFor(b).register(
+        username: 'Juan',
+        password: 'Passw0rd!x',
+        recoveryEmail: ' Juan@Email.com ',
+        verificationMethod: 'email',
+      );
+      final user = b.users.values.single;
+      expect(user['recoveryEmail'], 'juan@email.com');
+      expect(user['verificationMethod'], 'email');
+      expect(user.containsKey('phoneNumber'), isFalse);
+      expect(b.emails['juan@email.com'], b.users.keys.single);
+      expect(b.phones, isEmpty);
+    });
+
+    test('phone only: no email is stored or reserved', () async {
+      final b = FakeBackend();
+      await signUp(flowFor(b));
+      final user = b.users.values.single;
+      expect(user['phoneNumber'], '+639171234567');
+      expect(user['verificationMethod'], 'phone');
+      expect(user.containsKey('recoveryEmail'), isFalse);
+      expect(b.emails, isEmpty);
+    });
+
+    test('an empty phone counts as not given', () async {
+      final b = FakeBackend();
+      await flowFor(b).register(
+        username: 'Juan',
+        password: 'Passw0rd!x',
+        phoneNumber: '   ',
+        recoveryEmail: 'juan@email.com',
+        verificationMethod: 'email',
+      );
+      expect(b.users.values.single.containsKey('phoneNumber'), isFalse);
+    });
+
+    test(
+      'neither one: refused before any sign-in account is created',
+      () async {
+        final b = FakeBackend();
+        await expectLater(
+          flowFor(b).register(
+            username: 'Juan',
+            password: 'Passw0rd!x',
+            phoneNumber: ' ',
+          ),
+          failsWith(RegistrationError.unknown),
+        );
+        expect(b.createCalls, 0);
+        expect(b.hasNothing, isTrue);
+      },
+    );
+
+    test('the chosen method needs its own identifier', () async {
+      final b = FakeBackend();
+      // Email method with only a phone number...
+      await expectLater(
+        flowFor(b).register(
+          username: 'Juan',
+          password: 'Passw0rd!x',
+          phoneNumber: '+639171234567',
+          verificationMethod: 'email',
+        ),
+        failsWith(RegistrationError.unknown),
+      );
+      // ...and phone method with only an email.
+      await expectLater(
+        flowFor(b).register(
+          username: 'Juan',
+          password: 'Passw0rd!x',
+          recoveryEmail: 'juan@email.com',
+          verificationMethod: 'phone',
+        ),
+        failsWith(RegistrationError.unknown),
+      );
+      expect(b.createCalls, 0);
+    });
+
+    test(
+      'a duplicate email is still refused when it is the only one',
+      () async {
+        final b = FakeBackend()..emails['user@email.com'] = 'someoneElse';
+        await expectLater(
+          flowFor(b).register(
+            username: 'Juan',
+            password: 'Passw0rd!x',
+            recoveryEmail: 'User@Email.com',
+            verificationMethod: 'email',
+          ),
+          failsWith(RegistrationError.emailTaken),
+        );
+        expect(b.hasNothing, isTrue);
+      },
+    );
   });
 
   test('a username owned by someone else is refused before anything is '

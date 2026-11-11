@@ -67,30 +67,6 @@ Future<DateTimeRange?> showAppDateRangePicker(
   );
 }
 
-// Adds the slashes while typing: 10052026 -> 10/05/2026.
-class _DateSlashFormatter extends TextInputFormatter {
-  const _DateSlashFormatter();
-
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    final digits = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
-    final capped = digits.length > 8 ? digits.substring(0, 8) : digits;
-    final buffer = StringBuffer();
-    for (var i = 0; i < capped.length; i++) {
-      if (i == 2 || i == 4) buffer.write('/');
-      buffer.write(capped[i]);
-    }
-    final text = buffer.toString();
-    return TextEditingValue(
-      text: text,
-      selection: TextSelection.collapsed(offset: text.length),
-    );
-  }
-}
-
 class _AppDatePickerDialog extends StatefulWidget {
   final bool isRange;
   final DateTime? initialStart;
@@ -123,7 +99,11 @@ class _AppDatePickerDialogState extends State<_AppDatePickerDialog> {
   @override
   void initState() {
     super.initState();
-    _start = _clampOrNull(widget.initialStart);
+    // A single date opens on the value already set, or on today when there
+    // is none (and today can be chosen).
+    _start =
+        _clampOrNull(widget.initialStart) ??
+        (widget.isRange ? null : _clampOrNull(DateTime.now()));
     _end = widget.isRange ? _clampOrNull(widget.initialEnd) : null;
     if (_start != null) _startController.text = formatDateInput(_start!);
     if (_end != null) _endController.text = formatDateInput(_end!);
@@ -284,7 +264,7 @@ class _AppDatePickerDialogState extends State<_AppDatePickerDialog> {
                 error: _startError,
                 onChanged: () => _onTyped(isStart: true),
                 s: s,
-                key: const ValueKey('start-field'),
+                name: 'start',
               ),
               if (widget.isRange) ...[
                 const SizedBox(height: 10),
@@ -294,7 +274,7 @@ class _AppDatePickerDialogState extends State<_AppDatePickerDialog> {
                   error: _endError,
                   onChanged: () => _onTyped(isStart: false),
                   s: s,
-                  key: const ValueKey('end-field'),
+                  name: 'end',
                 ),
               ],
               const SizedBox(height: 14),
@@ -342,27 +322,23 @@ class _AppDatePickerDialogState extends State<_AppDatePickerDialog> {
     );
   }
 
+  /// A date as three separate boxes (month, day, year): each number can be
+  /// changed on its own. The text in [controller] stays "MM/DD/YYYY".
   Widget _field({
     required TextEditingController controller,
     required String label,
     required String? error,
     required VoidCallback onChanged,
     required DatePickerStrings s,
-    Key? key,
+    required String name,
   }) {
-    return TextField(
-      key: key,
+    return _DateBoxes(
       controller: controller,
-      keyboardType: TextInputType.number,
-      inputFormatters: const [_DateSlashFormatter()],
-      onChanged: (_) => onChanged(),
-      decoration: InputDecoration(
-        labelText: label,
-        hintText: s.hint,
-        errorText: error,
-        isDense: true,
-        suffixIcon: const Icon(Icons.calendar_today_outlined, size: 18),
-      ),
+      label: label,
+      error: error,
+      onChanged: onChanged,
+      hints: s.hint.split('/'),
+      name: name,
     );
   }
 
@@ -376,7 +352,8 @@ class _AppDatePickerDialogState extends State<_AppDatePickerDialog> {
         ),
         Expanded(
           child: Text(
-            '${c.months[_month.month - 1]} ${_month.year}',
+            // Month names stay in English, even in Filipino.
+            '${CalendarStrings.en.months[_month.month - 1]} ${_month.year}',
             textAlign: TextAlign.center,
             style: theme.textTheme.titleMedium,
           ),
@@ -488,5 +465,180 @@ extension on DateTime {
     if (isBefore(minMonth)) return minMonth;
     if (isAfter(maxMonth)) return maxMonth;
     return this;
+  }
+}
+
+/// The month, day and year boxes of one date. The three keep the shared text
+/// controller in step ("MM/DD/YYYY") in both directions: typing in a box
+/// updates it, and a day picked on the calendar fills the boxes.
+class _DateBoxes extends StatefulWidget {
+  final TextEditingController controller;
+  final String label;
+  final String? error;
+  final VoidCallback onChanged;
+
+  /// What the boxes show while empty (eg MM, DD, YYYY).
+  final List<String> hints;
+
+  /// "start" or "end": the boxes are keyed `<name>-field-mm|dd|yyyy`.
+  final String name;
+
+  const _DateBoxes({
+    required this.controller,
+    required this.label,
+    required this.error,
+    required this.onChanged,
+    required this.hints,
+    required this.name,
+  });
+
+  @override
+  State<_DateBoxes> createState() => _DateBoxesState();
+}
+
+class _DateBoxesState extends State<_DateBoxes> {
+  final _mm = TextEditingController();
+  final _dd = TextEditingController();
+  final _yyyy = TextEditingController();
+  final _ddFocus = FocusNode();
+  final _yyyyFocus = FocusNode();
+  bool _pushing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _pull();
+    widget.controller.addListener(_pull);
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_pull);
+    _mm.dispose();
+    _dd.dispose();
+    _yyyy.dispose();
+    _ddFocus.dispose();
+    _yyyyFocus.dispose();
+    super.dispose();
+  }
+
+  String _compose() {
+    final m = _mm.text, d = _dd.text, y = _yyyy.text;
+    if (m.isEmpty && d.isEmpty && y.isEmpty) return '';
+    if (m.isNotEmpty && d.isNotEmpty && y.length == 4) {
+      return '${m.padLeft(2, '0')}/${d.padLeft(2, '0')}/$y';
+    }
+    return '$m/$d/$y';
+  }
+
+  // The shared text changed (a calendar tap): show it in the boxes.
+  void _pull() {
+    if (_pushing) return;
+    final parts = widget.controller.text.split('/');
+    String part(int i) => i < parts.length ? parts[i] : '';
+    if (_mm.text != part(0)) _mm.text = part(0);
+    if (_dd.text != part(1)) _dd.text = part(1);
+    if (_yyyy.text != part(2)) _yyyy.text = part(2);
+  }
+
+  // A box changed: update the shared text, and tell the dialog.
+  void _push({FocusNode? next}) {
+    _pushing = true;
+    widget.controller.text = _compose();
+    _pushing = false;
+    widget.onChanged();
+    next?.requestFocus();
+  }
+
+  Widget _box(
+    String key,
+    TextEditingController controller,
+    String hint,
+    int length, {
+    FocusNode? focus,
+    FocusNode? next,
+  }) {
+    final hasError = widget.error != null;
+    final side = BorderSide(
+      color: hasError ? Theme.of(context).colorScheme.error : Colors.grey,
+    );
+    return TextField(
+      key: ValueKey('${widget.name}-field-$key'),
+      controller: controller,
+      focusNode: focus,
+      keyboardType: TextInputType.number,
+      textAlign: TextAlign.center,
+      inputFormatters: [
+        FilteringTextInputFormatter.digitsOnly,
+        LengthLimitingTextInputFormatter(length),
+      ],
+      onChanged: (v) => _push(next: v.length == length ? next : null),
+      decoration: InputDecoration(
+        hintText: hint,
+        isDense: true,
+        counterText: '',
+        contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+        enabledBorder: OutlineInputBorder(borderSide: side),
+        border: OutlineInputBorder(borderSide: side),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    String hint(int i) => i < widget.hints.length ? widget.hints[i] : '';
+    const slash = Padding(
+      padding: EdgeInsets.symmetric(horizontal: 6),
+      child: Text('/'),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.calendar_today_outlined, size: 16),
+            const SizedBox(width: 6),
+            Text(widget.label, style: theme.textTheme.labelLarge),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Expanded(
+              flex: 2,
+              child: _box('mm', _mm, hint(0), 2, next: _ddFocus),
+            ),
+            slash,
+            Expanded(
+              flex: 2,
+              child: _box(
+                'dd',
+                _dd,
+                hint(1),
+                2,
+                focus: _ddFocus,
+                next: _yyyyFocus,
+              ),
+            ),
+            slash,
+            Expanded(
+              flex: 3,
+              child: _box('yyyy', _yyyy, hint(2), 4, focus: _yyyyFocus),
+            ),
+          ],
+        ),
+        if (widget.error != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4, left: 4),
+            child: Text(
+              widget.error!,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
+          ),
+      ],
+    );
   }
 }

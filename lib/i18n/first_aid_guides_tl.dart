@@ -26,8 +26,9 @@ const Map<String, List<GuideStep>> firstAidGuidesTl = {
     _handsGlovesTl,
     GuideStep(
       GuidePhase.before,
-      'Ihanda ang malinis na tubig na umaagos, malinis na gasa o tela, at '
-          'sterile na non-stick na dressing.',
+      'Ihanda ang malinis na tubig na umaagos, malinis na gasa (o '
+          'malinis na tela kung walang gasa), at malinis na non-stick '
+          'na dressing. Para sa maliit na hiwa, sapat na ang maliit na adhesive bandage.',
       'Kapag handa na ang mga gamit, mabilis mong matatakpan at '
           'mapapanatiling malinis ang sugat.',
     ),
@@ -40,20 +41,33 @@ const Map<String, List<GuideStep>> firstAidGuidesTl = {
     ),
     GuideStep(
       GuidePhase.during,
-      'Banlawan ang sugat ng malinis na tubig kapag humupa na ang pagdugo.',
-      'Natatanggal ang dumi at mikrobyo na maaaring magdulot ng impeksyon.',
+      'Kung meron ka, maaari kang magbuhos ng kaunting hydrogen '
+          'peroxide sa sugat para sa unang paglilinis lamang, saka '
+          'banlawan ng malinis na tubig. Huwag na itong gamitin ulit sa'
+          ' parehong sugat.',
+      'Nakakatulong itong maglinis ng sariwang sugat nang isang '
+          'beses. Ang paulit-ulit na paggamit ay maaaring makairita sa '
+          'balat at makapagpabagal ng paggaling.',
     ),
     GuideStep(
       GuidePhase.during,
-      'Huwag maglagay ng alcohol, hydrogen peroxide, o petroleum jelly '
-          'nang direkta sa sariwa o dumudugong sugat.',
-      'Ang alcohol at hydrogen peroxide ay maaaring makairita at makasira '
-          'sa gumagaling na balat, at ang petroleum jelly ay maaaring '
-          'makabitag ng halumigmig sa basang sugat.',
+      'Banlawan nang mabuti ang sugat ng malinis na tubig na '
+          'umaagos kapag humupa na ang pagdugo. Banlawan din ang '
+          'anumang hydrogen peroxide.',
+      'Natatanggal ang dumi at mikrobyo na maaaring magdulot ng '
+          'impeksyon.',
     ),
     GuideStep(
       GuidePhase.during,
-      'Takpan ng sterile na bendahe o dressing.',
+      'Huwag maglagay ng alcohol o petroleum jelly nang direkta sa '
+          'sariwa o dumudugong sugat.',
+      'Ang alcohol ay maaaring makairita at makasira sa gumagaling '
+          'na balat, at ang petroleum jelly ay maaaring makabitag ng '
+          'halumigmig sa basang sugat.',
+    ),
+    GuideStep(
+      GuidePhase.during,
+      'Takpan ng malinis na bendahe o dressing.',
       'Pinoprotektahan ang sugat mula sa dumi at mikrobyo.',
     ),
     GuideStep(
@@ -68,9 +82,19 @@ const Map<String, List<GuideStep>> firstAidGuidesTl = {
     _handsGlovesTl,
     GuideStep(
       GuidePhase.before,
-      'Ihanda ang malinis na tubig na umaagos, malinis na tela, at maliit '
-          'na adhesive bandage.',
+      'Ihanda ang malinis na tubig na umaagos, malinis na tela o '
+          'gasa, at maliit na adhesive bandage.',
       'Para malinis at matakpan agad ang hiwa.',
+    ),
+    GuideStep(
+      GuidePhase.during,
+      'Kung meron ka, maaari kang magbuhos ng kaunting hydrogen '
+          'peroxide sa hiwa para sa unang paglilinis lamang, saka '
+          'banlawan ng malinis na tubig. Huwag na itong gamitin ulit sa'
+          ' parehong hiwa.',
+      'Nakakatulong itong maglinis ng sariwang sugat nang isang '
+          'beses. Ang paulit-ulit na paggamit ay maaaring makairita sa '
+          'balat at makapagpabagal ng paggaling.',
     ),
     GuideStep(
       GuidePhase.during,
@@ -84,10 +108,10 @@ const Map<String, List<GuideStep>> firstAidGuidesTl = {
     ),
     GuideStep(
       GuidePhase.during,
-      'Maglagay ng antiseptic kung meron, ayon sa nakasulat sa label. '
-          'Huwag magbuhos ng alcohol o hydrogen peroxide sa hiwa.',
-      'Binabawasan ng antiseptic ang mikrobyo sa balat; ang alcohol at '
-          'hydrogen peroxide ay maaaring makasira sa gumagaling na balat.',
+      'Maglagay ng antiseptic kung meron, ayon sa nakasulat sa '
+          'label. Huwag magbuhos ng alcohol sa hiwa.',
+      'Binabawasan ng antiseptic ang mikrobyo sa balat; ang alcohol'
+          ' ay maaaring makasira sa gumagaling na balat.',
     ),
     GuideStep(
       GuidePhase.during,
@@ -105,9 +129,21 @@ const Map<String, List<GuideStep>> firstAidGuidesTl = {
   'scratch': [
     GuideStep(
       GuidePhase.before,
-      'Maghugas ng kamay gamit ang sabon at tubig. Ihanda ang banayad na '
-          'sabon, malinis na tubig, at malinis na bandage.',
-      'Para hindi makapasok sa kalmot ang mikrobyo mula sa iyong mga kamay.',
+      'Maghugas ng kamay gamit ang sabon at tubig. Ihanda ang '
+          'banayad na sabon, malinis na tubig, at malinis na bandage (o'
+          ' adhesive bandage).',
+      'Para hindi makapasok sa kalmot ang mikrobyo mula sa iyong '
+          'mga kamay.',
+    ),
+    GuideStep(
+      GuidePhase.during,
+      'Kung meron ka, maaari kang magbuhos ng kaunting hydrogen '
+          'peroxide sa kalmot para sa unang paglilinis lamang, saka '
+          'banlawan ng malinis na tubig. Huwag na itong gamitin ulit sa'
+          ' parehong kalmot.',
+      'Nakakatulong itong maglinis ng sariwang sugat nang isang '
+          'beses. Ang paulit-ulit na paggamit ay maaaring makairita sa '
+          'balat at makapagpabagal ng paggaling.',
     ),
     GuideStep(
       GuidePhase.during,
@@ -116,10 +152,10 @@ const Map<String, List<GuideStep>> firstAidGuidesTl = {
     ),
     GuideStep(
       GuidePhase.during,
-      'Maglagay ng antiseptic kung meron, ayon sa nakasulat sa label. '
-          'Huwag magbuhos ng alcohol o hydrogen peroxide sa kalmot.',
-      'Binabawasan ng antiseptic ang mikrobyo; ang alcohol at hydrogen '
-          'peroxide ay maaaring makairita sa balat.',
+      'Maglagay ng antiseptic kung meron, ayon sa nakasulat sa '
+          'label. Huwag magbuhos ng alcohol sa kalmot.',
+      'Binabawasan ng antiseptic ang mikrobyo; ang alcohol ay '
+          'maaaring makairita sa balat.',
     ),
     GuideStep(
       GuidePhase.during,
@@ -144,9 +180,20 @@ const Map<String, List<GuideStep>> firstAidGuidesTl = {
     _handsGlovesTl,
     GuideStep(
       GuidePhase.before,
-      'Ihanda ang malinis na tubig na umaagos at sterile na non-stick na '
-          'dressing.',
+      'Ihanda ang malinis na tubig na umaagos at malinis na non-'
+          'stick na dressing. Kung wala, gumamit ng malinis na gasa o '
+          'malinis na tela na may tape.',
       'Kakailanganin mo ang mga ito pagkatapos magbanlaw.',
+    ),
+    GuideStep(
+      GuidePhase.during,
+      'Kung meron ka, maaari kang magbuhos ng kaunting hydrogen '
+          'peroxide sa galos para sa unang paglilinis lamang, saka '
+          'banlawan ng malinis na tubig. Huwag na itong gamitin ulit sa'
+          ' parehong galos.',
+      'Nakakatulong itong maglinis ng sariwang sugat nang isang '
+          'beses. Ang paulit-ulit na paggamit ay maaaring makairita sa '
+          'balat at makapagpabagal ng paggaling.',
     ),
     GuideStep(
       GuidePhase.during,
@@ -161,12 +208,11 @@ const Map<String, List<GuideStep>> firstAidGuidesTl = {
     ),
     GuideStep(
       GuidePhase.during,
-      'Huwag magbuhos ng alcohol o hydrogen peroxide sa galos, at huwag '
-          'maglagay ng petroleum jelly habang basa o may lumalabas pang '
-          'likido.',
-      'Maaari nilang makairita o masira ang gumagaling na balat, at ang '
-          'mamantikang patong sa basang sugat ay maaaring makabitag ng '
-          'halumigmig.',
+      'Huwag magbuhos ng alcohol sa galos, at huwag maglagay ng '
+          'petroleum jelly habang basa o may lumalabas pang likido.',
+      'Ang alcohol ay maaaring makairita o makasira sa gumagaling '
+          'na balat, at ang mamantikang patong sa basang sugat ay '
+          'maaaring makabitag ng halumigmig.',
     ),
     GuideStep(
       GuidePhase.during,
@@ -176,7 +222,7 @@ const Map<String, List<GuideStep>> firstAidGuidesTl = {
     ),
     GuideStep(
       GuidePhase.during,
-      'Takpan ng sterile at non-stick na dressing.',
+      'Takpan ng malinis at non-stick na dressing.',
       'Pinoprotektahan ang sugat at hindi ito nahahatak pagtanggal.',
     ),
     GuideStep(
@@ -199,9 +245,19 @@ const Map<String, List<GuideStep>> firstAidGuidesTl = {
     _handsGlovesTl,
     GuideStep(
       GuidePhase.before,
-      'Ihanda ang sabon, malinis na tubig, malinis na gasa, at malinis na '
-          'bandage.',
+      'Ihanda ang sabon, malinis na tubig, malinis na gasa (o '
+          'malinis na tela), at malinis na bandage.',
       'Para mabilis na malinis at matakpan ang sugat.',
+    ),
+    GuideStep(
+      GuidePhase.during,
+      'Kung meron ka, maaari kang magbuhos ng kaunting hydrogen '
+          'peroxide sa sugat para sa unang paglilinis lamang, saka '
+          'banlawan ng malinis na tubig. Huwag na itong gamitin ulit sa'
+          ' parehong sugat.',
+      'Nakakatulong itong maglinis ng sariwang sugat nang isang '
+          'beses. Ang paulit-ulit na paggamit ay maaaring makairita sa '
+          'balat at makapagpabagal ng paggaling.',
     ),
     GuideStep(
       GuidePhase.during,
@@ -248,11 +304,12 @@ const Map<String, List<GuideStep>> firstAidGuidesTl = {
     ),
     GuideStep(
       GuidePhase.before,
-      'Tanggalin ang alahas o masisikip na bagay malapit sa napasong '
-          'bahagi, at ihanda ang malamig na tubig na umaagos at malinis na '
-          'non-stick na dressing.',
-      'Maaaring mamaga ang bahagi, kaya mahirap nang tanggalin ang singsing '
-          'at masisikip na bagay.',
+      'Tanggalin ang alahas o masisikip na bagay malapit sa '
+          'napasong bahagi, at ihanda ang malamig na tubig na umaagos '
+          'at malinis na non-stick na dressing (o malinis na tela kung '
+          'wala).',
+      'Maaaring mamaga ang bahagi, kaya mahirap nang tanggalin ang '
+          'singsing at masisikip na bagay.',
     ),
     GuideStep(
       GuidePhase.during,
@@ -294,9 +351,11 @@ const Map<String, List<GuideStep>> firstAidGuidesTl = {
   'bruise': [
     GuideStep(
       GuidePhase.before,
-      'Ihanda ang malinis na tela o tuwalya at cold pack o yelo.',
-      'Dapat nakabalot ang malamig na bagay; huwag itong ilapat nang '
-          'direkta sa balat.',
+      'Ihanda ang malinis na tela o tuwalya at cold pack o yelo. '
+          'Kung walang cold pack, gumamit ng supot ng yelo o frozen na '
+          'gulay na nakabalot sa tela.',
+      'Dapat nakabalot ang malamig na bagay; huwag itong ilapat '
+          'nang direkta sa balat.',
     ),
     GuideStep(
       GuidePhase.during,
@@ -337,9 +396,11 @@ const Map<String, List<GuideStep>> firstAidGuidesTl = {
   'swelling': [
     GuideStep(
       GuidePhase.before,
-      'Ihanda ang malinis na tela o tuwalya at cold pack o yelo.',
-      'Dapat nakabalot ang malamig na bagay; huwag itong ilapat nang '
-          'direkta sa balat.',
+      'Ihanda ang malinis na tela o tuwalya at cold pack o yelo. '
+          'Kung walang cold pack, gumamit ng supot ng yelo o frozen na '
+          'gulay na nakabalot sa tela.',
+      'Dapat nakabalot ang malamig na bagay; huwag itong ilapat '
+          'nang direkta sa balat.',
     ),
     GuideStep(
       GuidePhase.during,
@@ -381,7 +442,15 @@ const Map<String, List<GuideStep>> firstAidGuidesTl = {
     GuideStep(
       GuidePhase.before,
       'Maghugas ng kamay gamit ang sabon at tubig.',
-      'Para hindi madikit ang mikrobyo mula sa kamay sa iritadong balat.',
+      'Para hindi madikit ang mikrobyo mula sa kamay sa iritadong '
+          'balat.',
+    ),
+    GuideStep(
+      GuidePhase.before,
+      'Maghanda ng malinis at maligamgam na tubig at malambot at '
+          'malinis na tuwalya (o malinis at malambot na tela).',
+      'Mas banayad sa iritadong balat ang maligamgam na tubig at '
+          'malambot na tuwalya.',
     ),
     GuideStep(
       GuidePhase.during,
@@ -391,34 +460,61 @@ const Map<String, List<GuideStep>> firstAidGuidesTl = {
     ),
     GuideStep(
       GuidePhase.during,
-      'Dahan-dahang hugasan ang bahagi gamit ang banayad na sabon at '
-          'malamig na tubig.',
-      'Natatanggal ang mga nakakairita nang hindi natutuyo ang balat.',
+      'Dahan-dahang hugasan ang apektadong bahagi gamit ang banayad'
+          ' na sabon at maligamgam na tubig. Alisin ang anumang dumi sa'
+          ' ibabaw.',
+      'Natatanggal ang mga nakakairita at dumi nang hindi natutuyo '
+          'ang balat.',
     ),
     GuideStep(
       GuidePhase.during,
-      'Maglagay ng moisturizer na walang pabango o nakakapagpaginhawang '
-          'lotion kung meron.',
-      'Pinapaginhawa ang tuyo at makating balat nang hindi nagdaragdag ng '
-          'nakakairita.',
+      'Pagkatapos maghugas, hayaang matuyo sa hangin ang balat. '
+          'Huwag itong kuskusin ng tuwalya, at huwag takpan ang bahagi.',
+      'Ang pagkuskos ay maaaring magpalala ng pantal, at ang hindi '
+          'natatakpang bahagi ay kusang natutuyo.',
     ),
     GuideStep(
       GuidePhase.during,
-      'Iwasan ang mga kilalang nakakairita o allergen kung may natukoy ka.',
-      'Ang patuloy na pagkakalantad ay maaaring magpalala ng pantal.',
+      'Maglagay ng banayad na moisturizer na walang pabango o '
+          'nakakapagpaginhawang lotion kung meron.',
+      'Pinapaginhawa ang tuyo at makating balat nang hindi '
+          'nagdaragdag ng nakakairita.',
+    ),
+    GuideStep(
+      GuidePhase.during,
+      'Protektahan ang mukha mula sa direktang sikat ng araw, at '
+          'takpan ng maluwag na damit ang iba pang apektadong balat.',
+      'Ang araw ay maaaring makairita sa balat na sensitibo na.',
+    ),
+    GuideStep(
+      GuidePhase.during,
+      'Iwasan ang mga kilalang nakakairita o allergen kung may '
+          'natukoy ka.',
+      'Ang patuloy na pagkakalantad ay maaaring magpalala ng '
+          'pantal.',
     ),
     GuideStep(
       GuidePhase.after,
-      'Itala kung kailan nagsimula ang pantal at anumang bago na nadikit '
-          'o nakain mo.',
-      'Makakatulong ito sa iyo at sa health professional na malaman ang '
-          'sanhi.',
+      'Itala kung kailan nagsimula ang pantal at anumang bago na '
+          'nadikit o nakain mo.',
+      'Makakatulong ito sa iyo at sa health professional na malaman'
+          ' ang sanhi.',
     ),
     GuideStep(
       GuidePhase.after,
-      'Humingi agad ng medikal na tulong kung mabilis kumakalat ang pantal '
-          'o may kasamang hirap sa paghinga o pamamaga ng mukha.',
-      'Maaaring senyales ang mga ito ng malubhang allergic reaction.',
+      'Kumonsulta sa doktor para sa pormal na pagsusuri kung hindi '
+          'gumaganda ang pantal sa loob ng ilang araw o paulit-ulit '
+          'itong bumabalik.',
+      'Makikita ng doktor ang sanhi at makapagbibigay ng tamang '
+          'gamutan.',
+    ),
+    GuideStep(
+      GuidePhase.after,
+      'Humingi agad ng medikal na tulong kung mabilis kumakalat ang'
+          ' pantal o may kasamang hirap sa paghinga o pamamaga ng '
+          'mukha.',
+      'Maaaring senyales ang mga ito ng malubhang allergic '
+          'reaction.',
     ),
   ],
   'other_skin_issue': [
@@ -427,6 +523,13 @@ const Map<String, List<GuideStep>> firstAidGuidesTl = {
       'Maghugas ng kamay gamit ang sabon at tubig. Magsuot ng malinis na '
           'disposable na guwantes kung may sugat o dumudugo ang balat.',
       'Para hindi madikit ang mikrobyo mula sa kamay sa apektadong balat.',
+    ),
+    GuideStep(
+      GuidePhase.before,
+      'Maghanda ng malinis at maligamgam na tubig at malambot at '
+          'malinis na tuwalya (o malinis at malambot na tela).',
+      'Mas banayad sa iritadong balat ang maligamgam na tubig at '
+          'malambot na tuwalya.',
     ),
     GuideStep(
       GuidePhase.during,
@@ -453,8 +556,10 @@ const Map<String, List<GuideStep>> firstAidGuidesTl = {
     ),
     GuideStep(
       GuidePhase.after,
-      'Kung hindi ka sigurado kung ano ito, mag-ingat at bantayang mabuti, '
-          'at magpatingin sa healthcare professional kung lumala.',
+      'Kung hindi ka sigurado kung ano ang kinakaharap mo, mag-'
+          'ingat sa pag-aalaga at bantayang mabuti. Kumonsulta sa '
+          'doktor para sa pormal na pagsusuri kung lumala ito o hindi '
+          'bumuti.',
       'Pinakaligtas na ipasuri sa propesyonal ang hindi malinaw na '
           'problema.',
     ),

@@ -1,3 +1,4 @@
+import '../i18n/assessment_strings.dart';
 import '../i18n/evaluation_strings.dart';
 import '../i18n/pain_strings.dart';
 import 'pain_assessment.dart';
@@ -122,6 +123,19 @@ String? buildJournalEvaluation(
     );
   }
 
+  // Itchiness (skin issues only; older entries and other types have none).
+  final rawItch = data['itchScore'];
+  final itch = rawItch is num ? rawItch.toInt() : null;
+  if (itch != null && isValidPainScore(itch)) {
+    final a = tagalog ? AssessmentStrings.tl : AssessmentStrings.en;
+    sentences.add(
+      s.itchFormat
+          .replaceFirst('{n}', '$itch')
+          .replaceFirst('{max}', '$kPainMax')
+          .replaceFirst('{level}', a.itchLabels[itch]),
+    );
+  }
+
   // Care level + whether a professional was recommended.
   final triage = data['triage'];
   final careLevel = switch (triage) {
@@ -160,6 +174,13 @@ String? buildJournalEvaluation(
     );
   }
 
+  // The satisfaction answer, only ever asked after "Feeling better".
+  if (data['resultSatisfied'] is bool) {
+    sentences.add(
+      data['resultSatisfied'] == true ? s.satisfiedYes : s.satisfiedNo,
+    );
+  }
+
   if (monitoredDays > 0) {
     sentences.add(
       monitoredDays == 1
@@ -168,5 +189,6 @@ String? buildJournalEvaluation(
     );
   }
 
-  return sentences.join(' ');
+  // One item per line (the card and the export show each on its own line).
+  return sentences.join('\n');
 }

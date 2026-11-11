@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0+1
+version: 1.0.1+2
 
 environment:
   sdk: ^3.12.0
@@ -29,6 +29,8 @@ environment:
 # versions available, run `flutter pub outdated`.
 dependencies:
   flutter:
+    sdk: flutter
+  flutter_web_plugins:
     sdk: flutter
 
 
@@ -48,6 +50,7 @@ dependencies:
   camera: ^0.12.0+1
   flutter_local_notifications: ^22.0.1
   pdf: ^3.13.0
+  qr: ^3.0.2 # draws the authenticator-app QR code (already used by other packages)
   path_provider: ^2.1.6
   share_plus: ^13.1.0
   connectivity_plus: ^7.1.1
@@ -59,9 +62,7 @@ dependencies:
   http: ^1.6.0
   url_launcher: ^6.3.1
   timezone: ^0.11.1
-  record: ^6.0.0
-  speech_to_text: ^7.0.0
-  audioplayers: ^6.1.0
+  vibration: ^3.2.1
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -71,10 +72,10 @@ dev_dependencies:
 flutter_launcher_icons:
   android: true
   ios: false
-  image_path: "assets/images/FINE_AID_Logo_Icon.png"
+  image_path: "assets/images/app_icon.png"
   min_sdk_android: 21
   adaptive_icon_background: "#FFFFFF"
-  adaptive_icon_foreground: "assets/images/FINE_AID_Logo_Icon.png"
+  adaptive_icon_foreground: "assets/images/app_icon_foreground.png"
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 
@@ -89,17 +90,19 @@ flutter:
     - assets/images/FINE_AID_Background.png
     - assets/images/FINE_AID_Logo.png
     - assets/images/FINE_AID_Logo_Icon.png
-    - assets/images/Fine_Aid_BG.png
     - assets/images/welcome_banner.png
     - assets/images/login_background.png
+    - assets/images/login_background_maroon.png
     - assets/images/FINEAID_ADMIN_LANDING_PAGE.png
     - assets/images/help_hero.png
+    - assets/images/emergency_siren.png
     - assets/images/help_getting_started.png
     - assets/images/help_privacy.png
     - assets/images/help_journal.png
     - assets/images/help_references.png
     - assets/images/books/
     - assets/images/first_aid/
+    - assets/images/health_kit/
     - assets/web/
     - assets/config/otc_filter_config.json
   # To add assets to your application, add an assets section, like this:

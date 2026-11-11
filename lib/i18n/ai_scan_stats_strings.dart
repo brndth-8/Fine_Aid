@@ -2,8 +2,8 @@ import 'package:flutter/widgets.dart';
 import '../services/ai_scan_stats_service.dart';
 import 'app_language.dart';
 
-/// Text for the "About the AI scan" screen and the optional "Was this result
-/// correct?" prompt, English + Tagalog. Neutral wording only: the numbers
+/// Text for the "About the AI scan" screen and the "Are you satisfied with
+/// the result?" prompt, English + Tagalog. Neutral wording only: the numbers
 /// describe how often the scan completes, not medical accuracy. Review the
 /// Tagalog before release.
 class AiScanStatsStrings {
@@ -21,6 +21,7 @@ class AiScanStatsStrings {
   final String failureRate;
   final String accuracyRate;
   final String reliability;
+  final String scanSummary;
   final String noFeedbackYet;
   final String reliabilityNote;
   final String whyFailed;
@@ -46,6 +47,7 @@ class AiScanStatsStrings {
     required this.failureRate,
     required this.accuracyRate,
     required this.reliability,
+    required this.scanSummary,
     required this.noFeedbackYet,
     required this.reliabilityNote,
     required this.whyFailed,
@@ -75,21 +77,22 @@ class AiScanStatsStrings {
     completed: 'Completed with a result',
     failed: 'Did not complete',
     noWoundFound: 'No wound found',
-    ratedCorrect: 'Marked correct',
-    ratedNotCorrect: 'Marked not correct',
+    ratedCorrect: 'Satisfied',
+    ratedNotCorrect: 'Not satisfied',
     successRate: 'Success rate',
     failureRate: 'Failure rate',
-    accuracyRate: 'Accuracy (of rated scans)',
+    accuracyRate: 'Satisfaction (of rated scans)',
     reliability: 'Reliability',
+    scanSummary: 'Scan Summary',
     noFeedbackYet: 'No feedback yet',
     reliabilityNote:
-        'Reliability = scans that completed and were not marked incorrect, '
-        'out of all scans.',
+        'Reliability = scans that completed and were not rated "not '
+        'satisfied", out of all scans.',
     whyFailed: 'Why scans did not complete',
     guestNote:
         'Not signed in: these numbers are kept on this phone only. Log in to '
         'keep them with your account.',
-    feedbackQuestion: 'Was this result correct?',
+    feedbackQuestion: 'Are you satisfied with the result?',
     yes: 'Yes',
     no: 'No',
     feedbackThanks: 'Thanks for the feedback.',
@@ -114,21 +117,22 @@ class AiScanStatsStrings {
     completed: 'Natapos na may resulta',
     failed: 'Hindi natapos',
     noWoundFound: 'Walang nakitang sugat',
-    ratedCorrect: 'Minarkahang tama',
-    ratedNotCorrect: 'Minarkahang hindi tama',
+    ratedCorrect: 'Nasiyahan',
+    ratedNotCorrect: 'Hindi nasiyahan',
     successRate: 'Rate ng tagumpay',
     failureRate: 'Rate ng pagkabigo',
-    accuracyRate: 'Katumpakan (ng mga na-rate na scan)',
+    accuracyRate: 'Kasiyahan (ng mga na-rate na scan)',
     reliability: 'Pagkakatiwalaan',
+    scanSummary: 'Buod ng mga Scan',
     noFeedbackYet: 'Wala pang feedback',
     reliabilityNote:
-        'Pagkakatiwalaan = mga scan na natapos at hindi minarkahang mali, '
-        'mula sa lahat ng scan.',
+        'Pagkakatiwalaan = mga scan na natapos at hindi na-rate na "hindi '
+        'nasiyahan", mula sa lahat ng scan.',
     whyFailed: 'Bakit hindi natapos ang mga scan',
     guestNote:
         'Hindi naka-sign in: sa teleponong ito lang naka-save ang mga bilang '
         'na ito. Mag-log in para maitago ang mga ito sa iyong account.',
-    feedbackQuestion: 'Tama ba ang resultang ito?',
+    feedbackQuestion: 'Nasiyahan ka ba sa resulta?',
     yes: 'Oo',
     no: 'Hindi',
     feedbackThanks: 'Salamat sa feedback.',

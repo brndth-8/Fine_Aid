@@ -373,7 +373,7 @@ const helpJournalEn = HelpSection(
     HelpHeading('STEP 2: RATING YOUR PAIN & LOGGING DETAILS'),
     HelpList(numbered: true, [
       HelpItem(
-        'Use the built-in Pain Rating Scale (0 to 10) to indicate your '
+        'Use the built-in Pain Rating Scale (0 to 5) to indicate your '
         'current discomfort level:',
         label: 'Interactive Pain Rating Scale',
         children: [
@@ -383,16 +383,16 @@ const helpJournalEn = HelpSection(
           ),
           HelpItem(
             'Minor discomfort, easily ignored.',
-            label: '1–4 – Mild Pain',
+            label: '1–2 – Mild Pain',
           ),
           HelpItem(
             'Noticeable pain that interferes slightly with daily tasks.',
-            label: '5–7 – Moderate Pain',
+            label: '3 – Moderate Pain',
           ),
           HelpItem(
             'Intense or throbbing pain requiring immediate rest or '
             'professional medical attention.',
-            label: '8–10 – Severe Pain',
+            label: '4–5 – Severe Pain',
           ),
         ],
       ),
@@ -626,6 +626,8 @@ const helpReferencesEn = HelpSection(
         'localized disease symptom advisories.',
       ),
     ]),
+    // Its own section, apart from the verified medical sources above.
+    HelpHeading('Medical Review and Clinical Governance'),
     HelpGroup('Doctor-Reviewed Content & Clinical Governance', [
       HelpHeading('Oversight & Clinical Governance Overview'),
       HelpParagraph(

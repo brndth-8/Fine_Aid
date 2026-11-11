@@ -1,4 +1,6 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../journal/screens/journal_list_screen.dart';
@@ -22,6 +24,9 @@ import '../../../core/widgets/connectivity_badge.dart';
 import '../../../services/notification_inbox_store.dart';
 import 'textbook_viewer_screen.dart';
 import '../../../services/firebase/textbook_service.dart';
+import '../../../i18n/screen_text_strings.dart';
+import '../../../i18n/guest_journal_strings.dart';
+import '../../../services/guest_journal_store.dart';
 
 class _BookItem {
   final String title;
@@ -86,7 +91,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _showTour = false;
 
   // Book carousel
-  final PageController _bookController = PageController(viewportFraction: 0.75);
+  final PageController _bookController = PageController(
+    viewportFraction: _bookViewport,
+  );
   int _currentBookPage = 1;
 
   // The built-in list: shown straight away and kept if Firebase can't be
@@ -157,9 +164,53 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     HelpTourLauncher.instance.requestToken.addListener(_onTourRequested);
     _maybeAutoShowTour();
+    _syncGuestJournal();
+  }
+
+  /// Guest Mode journal entries live on this phone. A guest sees them on the
+  /// calendar; once someone is signed in (just signed up or signed in) they
+  /// are moved into that account's journal.
+  Future<void> _syncGuestJournal() async {
+    final store = GuestJournalStore.instance;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      await store.load();
+      return;
+    }
+    final moved = await store.migrateTo(user.uid);
+    if (moved > 0 && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(GuestJournalStrings.of(context).moved(moved))),
+      );
+    }
+  }
+
+  /// Offline Mode: the Help Tour shows by itself only the FIRST time the app
+  /// is opened offline. After that it is not started automatically (it can
+  /// still be replayed from Help and Support > Replay Help Tour).
+  static const _offlineTourSeenKey = 'offline_help_tour_seen';
+
+  Future<void> _maybeShowOfflineTour() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool(_offlineTourSeenKey) == true) return;
+      await prefs.setBool(_offlineTourSeenKey, true);
+    } catch (_) {
+      // Can't remember it: better to skip than to show it every time.
+      return;
+    }
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _showTour = true);
+    });
   }
 
   Future<void> _maybeAutoShowTour() async {
+    // Offline Mode has its own rule (first time only), for everyone.
+    if (ConnectivityService().lastKnownOnline == false) {
+      await _maybeShowOfflineTour();
+      return;
+    }
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       // Guest session — show once per app run rather than persisting
@@ -276,11 +327,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 borderRadius: BorderRadius.circular(20),
               ),
               title: const Text('Your Currently Offline'),
-              content: const Text(
-                'AI Camera requires an internet connection. Check your '
-                'connection and try again, or use the offline First Aid '
-                'Health Kit instead.',
-              ),
+              content: Text(ScreenText.of(context).offlineCameraBody),
               actions: [
                 OutlinedButton(
                   onPressed: () {
@@ -292,11 +339,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                     );
                   },
-                  child: const Text('First Aid Kit'),
+                  child: Text(ScreenText.of(context).firstAidKit),
                 ),
                 ElevatedButton(
                   onPressed: () => Navigator.pop(context),
-                  child: const Text('Go Back'),
+                  child: Text(ScreenText.of(context).goBack),
                 ),
               ],
             ),
@@ -341,14 +388,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildScaffold(ThemeData theme, bool isGuest) {
     return Scaffold(
+      // The page scrolls under the nav bar's see-through band (where the AI
+      // button rises) instead of being cut off at a hard edge above it.
+      extendBody: true,
       bottomNavigationBar: CustomBottomNavBar(
         key: _actionTilesKey,
-        items: _navItems(NavStrings.of(context)),
+        // The bottom bar stays in English, even in Filipino.
+        items: _navItems(NavStrings.en),
         itemKeys: [_journalNavKey, _scannerNavKey, _helpNavKey],
         selectedIndex: _selectedNavIndex,
         onItemTap: _handleNavTap,
       ),
       body: SafeArea(
+        bottom: false,
         child: Column(
           children: [
             // Top bar
@@ -460,83 +512,94 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
             // Scrollable content
             Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Welcome banner
-                    _buildWelcomeBanner(theme),
-                    const SizedBox(height: 16),
+              child: Builder(
+                // Built here so it sees the nav bar's height (the Scaffold
+                // adds it to the bottom padding), which the content needs as
+                // room at its end.
+                builder: (bodyContext) => SingleChildScrollView(
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    16,
+                    16,
+                    16 + MediaQuery.paddingOf(bodyContext).bottom,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Welcome banner
+                      _buildWelcomeBanner(theme),
+                      const SizedBox(height: 16),
 
-                    // First Aid Textbook Guide
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            'First Aid Textbook Guide',
-                            style: theme.textTheme.titleLarge?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black,
+                      // First Aid Textbook Guide
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'First Aid Textbook Guide',
+                              style: theme.textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black,
+                              ),
                             ),
                           ),
-                        ),
-                        InkWell(
-                          borderRadius: BorderRadius.circular(8),
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) =>
-                                  _AllBooksScreen(books: _books),
+                          InkWell(
+                            borderRadius: BorderRadius.circular(8),
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    _AllBooksScreen(books: _books),
+                              ),
                             ),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 4,
-                              vertical: 4,
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  'View all',
-                                  style: theme.textTheme.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.bold,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                                vertical: 4,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    'View all',
+                                    style: theme.textTheme.titleMedium
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.black,
+                                        ),
+                                  ),
+                                  const Icon(
+                                    Icons.chevron_right,
                                     color: Colors.black,
                                   ),
-                                ),
-                                const Icon(
-                                  Icons.chevron_right,
-                                  color: Colors.black,
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    _buildBookCarousel(theme),
-                    const SizedBox(height: 16),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      _buildBookCarousel(theme),
+                      const SizedBox(height: 16),
 
-                    // Offline: First Aid Health Kit card
-                    if (!_isOnline) ...[
-                      _buildFirstAidKitCard(theme),
+                      // Offline: First Aid Health Kit card
+                      if (!_isOnline) ...[
+                        _buildFirstAidKitCard(theme),
+                        const SizedBox(height: 16),
+                      ],
+
+                      // Calendar Dashboard
+                      Text(
+                        'Calendar Dashboard',
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      _buildCalendar(theme),
                       const SizedBox(height: 16),
                     ],
-
-                    // Calendar Dashboard
-                    Text(
-                      'Calendar Dashboard',
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    _buildCalendar(theme),
-                    const SizedBox(height: 16),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -565,18 +628,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
               children: [
                 const Icon(Icons.wifi_off, color: Colors.white, size: 20),
                 const SizedBox(width: 8),
-                Text(
-                  'You\'re currently offline',
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    color: Colors.white,
+                Expanded(
+                  child: Text(
+                    ScreenText.of(context).offlineBannerTitle,
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      color: Colors.white,
+                    ),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 8),
             Text(
-              'Continue tracking and viewing guides '
-              'without internet.',
+              ScreenText.of(context).offlineBannerBody,
               style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white),
             ),
           ],
@@ -593,21 +657,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Welcome to Guest Mode',
+              ScreenText.of(context).guestBannerTitle,
               style: theme.textTheme.titleLarge?.copyWith(color: Colors.white),
             ),
             const SizedBox(height: 8),
             Text(
-              'Register for full access to features '
-              'with no limitation.',
+              ScreenText.of(context).guestBannerBody,
               style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white),
             ),
             const SizedBox(height: 8),
             GestureDetector(
               onTap: () => Navigator.pushNamed(context, '/registration'),
               child: Text(
-                'Sign in and login your account. '
-                'Register here',
+                ScreenText.of(context).guestBannerLink,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: Colors.white,
                   decoration: TextDecoration.underline,
@@ -629,17 +691,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Welcome!',
-            style: theme.textTheme.headlineSmall?.copyWith(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-            ),
+            ScreenText.of(context).welcomeTitle,
+            style: theme.textTheme.titleLarge?.copyWith(color: Colors.white),
           ),
           const SizedBox(height: 8),
           Text(
-            'Stay safe and ready with Fine Aid. '
-            'Your guide for reliable first aid '
-            'and tracking your recovery.',
+            ScreenText.of(context).welcomeBody,
             style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white),
           ),
         ],
@@ -660,57 +717,68 @@ class _DashboardScreenState extends State<DashboardScreen> {
   );
 
   Widget _buildBookCarousel(ThemeData theme) {
-    return Container(
-      key: _bookCarouselKey,
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Column(
-        children: [
-          SizedBox(
-            height: 240,
-            child: PageView.builder(
-              controller: _bookController,
-              padEnds: false,
-              itemCount: _books.length,
-              itemBuilder: (context, index) {
-                final book = _books[index];
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
-                  child: _TextbookCard(
-                    book: book,
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => TextbookViewerScreen(
-                          title: book.title,
-                          storagePath: book.storagePath,
+    // The cards are as tall as their longest title needs, at the current text
+    // size, so a long title or a larger system font is never cut off.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final titleHeight = _tallestBookTitle(
+          context,
+          _books,
+          constraints.maxWidth * _bookViewport - _bookCardSideSpace,
+        );
+        return Container(
+          key: _bookCarouselKey,
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Column(
+            children: [
+              SizedBox(
+                height: _bookCardHeight(titleHeight),
+                child: PageView.builder(
+                  controller: _bookController,
+                  padEnds: false,
+                  itemCount: _books.length,
+                  itemBuilder: (context, index) {
+                    final book = _books[index];
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      child: _TextbookCard(
+                        book: book,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => TextbookViewerScreen(
+                              title: book.title,
+                              storagePath: book.storagePath,
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(_books.length, (index) {
-              final isActive = index == _currentBookPage;
-              return Container(
-                margin: const EdgeInsets.symmetric(horizontal: 3),
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: isActive
-                      ? theme.colorScheme.primary
-                      : Colors.grey.shade500,
+                    );
+                  },
                 ),
-              );
-            }),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(_books.length, (index) {
+                  final isActive = index == _currentBookPage;
+                  return Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isActive
+                          ? theme.colorScheme.primary
+                          : Colors.grey.shade500,
+                    ),
+                  );
+                }),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -767,14 +835,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildCalendar(ThemeData theme) {
     final user = FirebaseAuth.instance.currentUser;
 
+    // A guest's entries are kept on this phone.
+    if (user == null) {
+      return ValueListenableBuilder<List<GuestJournalEntry>>(
+        valueListenable: GuestJournalStore.instance.entries,
+        builder: (context, entries, _) {
+          final marked = <DateTime>{
+            for (final e in entries)
+              DateUtils.dateOnly((e.data['createdAt'] as Timestamp).toDate()),
+          };
+          return _buildCalendarWidget(theme, marked);
+        },
+      );
+    }
+
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: user != null
-          ? FirebaseFirestore.instance
-                .collection('users')
-                .doc(user.uid)
-                .collection('journalEntries')
-                .snapshots()
-          : const Stream.empty(),
+      stream: FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('journalEntries')
+          .snapshots(),
       builder: (context, snapshot) {
         final markedDates = <DateTime>{};
         if (snapshot.hasData) {
@@ -815,6 +895,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
     final firstWeekday =
         DateTime(_displayedMonth.year, _displayedMonth.month, 1).weekday % 7;
+    // The "today" circle keeps its number inside it at larger text sizes.
+    final todayCircle = (MediaQuery.textScalerOf(context).scale(14) * 2.2)
+        .clamp(32.0, 44.0);
     final isCurrentMonth =
         _displayedMonth.year == now.year && _displayedMonth.month == now.month;
 
@@ -864,25 +947,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     });
                   },
                 ),
-                // Tap the month to jump straight to any date.
-                InkWell(
-                  borderRadius: BorderRadius.circular(8),
-                  onTap: _jumpToDate,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 6),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          '${c.months[_displayedMonth.month - 1]} '
-                          '${_displayedMonth.year}',
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.bold,
+                // Tap the month to jump straight to any date. The name wraps
+                // onto two lines when the text is large.
+                Flexible(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: _jumpToDate,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // As wide as the arrow on the other side, so the
+                          // month name sits exactly in the middle.
+                          const SizedBox(width: 24),
+                          Flexible(
+                            child: Text(
+                              // The month name stays in English.
+                              '${CalendarStrings.en.months[_displayedMonth.month - 1]} '
+                              '${_displayedMonth.year}',
+                              textAlign: TextAlign.center,
+                              style: theme.textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black,
+                              ),
+                            ),
+                          ),
+                          const Icon(
+                            Icons.arrow_drop_down,
                             color: Colors.black,
                           ),
-                        ),
-                        const Icon(Icons.arrow_drop_down, color: Colors.black),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -899,27 +995,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               ],
             ),
-            if (!isCurrentMonth)
-              TextButton(
+            // Always takes its room (hidden on the current month), so the card
+            // is the same height in every month.
+            Visibility(
+              visible: !isCurrentMonth,
+              maintainSize: true,
+              maintainAnimation: true,
+              maintainState: true,
+              child: TextButton(
                 onPressed: () => setState(() {
                   _displayedMonth = DateTime(now.year, now.month);
                 }),
                 child: Text(c.jumpToToday),
               ),
+            ),
             const SizedBox(height: 8),
 
             // Day headers
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
                 for (var i = 0; i < 7; i++)
-                  SizedBox(
-                    width: 32,
+                  Expanded(
                     child: Text(
                       c.weekdays[i],
                       textAlign: TextAlign.center,
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
+                      style: theme.textTheme.titleLarge?.copyWith(
                         // Weekends in maroon, the rest in black.
                         color: (i == 0 || i == 6)
                             ? theme.colorScheme.primary
@@ -932,105 +1032,128 @@ class _DashboardScreenState extends State<DashboardScreen> {
             const SizedBox(height: 4),
 
             // Calendar grid
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 7,
-                childAspectRatio: 1,
-              ),
-              itemCount: firstWeekday + daysInMonth,
-              itemBuilder: (context, index) {
-                if (index < firstWeekday) {
-                  return const SizedBox();
-                }
-                final day = index - firstWeekday + 1;
-                final thisDate = DateTime(
-                  _displayedMonth.year,
-                  _displayedMonth.month,
-                  day,
-                );
-                final isToday = isCurrentMonth && day == now.day;
-                final hasEntry = markedDates.contains(thisDate);
-                final isWeekend =
-                    thisDate.weekday == DateTime.saturday ||
-                    thisDate.weekday == DateTime.sunday;
-
-                return GestureDetector(
-                  onTap: hasEntry
-                      ? () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) =>
-                                  DayEntriesScreen(initialDate: thisDate),
-                            ),
-                          );
-                        }
-                      : null,
-                  child: Center(
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        // Today highlight
-                        if (isToday)
-                          Container(
-                            width: 32,
-                            height: 32,
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.primary,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                        // Day number
-                        Text(
-                          '$day',
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            // Days still to come are dimmed.
-                            color: isToday
-                                ? Colors.white
-                                : (thisDate.isAfter(today)
-                                      ? Colors.grey.shade500
-                                      : (isWeekend
-                                            ? theme.colorScheme.primary
-                                            : null)),
-                            fontWeight: isToday ? FontWeight.bold : null,
-                          ),
-                        ),
-                        // Journal entry dot
-                        if (hasEntry && !isToday)
-                          Positioned(
-                            bottom: 1,
-                            child: Container(
-                              width: 20,
-                              height: 15,
-                              decoration: BoxDecoration(
-                                color: theme.colorScheme.primary.withValues(
-                                  alpha: 0.3,
-                                ),
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                          ),
-
-                        // Today + entry: white dot
-                        if (hasEntry && isToday)
-                          Positioned(
-                            bottom: 1,
-                            child: Container(
-                              width: 6,
-                              height: 6,
-                              decoration: const BoxDecoration(
-                                color: Colors.white,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                          ),
-                      ],
+            LayoutBuilder(
+              // Always six rows tall (the most any month needs), so the card
+              // never changes size from one month to the next.
+              builder: (context, box) => SizedBox(
+                height: 6 * (box.maxWidth / 7).clamp(todayCircle + 4, 56.0),
+                child: GridView.builder(
+                  padding: EdgeInsets.zero,
+                  physics: const NeverScrollableScrollPhysics(),
+                  // Seven equal columns across the whole card (the same as the
+                  // day headers above). Rows are as tall as a column is wide, but
+                  // never shorter than the "today" circle needs (larger text) nor
+                  // taller than a fingertip needs (a wide screen), so the days
+                  // never clip and a wide card is not a tower of huge squares.
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 7,
+                    mainAxisExtent: (box.maxWidth / 7).clamp(
+                      todayCircle + 4,
+                      56.0,
                     ),
                   ),
-                );
-              },
+                  itemCount: firstWeekday + daysInMonth,
+                  itemBuilder: (context, index) {
+                    if (index < firstWeekday) {
+                      return const SizedBox();
+                    }
+                    final day = index - firstWeekday + 1;
+                    final thisDate = DateTime(
+                      _displayedMonth.year,
+                      _displayedMonth.month,
+                      day,
+                    );
+                    final isToday = isCurrentMonth && day == now.day;
+                    final hasEntry = markedDates.contains(thisDate);
+                    final isWeekend =
+                        thisDate.weekday == DateTime.saturday ||
+                        thisDate.weekday == DateTime.sunday;
+
+                    return GestureDetector(
+                      onTap: hasEntry
+                          ? () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      DayEntriesScreen(initialDate: thisDate),
+                                ),
+                              );
+                            }
+                          : null,
+                      child: Center(
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            // Today highlight
+                            if (isToday)
+                              Container(
+                                // Never wider than its column.
+                                width: math.min(
+                                  todayCircle,
+                                  box.maxWidth / 7 - 2,
+                                ),
+                                height: math.min(
+                                  todayCircle,
+                                  box.maxWidth / 7 - 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.primary,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            // Day number
+                            Text(
+                              '$day',
+                              style: theme.textTheme.bodyLarge?.copyWith(
+                                fontSize: 16,
+                                // Days still to come are dimmed.
+                                color: isToday
+                                    ? Colors.white
+                                    : (thisDate.isAfter(today)
+                                          ? Colors.grey.shade500
+                                          : (isWeekend
+                                                ? theme.colorScheme.primary
+                                                : null)),
+                                fontWeight: isToday ? FontWeight.bold : null,
+                              ),
+                            ),
+                            // Journal entry dot
+                            if (hasEntry && !isToday)
+                              Positioned(
+                                bottom: 1,
+                                child: Container(
+                                  width: 20,
+                                  height: 15,
+                                  decoration: BoxDecoration(
+                                    color: theme.colorScheme.primary.withValues(
+                                      alpha: 0.3,
+                                    ),
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                              ),
+
+                            // Today + entry: white dot
+                            if (hasEntry && isToday)
+                              Positioned(
+                                bottom: 1,
+                                child: Container(
+                                  width: 6,
+                                  height: 6,
+                                  decoration: const BoxDecoration(
+                                    color: Colors.white,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
             ),
             const SizedBox(height: 12),
 
@@ -1062,6 +1185,48 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 }
 
+// How wide the carousel's pages are, as a share of the row.
+const double _bookViewport = 0.75;
+
+// The cover picture's height inside a textbook card. The title under it takes
+// the height it needs.
+const double _bookImageHeight = 150;
+
+// Space a card's text can't use on its sides: the card margin (4 + 4) and
+// padding (10 + 10), plus the 6 + 6 around a carousel page.
+const double _bookCardSideSpace = 40;
+
+// Space above and below the cover and title inside a card: margin (4 + 4),
+// padding (10 + 10) and the gap under the cover (8).
+const double _bookCardFixedHeight = 36;
+
+TextStyle? _bookTitleStyle(ThemeData theme) =>
+    theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w500);
+
+/// The height of the tallest textbook title when it is wrapped to [width], at
+/// the phone's current text size.
+double _tallestBookTitle(
+  BuildContext context,
+  Iterable<_BookItem> books,
+  double width,
+) {
+  final style = _bookTitleStyle(Theme.of(context));
+  var tallest = 0.0;
+  for (final book in books) {
+    final painter = TextPainter(
+      text: TextSpan(text: book.title, style: style),
+      textAlign: TextAlign.center,
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout(maxWidth: math.max(width, 1));
+    tallest = math.max(tallest, painter.height);
+  }
+  return tallest;
+}
+
+double _bookCardHeight(double titleHeight) =>
+    _bookImageHeight + titleHeight + _bookCardFixedHeight;
+
 class _TextbookCard extends StatelessWidget {
   final _BookItem book;
   final VoidCallback onTap;
@@ -1084,7 +1249,8 @@ class _TextbookCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(
+              SizedBox(
+                height: _bookImageHeight,
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(10),
                   child: Image.asset(
@@ -1106,12 +1272,8 @@ class _TextbookCard extends StatelessWidget {
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
                   book.title,
-                  maxLines: 2,
                   textAlign: TextAlign.center,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    fontWeight: FontWeight.w500,
-                  ),
+                  style: _bookTitleStyle(theme),
                 ),
               ),
             ],
@@ -1130,56 +1292,59 @@ class _AllBooksScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Scaffold(
+      appBar: AppBar(
+        centerTitle: true,
+        title: const Text(
+          'First Aid Textbook Guide',
+          style: TextStyle(fontWeight: FontWeight.normal),
+        ),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios, size: 18),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back_ios, size: 18),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Text(
-                  'First Aid Textbook Guide',
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
               Expanded(
-                child: GridView.builder(
-                  padding: const EdgeInsets.all(8),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 12,
-                    childAspectRatio: 0.72,
-                  ),
-                  itemCount: books.length,
-                  itemBuilder: (context, index) {
-                    final book = books[index];
-                    return _TextbookCard(
-                      book: book,
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => TextbookViewerScreen(
-                            title: book.title,
-                            storagePath: book.storagePath,
-                          ),
-                        ),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    // Two columns; a cell's text can use its width minus the
+                    // card's own margin and padding.
+                    final cell = (constraints.maxWidth - 16 - 12) / 2;
+                    final titleHeight = _tallestBookTitle(
+                      context,
+                      books,
+                      cell - 28,
+                    );
+                    return GridView.builder(
+                      padding: const EdgeInsets.all(8),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        mainAxisSpacing: 12,
+                        crossAxisSpacing: 12,
+                        mainAxisExtent: _bookCardHeight(titleHeight),
                       ),
+                      itemCount: books.length,
+                      itemBuilder: (context, index) {
+                        final book = books[index];
+                        return _TextbookCard(
+                          book: book,
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => TextbookViewerScreen(
+                                title: book.title,
+                                storagePath: book.storagePath,
+                              ),
+                            ),
+                          ),
+                        );
+                      },
                     );
                   },
                 ),

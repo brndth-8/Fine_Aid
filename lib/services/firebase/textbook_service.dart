@@ -178,12 +178,19 @@ class TextbookService {
   /// there is no copy yet or the one in Storage has changed. Without a
   /// connection, an existing copy is used as it is.
   ///
+  /// With [refreshInBackground] a copy that is already on the phone is
+  /// returned AT ONCE (no waiting on the network, which on a slow connection
+  /// could take seconds before the book even started to open); whether Storage
+  /// has a newer one is then checked in the background, and the newer copy is
+  /// swapped in for the next time the book is opened.
+  ///
   /// Throws [TextbookOfflineException] when there is no copy and no
   /// connection, and [TextbookNotFoundException] when the file is missing in
   /// Storage.
   Future<File> getFile(
     String storagePath, {
     void Function(double progress)? onProgress,
+    bool refreshInBackground = false,
   }) async {
     final dir = await _cacheDirectory();
     await dir.create(recursive: true);
@@ -191,6 +198,20 @@ class TextbookService {
     final metaFile = File('${file.path}.meta');
 
     final cached = await _readCachedInfo(file, metaFile);
+
+    if (cached != null && refreshInBackground) {
+      if (_refreshing.add(storagePath)) {
+        unawaited(
+          _refresh(
+            storagePath,
+            file,
+            metaFile,
+            cached,
+          ).whenComplete(() => _refreshing.remove(storagePath)),
+        );
+      }
+      return file;
+    }
 
     RemoteFileInfo? remote;
     try {
@@ -232,6 +253,46 @@ class TextbookService {
       jsonEncode({'size': remote.size, 'updatedMs': remote.updatedMs}),
     );
     return file;
+  }
+
+  // Books being refreshed in the background (never two at once for one book).
+  final Set<String> _refreshing = {};
+
+  /// Checks Storage for a newer copy and, if there is one, downloads it and
+  /// swaps it in. Never throws: the copy on the phone stays as it is when
+  /// anything goes wrong (no connection, a dropped download).
+  Future<void> _refresh(
+    String storagePath,
+    File file,
+    File metaFile,
+    RemoteFileInfo cached,
+  ) async {
+    try {
+      final remote = await _remote
+          .info(storagePath)
+          .timeout(const Duration(seconds: 8));
+      if (cached.size == remote.size && cached.updatedMs == remote.updatedMs) {
+        return;
+      }
+      final part = File('${file.path}.part');
+      if (await part.exists()) await part.delete();
+      try {
+        await _remote.download(storagePath, part, (_) {});
+        if (await part.length() != remote.size) {
+          throw const FileSystemException('Incomplete download');
+        }
+      } catch (_) {
+        if (await part.exists()) await part.delete();
+        rethrow;
+      }
+      if (await file.exists()) await file.delete();
+      await part.rename(file.path);
+      await metaFile.writeAsString(
+        jsonEncode({'size': remote.size, 'updatedMs': remote.updatedMs}),
+      );
+    } catch (e) {
+      debugPrint('[Textbooks] background refresh of $storagePath failed: $e');
+    }
   }
 
   /// What the saved copy was when it was downloaded — null if there is no

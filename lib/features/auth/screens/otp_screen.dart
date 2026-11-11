@@ -5,9 +5,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import '../../../services/api/semaphore_service.dart';
 import '../../../services/firebase/auth_service.dart';
+import '../../../services/firebase/phone_reservation.dart';
+import '../../../core/ph_phone_validator.dart';
+import '../../../services/firebase/stale_contact_release.dart';
 import '../../../services/connectivity_service.dart';
 import '../../../core/network_error.dart';
 import 'package:flutter/services.dart';
+import '../../../i18n/screen_text_strings.dart';
 
 class OtpScreen extends StatefulWidget {
   const OtpScreen({super.key});
@@ -231,17 +235,39 @@ class _OtpScreenState extends State<OtpScreen> {
         final profileRef = FirebaseFirestore.instance
             .collection('users')
             .doc(user.uid);
-        final username =
-            (await profileRef.get()).data()?['username'] as String?;
-        await profileRef.update({'registrationComplete': false});
+        final profile = (await profileRef.get()).data();
+        final username = profile?['username'] as String?;
+        // The phone number and email the person typed were reserved at
+        // sign-up. Release them too, in the same batch that takes them off
+        // the profile, or a wrong number (or one that was right all along)
+        // stays "already registered" after going back.
+        final phone = (profile?['phoneNumber'] as String?)?.trim();
+        final email = (profile?['recoveryEmail'] as String?)
+            ?.trim()
+            .toLowerCase();
+        final db = FirebaseFirestore.instance;
+        final batch = db.batch();
+        batch.update(profileRef, {
+          'registrationComplete': false,
+          if (phone != null && phone.isNotEmpty)
+            'phoneNumber': FieldValue.delete(),
+          if (email != null && email.isNotEmpty)
+            'recoveryEmail': FieldValue.delete(),
+        });
+        if (phone != null && phone.isNotEmpty) {
+          batch.delete(
+            db.collection('phones').doc(normalizePhone(phone) ?? phone),
+          );
+        }
+        if (email != null && email.isNotEmpty) {
+          batch.delete(db.collection('emails').doc(email));
+        }
         if (username != null && username.trim().isNotEmpty) {
           // Registration reserves the username under its exact-case doc ID
           // (see RegistrationFlow) — release that same doc.
-          await FirebaseFirestore.instance
-              .collection('usernames')
-              .doc(username.trim())
-              .delete();
+          batch.delete(db.collection('usernames').doc(username.trim()));
         }
+        await batch.commit();
         await user.delete();
       } catch (e) {
         debugPrint('OTP back: could not fully clean up, signing out: $e');
@@ -259,42 +285,26 @@ class _OtpScreenState extends State<OtpScreen> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    final controller = TextEditingController(text: _phoneNumber ?? '');
+    // The dialog owns its text field's controller (see EditPhoneDialog): a
+    // controller disposed here, as soon as the dialog is popped, would still be
+    // in use while the dialog slides away, and Cancel then crashed.
     final newNumber = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Edit Phone Number'),
-        content: TextField(
-          controller: controller,
-          keyboardType: TextInputType.phone,
-          autofocus: true,
-          inputFormatters: [
-            FilteringTextInputFormatter.allow(RegExp(r'[\d+]')),
-          ],
-          decoration: const InputDecoration(
-            hintText: 'e.g. 09171234567',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          OutlinedButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () =>
-                Navigator.pop(dialogContext, controller.text.trim()),
-            child: const Text('Save & Resend'),
-          ),
-        ],
-      ),
+      builder: (_) => EditPhoneDialog(initial: _phoneNumber ?? ''),
     );
-    controller.dispose();
 
     if (newNumber == null || newNumber.isEmpty || newNumber == _phoneNumber) {
       return;
     }
+
+    // Saved in one standard form (+639XXXXXXXXX), the way sign-up stores it,
+    // so "09171234567" and "+63 917 123 4567" are the same number.
+    final canonical = normalizePhone(newNumber);
+    if (canonical == null) {
+      setState(() => _otpError = phPhoneErrorMessage);
+      return;
+    }
+    if (canonical == normalizePhone(_phoneNumber ?? '')) return;
 
     setState(() {
       _isEditingPhone = true;
@@ -302,11 +312,31 @@ class _OtpScreenState extends State<OtpScreen> {
     });
 
     try {
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .update({'phoneNumber': newNumber})
+      // The profile and the phone reservation change in one transaction; a
+      // number another account already has is refused.
+      final firestore = FirebaseFirestore.instance;
+      final userRef = firestore.collection('users').doc(user.uid);
+      Future<void> save() => firestore
+          .runTransaction((tx) async {
+            final applyPhone = await PhoneReservation.prepare(
+              tx,
+              firestore,
+              uid: user.uid,
+              newPhone: canonical,
+              oldPhone: _phoneNumber,
+            );
+            tx.update(userRef, {'phoneNumber': canonical});
+            applyPhone();
+          })
           .timeout(const Duration(seconds: 10));
+      try {
+        await save();
+      } on PhoneTakenException {
+        // "Already registered": it may only be a ghost (an unfinished or
+        // deleted sign-up). The server frees those; a real account stays.
+        if (!await askServerToReleaseContact('phone', canonical)) rethrow;
+        await save();
+      }
 
       for (final c in _controllers) {
         c.clear();
@@ -314,11 +344,15 @@ class _OtpScreenState extends State<OtpScreen> {
       _cooldownTimer?.cancel();
       if (!mounted) return;
       setState(() {
-        _phoneNumber = newNumber;
+        _phoneNumber = canonical;
         _codeSent = false;
         _resendCooldown = 0;
       });
       await _sendOtp();
+    } on PhoneTakenException {
+      if (mounted) {
+        setState(() => _otpError = ScreenText.of(context).phoneTaken);
+      }
     } catch (e) {
       debugPrint('OTP edit phone number error: $e');
       if (mounted) {
@@ -362,7 +396,6 @@ class _OtpScreenState extends State<OtpScreen> {
 
     switch (result) {
       case OtpVerificationResult.success:
-        await SemaphoreService().clearOtp();
         if (mounted) Navigator.pushNamed(context, '/terms');
         break;
       case OtpVerificationResult.invalid:
@@ -528,11 +561,13 @@ class _OtpScreenState extends State<OtpScreen> {
                                 minimumSize: const Size(0, 32),
                                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               ),
-                              child: const Text('Wrong number? Edit'),
+                              child: Text(
+                                ScreenText.of(context).wrongNumberEdit,
+                              ),
                             ),
                           ),
                         if (_isEditingPhone)
-                          const Padding(
+                          Padding(
                             padding: EdgeInsets.symmetric(vertical: 6),
                             child: Row(
                               children: [
@@ -544,7 +579,7 @@ class _OtpScreenState extends State<OtpScreen> {
                                   ),
                                 ),
                                 SizedBox(width: 8),
-                                Text('Updating phone number...'),
+                                Text(ScreenText.of(context).updatingPhone),
                               ],
                             ),
                           ),
@@ -664,7 +699,7 @@ class _OtpScreenState extends State<OtpScreen> {
                                     color: Colors.white,
                                   ),
                                 )
-                              : const Text('Submit'),
+                              : Text(ScreenText.of(context).submit),
                         ),
                       ],
                     ),
@@ -717,6 +752,59 @@ class _OtpScreenState extends State<OtpScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// "Edit Phone Number": a text field with Cancel and Save and resend. Returns
+/// the typed number, or null for Cancel. It creates and disposes its own
+/// controller with the dialog, so nothing is disposed while it is on screen.
+class EditPhoneDialog extends StatefulWidget {
+  const EditPhoneDialog({super.key, required this.initial});
+
+  final String initial;
+
+  @override
+  State<EditPhoneDialog> createState() => EditPhoneDialogState();
+}
+
+class EditPhoneDialogState extends State<EditPhoneDialog> {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initial,
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final text = ScreenText.of(context);
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: const Text('Edit Phone Number'),
+      content: TextField(
+        controller: _controller,
+        keyboardType: TextInputType.phone,
+        autofocus: true,
+        inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[\d+]'))],
+        decoration: const InputDecoration(
+          hintText: 'e.g. 09171234567',
+          border: OutlineInputBorder(),
+        ),
+      ),
+      actions: [
+        OutlinedButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(text.cancel),
+        ),
+        ElevatedButton(
+          onPressed: () => Navigator.pop(context, _controller.text.trim()),
+          child: Text(text.saveAndResend),
+        ),
+      ],
     );
   }
 }

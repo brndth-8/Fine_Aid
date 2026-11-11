@@ -8,6 +8,8 @@ import 'package:firebase_core_platform_interface/test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'date_boxes_helpers.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -27,6 +29,7 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
       await tester.pumpWidget(const MaterialApp(home: RegistrationScreen()));
       await tester.pump();
+      await _toAccountPage(tester);
 
       final phone = tester.widget<TextField>(
         find.ancestor(
@@ -100,8 +103,8 @@ void main() {
 
     for (final width in [320.0, 360.0, 412.0]) {
       for (final language in AppLanguage.values) {
-        testWidgets('${language.name} at ${width.toInt()} dp: 13 sp, no '
-            'overflow, bar height unchanged', (tester) async {
+        testWidgets('${language.name} at ${width.toInt()} dp: 10 sp, labels '
+            'wrap in full, bar as tall as they need', (tester) async {
           await pump(tester, width, language);
           final n = NavStrings.of(tester.element(find.byType(Scaffold)));
           for (final label in [
@@ -114,19 +117,78 @@ void main() {
               DefaultTextStyle.of(
                 tester.element(find.text(label)),
               ).style.fontSize,
-              13,
+              10,
             );
-            expect(text.maxLines, 2);
+            // never cut with "..." — the bar grows instead
+            expect(text.maxLines, isNull);
+            expect(text.overflow, isNot(TextOverflow.ellipsis));
           }
-          // the bar itself is still 70 dp tall (+42 dp of room above it)
-          expect(tester.getSize(find.byType(CustomBottomNavBar)).height, 112);
+          // at least the normal 70 dp bar (+42 dp of room above it); the
+          // test font is wider than a real one, so it may need more
+          expect(
+            tester.getSize(find.byType(CustomBottomNavBar)).height,
+            greaterThanOrEqualTo(112),
+          );
           expect(tester.takeException(), isNull);
         });
       }
     }
 
+    testWidgets('labels that fit leave the bar at its normal height', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(360, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            bottomNavigationBar: CustomBottomNavBar(
+              items: const [
+                BottomNavItem(icon: Icons.menu_book_outlined, label: 'Log'),
+                BottomNavItem(
+                  icon: Icons.crop_free,
+                  label: 'Scan',
+                  badge: 'AI',
+                ),
+                BottomNavItem(
+                  icon: Icons.support_agent_outlined,
+                  label: 'Help',
+                ),
+              ],
+              onItemTap: (_) {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.getSize(find.byType(CustomBottomNavBar)).height, 112);
+    });
+
     test('Tagalog labels exist', () {
       expect(NavStrings.tl.helpAndSupport, isNot(NavStrings.en.helpAndSupport));
     });
   });
+}
+
+/// Fills the sign-up screen's first page and moves to Account details, where
+/// the phone and username fields are.
+Future<void> _toAccountPage(WidgetTester tester) async {
+  final fields = find.byType(TextFormField);
+  await tester.enterText(fields.at(0), 'Juan');
+  await tester.enterText(fields.at(1), 'Dela Cruz');
+  await tester.pump();
+  await tester.tap(fields.at(2));
+  await tester.pumpAndSettle();
+  await enterDate(tester, 'start', '01152000');
+  await tester.pump();
+  await tester.tap(find.text('OK'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byType(DropdownButtonFormField<String>));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('Male').last);
+  await tester.pumpAndSettle();
+  await tester.tap(find.widgetWithText(ElevatedButton, 'Next'));
+  await tester.pumpAndSettle();
 }

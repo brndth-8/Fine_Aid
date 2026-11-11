@@ -5,11 +5,11 @@ import 'package:fine_aid/features/dashboard/screens/notifications_screen.dart';
 
 void main() {
   group('check-in wording', () {
-    test('the notification only asks "Are you feeling better?"', () {
-      expect(NotificationStrings.en.checkInBody, 'Are you feeling better?');
-      expect(NotificationStrings.en.actionBetter, 'Feeling Better');
-      expect(NotificationStrings.en.actionNotYet, 'Not Yet');
-      expect(NotificationStrings.en.actionWorse, 'It\'s Worse');
+    test('the notification only asks "How are you feeling?"', () {
+      expect(NotificationStrings.en.checkInBody, 'How are you feeling?');
+      expect(NotificationStrings.en.actionBetter, 'Feeling better');
+      expect(NotificationStrings.en.actionNotYet, 'No change');
+      expect(NotificationStrings.en.actionWorse, 'Getting worse');
     });
   });
 

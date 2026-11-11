@@ -28,7 +28,5 @@ class SiteConfig {
 
   /// Where the download QR code points (decoded from assets/web/qr.png).
   /// The QR image and this link must stay in sync — regenerate both together.
-  static final Uri downloadUri = Uri.parse(
-    'https://drive.google.com/file/d/1k1aeMy5rfR5qex6GWdpY099jZJXmRspI/view',
-  );
+  static final Uri downloadUri = Uri.parse('https://qrco.de/bh6CFQ');
 }

@@ -36,6 +36,37 @@ class StepImageStrings {
       'avoid_harsh_product':
           'Illustration of not using harsh products on a wound',
       'call_emergency': 'Illustration of calling emergency services',
+      'prepare_clean_warm_water_and_a_soft_towel_1':
+          'Illustration of a basin of warm water and a soft towel',
+      'wash_the_affected_are_and_remove_surface_debris_1':
+          'Illustration of washing a wound under running water to remove dirt',
+      'protect_the_face_from_direct_sunlight_1':
+          'Illustration of shading the face from the sun',
+      'consult_a_doctor_for_formal_evaluation_1':
+          'Illustration of a doctor examining an injured arm',
+      'Apply_mild_fragrance_free_moisturizer_1':
+          'Illustration of a jar of fragrance-free moisturizer being applied',
+      'consult_a_doctor_if_not_better_1':
+          'Illustration of a doctor in a mask next to a calendar and a rash',
+      'gather_gauze_or_cloth_1':
+          'Illustration of a pack of sterile gauze or a clean cloth',
+      'keep_track_of_changes_1':
+          'Illustration of a calendar and a magnifying glass over a rash',
+      'air_dry_do_not_rub_1':
+          'Illustration of skin left to air-dry, with a towel crossed out',
+      'check_what_you_see_1':
+          'Illustration of a magnifying glass over a rash and its types',
+      'keep_area_dry_1':
+          'Illustration of keeping the skin dry, with a water drop crossed out',
+      'cool_damp_cloth_1':
+          'Illustration of a cool, damp cloth held on the skin',
+      'sterile_gauze_cover_1':
+          'Illustration of sterile gauze placed over the skin',
+      'gauze_or_clean_towel_1': 'Illustration of gauze or a clean towel',
+      'warning_signs_to_watch_1':
+          'Illustration of warning signs: pus, swelling and fever',
+      'blisters_seek_care_1':
+          'Illustration of blisters and an arrow pointing to a hospital',
     },
   );
 
@@ -61,6 +92,38 @@ class StepImageStrings {
       'avoid_harsh_product':
           'Larawan ng hindi paggamit ng matatapang na produkto sa sugat',
       'call_emergency': 'Larawan ng pagtawag sa emergency services',
+      'prepare_clean_warm_water_and_a_soft_towel_1':
+          'Larawan ng palanggana ng maligamgam na tubig at malambot na tuwalya',
+      'wash_the_affected_are_and_remove_surface_debris_1':
+          'Larawan ng paghuhugas ng sugat sa umaagos na tubig para alisin ang '
+          'dumi',
+      'protect_the_face_from_direct_sunlight_1':
+          'Larawan ng pagtatakip sa mukha mula sa araw',
+      'consult_a_doctor_for_formal_evaluation_1':
+          'Larawan ng doktor na sumusuri sa nasugatang braso',
+      'Apply_mild_fragrance_free_moisturizer_1':
+          'Larawan ng paglalagay ng moisturizer na walang pabango',
+      'consult_a_doctor_if_not_better_1':
+          'Larawan ng doktor na may mask sa tabi ng kalendaryo at pantal',
+      'gather_gauze_or_cloth_1':
+          'Larawan ng pakete ng sterile na gasa o malinis na tela',
+      'keep_track_of_changes_1':
+          'Larawan ng kalendaryo at magnifying glass sa ibabaw ng pantal',
+      'air_dry_do_not_rub_1':
+          'Larawan ng balat na hinahayaang matuyo sa hangin, may ekis ang tuwalya',
+      'check_what_you_see_1':
+          'Larawan ng magnifying glass sa ibabaw ng pantal at ng mga uri nito',
+      'keep_area_dry_1':
+          'Larawan ng pagpapanatiling tuyo ng balat, may ekis ang patak ng tubig',
+      'cool_damp_cloth_1':
+          'Larawan ng malamig at basang tela na nakadampi sa balat',
+      'sterile_gauze_cover_1':
+          'Larawan ng sterile na gasa na nakatakip sa balat',
+      'gauze_or_clean_towel_1': 'Larawan ng gasa o malinis na tuwalya',
+      'warning_signs_to_watch_1':
+          'Larawan ng mga babalang palatandaan: nana, pamamaga at lagnat',
+      'blisters_seek_care_1':
+          'Larawan ng mga paltos at palaso patungo sa ospital',
     },
   );
 }

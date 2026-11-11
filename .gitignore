@@ -16,3 +16,6 @@ tool/seed_admin/node_modules
 
 # Local Claude Code session state — machine/session-specific, not project config.
 .claude/scheduled_tasks.lock
+
+# Backups written by functions/scripts/remove-unused-duplicate-accounts.js (personal data)
+functions/remove-accounts-backup-*.json

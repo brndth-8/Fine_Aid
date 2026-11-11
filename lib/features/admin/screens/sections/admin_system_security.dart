@@ -1,11 +1,24 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../admin_config.dart';
+import '../../admin_security_settings.dart';
+import '../../admin_two_step.dart' show watchAdminTwoStepRequired;
 import '../widgets/admin_name_lookup.dart';
 import '../widgets/admin_pagination.dart';
 import '../widgets/admin_shared_widgets.dart';
+import '../widgets/admin_two_step_card.dart';
+
+/// The idle-timeout duration can only be changed while the timeout switch is
+/// OFF: turn it off, pick the length, then turn it back on to use it. Never
+/// while the setting is still loading or a save is in progress.
+bool idleDurationEditable({
+  required bool loaded,
+  required bool saving,
+  required bool idleEnabled,
+}) => loaded && !saving && !idleEnabled;
 
 enum _Level { enforced, partial, off }
 
@@ -20,9 +33,11 @@ class _Protection {
 
 /// What this system actually does today. These used to be on/off switches
 /// that only flipped local state (and a "Settings saved." message that saved
-/// nothing), so they implied controls that never existed. Each row is now a
-/// read-only status, worded to match what is really in place — change a row
-/// here only when the underlying behaviour really changes.
+/// nothing). Rows here are read-only because they describe how the platform is
+/// built and can't be switched from a page; the one real setting, the idle
+/// session timeout, is the interactive row at the top of the card (saved to
+/// Firestore and applied by the portal). Change a row here only when the
+/// underlying behaviour really changes.
 final _protections = <_Protection>[
   const _Protection(
     Icons.storage_outlined,
@@ -39,8 +54,16 @@ final _protections = <_Protection>[
   const _Protection(
     Icons.admin_panel_settings_outlined,
     'Role-based access',
-    'Only accounts in the admins collection can use this portal, and '
-        'Firestore rules enforce it on every request.',
+    'Admin access needs a server-set "admin" claim on the sign-in account '
+        'AND an entry in the admins collection. Neither can be granted from '
+        'a browser, and Firestore rules and every admin function check both.',
+    _Level.enforced,
+  ),
+  const _Protection(
+    Icons.fact_check_outlined,
+    'Admin sign-in monitoring',
+    'Admin sign-ins, refused sign-ins by non-admins, and failed attempts on '
+        'an admin account are written to the audit log (type LOGIN).',
     _Level.enforced,
   ),
   const _Protection(
@@ -50,29 +73,29 @@ final _protections = <_Protection>[
         'deleted from the portal; nothing is deleted automatically.',
     _Level.enforced,
   ),
-  _Protection(
-    Icons.timer_outlined,
-    'Idle session timeout',
-    'Enabled: ${kAdminIdleTimeout.inMinutes} minutes. An idle admin gets a '
-        'warning ${kAdminIdleWarning.inSeconds} seconds before being signed '
-        'out.',
-    _Level.enforced,
-  ),
-  const _Protection(
-    Icons.lock_clock_outlined,
-    'Failed login lockout',
-    'The mobile app locks a username for 15 minutes after 5 failed '
-        'attempts, but that check runs in the app, not on the server. '
-        'Admin sign-in is rate-limited by Firebase Auth.',
-    _Level.partial,
-  ),
-  const _Protection(
-    Icons.phonelink_lock_outlined,
-    'Two-factor authentication (2FA)',
-    'Not set up. Admin accounts sign in with email and password only.',
-    _Level.off,
-  ),
 ];
+
+/// The two-factor row follows the real setting (appConfig/adminAuth): enforced
+/// once admins are required to use an authenticator code, otherwise only
+/// available (each admin can enrol, but nobody has to yet).
+_Protection _twoStepProtection(bool required) => required
+    ? const _Protection(
+        Icons.phonelink_lock_outlined,
+        'Two-factor authentication (2FA)',
+        'Every admin signs in with a code from an authenticator app as well as '
+            'their password. The sign-in rules and every admin function check '
+            'it.',
+        _Level.enforced,
+      )
+    : const _Protection(
+        Icons.phonelink_lock_outlined,
+        'Two-factor authentication (2FA)',
+        'Available but not required: admins can set up an authenticator app '
+            '(Two-step verification card), but can still sign in with just a '
+            'password. Switch on "Require a code for every admin" to enforce '
+            'it.',
+        _Level.partial,
+      );
 
 class AdminSystemSecurity extends StatefulWidget {
   /// Runs the dashboard's confirm-then-logout flow.
@@ -91,6 +114,12 @@ class _AdminSystemSecurityState extends State<AdminSystemSecurity> {
         .orderBy('timestamp', descending: true),
     pageSize: 5,
   );
+
+  late final Stream<AdminSecuritySettings> _settingsStream =
+      AdminSecuritySettings.watch();
+  late final Stream<bool> _twoStepStream = watchAdminTwoStepRequired();
+  bool _savingSetting = false;
+  bool _savingLockout = false;
 
   final _names = AdminNameLookup(
     collection: 'admins',
@@ -123,8 +152,36 @@ class _AdminSystemSecurityState extends State<AdminSystemSecurity> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final gaps = _protections.where((p) => p.level == _Level.off).length;
-    final partial = _protections.where((p) => p.level == _Level.partial).length;
+    return StreamBuilder<AdminSecuritySettings>(
+      stream: _settingsStream,
+      builder: (context, settingsSnap) => StreamBuilder<bool>(
+        stream: _twoStepStream,
+        builder: (context, twoStepSnap) =>
+            _page(context, theme, settingsSnap, twoStepSnap.data),
+      ),
+    );
+  }
+
+  Widget _page(
+    BuildContext context,
+    ThemeData theme,
+    AsyncSnapshot<AdminSecuritySettings> settingsSnap,
+    bool? twoStepRequired,
+  ) {
+    // Null until the saved setting has loaded; the defaults stand in for the
+    // banner only, and the controls stay disabled meanwhile.
+    final settings = settingsSnap.data ?? AdminSecuritySettings.defaults;
+    // The 2FA row joins once its setting has loaded (no flash of "needs
+    // attention" before then).
+    final protections = [
+      ..._protections,
+      if (twoStepRequired != null) _twoStepProtection(twoStepRequired),
+    ];
+    final gaps =
+        protections.where((p) => p.level == _Level.off).length +
+        (settings.idleTimeoutEnabled ? 0 : 1) +
+        (settings.lockoutEnabled ? 0 : 1);
+    final partial = protections.where((p) => p.level == _Level.partial).length;
 
     return Column(
       children: [
@@ -144,31 +201,46 @@ class _AdminSystemSecurityState extends State<AdminSystemSecurity> {
                 LayoutBuilder(
                   builder: (context, constraints) {
                     final wide = constraints.maxWidth >= 900;
-                    final protections = _protectionsCard(theme);
-                    final session = Column(
+                    final protectionsCard = _protectionsCard(
+                      theme,
+                      settingsSnap,
+                      protections,
+                    );
+                    // Wide: the right column is as tall as the protections
+                    // card and Password policy grows to fill what is left, so
+                    // there is no blank space under it.
+                    Widget sessionColumn({required bool fill}) => Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         _sessionCard(context, theme),
                         const SizedBox(height: 16),
-                        _passwordCard(theme),
+                        const AdminTwoStepCard(),
+                        const SizedBox(height: 16),
+                        if (fill)
+                          Expanded(child: _passwordCard(theme))
+                        else
+                          _passwordCard(theme),
                       ],
                     );
+                    final session = sessionColumn(fill: false);
                     if (!wide) {
                       return Column(
                         children: [
-                          protections,
+                          protectionsCard,
                           const SizedBox(height: 16),
                           session,
                         ],
                       );
                     }
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(flex: 3, child: protections),
-                        const SizedBox(width: 16),
-                        Expanded(flex: 2, child: session),
-                      ],
+                    return IntrinsicHeight(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(flex: 3, child: protectionsCard),
+                          const SizedBox(width: 16),
+                          Expanded(flex: 2, child: sessionColumn(fill: true)),
+                        ],
+                      ),
                     );
                   },
                 ),
@@ -230,7 +302,11 @@ class _AdminSystemSecurityState extends State<AdminSystemSecurity> {
     );
   }
 
-  Widget _protectionsCard(ThemeData theme) {
+  Widget _protectionsCard(
+    ThemeData theme,
+    AsyncSnapshot<AdminSecuritySettings> settingsSnap,
+    List<_Protection> protections,
+  ) {
     return _card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -238,18 +314,366 @@ class _AdminSystemSecurityState extends State<AdminSystemSecurity> {
           Text('Security protocols', style: theme.textTheme.titleMedium),
           const SizedBox(height: 4),
           Text(
-            'Read-only. These reflect how the system is built, not settings '
-            'that can be switched here.',
+            'The idle session timeout can be switched here; it is saved and '
+            'applies to every admin. The other rows show how the system is '
+            'built and are read-only.',
             style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey),
           ),
           const SizedBox(height: 12),
-          for (var i = 0; i < _protections.length; i++) ...[
-            if (i > 0) const Divider(height: 24),
-            _protectionRow(theme, _protections[i]),
+          _idleTimeoutRow(theme, settingsSnap),
+          const Divider(height: 24),
+          _lockoutRow(theme, settingsSnap),
+          for (final p in protections) ...[
+            const Divider(height: 24),
+            _protectionRow(theme, p),
           ],
         ],
       ),
     );
+  }
+
+  /// The one real setting: switch the idle timeout on/off and pick how long.
+  /// The switch always shows the SAVED value (from Firestore); a change is
+  /// sent to the server and only reported as done once it has been saved, so
+  /// a failure leaves the switch where it was.
+  Widget _idleTimeoutRow(
+    ThemeData theme,
+    AsyncSnapshot<AdminSecuritySettings> snap,
+  ) {
+    final loaded = snap.hasData;
+    final s = snap.data ?? AdminSecuritySettings.defaults;
+    final busy = _savingSetting || !loaded;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Icon(Icons.timer_outlined, size: 22, color: Colors.black54),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Idle session timeout',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                snap.hasError
+                    ? "Couldn't load this setting. Try reloading the page."
+                    : !loaded
+                    ? 'Loading…'
+                    : s.idleTimeoutEnabled
+                    ? 'On: an idle admin is signed out after ${s.idleTimeoutMinutes} '
+                          'minutes, with a warning ${kAdminIdleWarning.inSeconds} '
+                          'seconds before.'
+                    : 'Off: admins stay signed in until they log out. Pick the '
+                          'length below, then switch it back on to use it.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: snap.hasError ? Colors.redAccent : Colors.grey,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Text('Sign out after', style: theme.textTheme.bodySmall),
+                  const SizedBox(width: 8),
+                  DropdownButton<int>(
+                    value: s.idleTimeoutMinutes,
+                    isDense: true,
+                    items: [
+                      for (final m in AdminSecuritySettings.allowedMinutes)
+                        DropdownMenuItem(value: m, child: Text('$m minutes')),
+                    ],
+                    // Locked while the timeout is ON: switch it off first.
+                    onChanged:
+                        idleDurationEditable(
+                          loaded: loaded,
+                          saving: _savingSetting,
+                          idleEnabled: s.idleTimeoutEnabled,
+                        )
+                        ? (m) => _applySetting(
+                            enabled: false,
+                            minutes: m ?? s.idleTimeoutMinutes,
+                            durationOnly: true,
+                          )
+                        : null,
+                  ),
+                ],
+              ),
+              if (loaded && s.idleTimeoutEnabled)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.lock_outline,
+                        size: 13,
+                        color: Colors.grey,
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          'Switch the idle timeout off to change the length.',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_savingSetting)
+                  const Padding(
+                    padding: EdgeInsets.only(right: 8),
+                    child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                Switch(
+                  value: s.idleTimeoutEnabled,
+                  onChanged: busy
+                      ? null
+                      : (on) => _applySetting(
+                          enabled: on,
+                          minutes: s.idleTimeoutMinutes,
+                        ),
+                ),
+              ],
+            ),
+            _levelBadge(
+              theme,
+              loaded && s.idleTimeoutEnabled ? _Level.enforced : _Level.off,
+              enforcedLabel: 'Active',
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// The failed-login lockout: switch it on/off and choose how many wrong
+  /// passwords are allowed and for how long the account is then locked. The
+  /// app's sign-in screen reads this setting before every attempt, so what is
+  /// saved here is what runs. Like the idle timeout, the switch shows the
+  /// SAVED value and a failed save leaves it where it was.
+  Widget _lockoutRow(
+    ThemeData theme,
+    AsyncSnapshot<AdminSecuritySettings> snap,
+  ) {
+    final loaded = snap.hasData;
+    final s = snap.data ?? AdminSecuritySettings.defaults;
+    final busy = _savingLockout || !loaded;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Icon(Icons.lock_clock_outlined, size: 22, color: Colors.black54),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Failed login lockout',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                snap.hasError
+                    ? "Couldn't load this setting. Try reloading the page."
+                    : !loaded
+                    ? 'Loading…'
+                    : s.lockoutEnabled
+                    ? 'Active: after ${s.lockoutMaxAttempts} wrong passwords an '
+                          'account is locked for ${s.lockoutMinutes} minutes. '
+                          "The app's sign-in screen reads this before every "
+                          'attempt.'
+                    : 'Off: accounts are never locked for wrong passwords.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: snap.hasError ? Colors.redAccent : Colors.grey,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 16,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('Lock after', style: theme.textTheme.bodySmall),
+                      const SizedBox(width: 8),
+                      DropdownButton<int>(
+                        value: s.lockoutMaxAttempts,
+                        isDense: true,
+                        items: [
+                          for (final a
+                              in AdminSecuritySettings.allowedLockoutAttempts)
+                            DropdownMenuItem(
+                              value: a,
+                              child: Text('$a wrong passwords'),
+                            ),
+                        ],
+                        onChanged: busy || !s.lockoutEnabled
+                            ? null
+                            : (a) => _applyLockout(
+                                enabled: true,
+                                attempts: a ?? s.lockoutMaxAttempts,
+                                minutes: s.lockoutMinutes,
+                              ),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('Locked for', style: theme.textTheme.bodySmall),
+                      const SizedBox(width: 8),
+                      DropdownButton<int>(
+                        value: s.lockoutMinutes,
+                        isDense: true,
+                        items: [
+                          for (final m
+                              in AdminSecuritySettings.allowedLockoutMinutes)
+                            DropdownMenuItem(
+                              value: m,
+                              child: Text('$m minutes'),
+                            ),
+                        ],
+                        onChanged: busy || !s.lockoutEnabled
+                            ? null
+                            : (m) => _applyLockout(
+                                enabled: true,
+                                attempts: s.lockoutMaxAttempts,
+                                minutes: m ?? s.lockoutMinutes,
+                              ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_savingLockout)
+                  const Padding(
+                    padding: EdgeInsets.only(right: 8),
+                    child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                Switch(
+                  value: s.lockoutEnabled,
+                  onChanged: busy
+                      ? null
+                      : (on) => _applyLockout(
+                          enabled: on,
+                          attempts: s.lockoutMaxAttempts,
+                          minutes: s.lockoutMinutes,
+                        ),
+                ),
+              ],
+            ),
+            _levelBadge(
+              theme,
+              loaded && s.lockoutEnabled ? _Level.enforced : _Level.off,
+              enforcedLabel: 'Active',
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Future<void> _applyLockout({
+    required bool enabled,
+    required int attempts,
+    required int minutes,
+  }) async {
+    if (_savingLockout) return;
+    setState(() => _savingLockout = true);
+    String message;
+    try {
+      final saved = await AdminSecuritySettings.save(
+        lockoutEnabled: enabled,
+        lockoutMaxAttempts: attempts,
+        lockoutMinutes: minutes,
+      );
+      message = saved.lockoutEnabled
+          ? 'Lockout is on: ${saved.lockoutMaxAttempts} wrong passwords lock '
+                'an account for ${saved.lockoutMinutes} minutes.'
+          : 'Lockout is off.';
+    } on FirebaseFunctionsException catch (e) {
+      message =
+          "Couldn't save the setting: ${e.message ?? e.code}. It was not changed.";
+    } catch (_) {
+      message = "Couldn't reach the server. The setting was not changed.";
+    }
+    if (!mounted) return;
+    setState(() => _savingLockout = false);
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _applySetting({
+    required bool enabled,
+    required int minutes,
+    bool durationOnly = false,
+  }) async {
+    if (_savingSetting) return;
+    setState(() => _savingSetting = true);
+    String message;
+    try {
+      final saved = await AdminSecuritySettings.save(
+        idleTimeoutEnabled: enabled,
+        idleTimeoutMinutes: minutes,
+      );
+      message = saved.idleTimeoutEnabled
+          ? 'Idle timeout is on: admins are signed out after ${saved.idleTimeoutMinutes} '
+                'minutes of inactivity.'
+          : durationOnly
+          ? 'Length saved: ${saved.idleTimeoutMinutes} minutes. The idle '
+                'timeout is still off; switch it on to use it.'
+          : 'Idle timeout is off.';
+    } on FirebaseFunctionsException catch (e) {
+      message =
+          "Couldn't save the setting: ${e.message ?? e.code}. It was not changed.";
+    } catch (_) {
+      message = "Couldn't reach the server. The setting was not changed.";
+    }
+    if (!mounted) return;
+    setState(() => _savingSetting = false);
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Widget _protectionRow(ThemeData theme, _Protection p) {
@@ -282,9 +706,13 @@ class _AdminSystemSecurityState extends State<AdminSystemSecurity> {
     );
   }
 
-  Widget _levelBadge(ThemeData theme, _Level level) {
+  Widget _levelBadge(
+    ThemeData theme,
+    _Level level, {
+    String enforcedLabel = 'Enforced',
+  }) {
     final (label, color, icon) = switch (level) {
-      _Level.enforced => ('Enforced', Colors.green, Icons.lock_outline),
+      _Level.enforced => (enforcedLabel, Colors.green, Icons.lock_outline),
       _Level.partial => ('Partial', Colors.orange, Icons.rule),
       _Level.off => ('Not enabled', Colors.grey, Icons.block),
     };
@@ -429,104 +857,118 @@ class _AdminSystemSecurityState extends State<AdminSystemSecurity> {
               ],
             ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            color: Colors.grey.shade50,
-            child: Row(
+          // One horizontal scroll for header + rows so a phone keeps the
+          // columns readable instead of squeezing them.
+          AdminHScroll(
+            minWidth: 640,
+            child: Column(
               children: [
-                _th(theme, 'Date & time', flex: 2),
-                _th(theme, 'User', flex: 2),
-                _th(theme, 'Type', flex: 1),
-                _th(theme, 'Details', flex: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  color: Colors.grey.shade50,
+                  child: Row(
+                    children: [
+                      _th(theme, 'Date & time', flex: 2),
+                      _th(theme, 'User', flex: 2),
+                      _th(theme, 'Type', flex: 1),
+                      _th(theme, 'Details', flex: 4),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                ListenableBuilder(
+                  listenable: _pager,
+                  builder: (context, _) {
+                    if (_pager.error != null && _pager.docs.isEmpty) {
+                      return SizedBox(
+                        height: 160,
+                        child: AdminPageError(
+                          error: _pager.error!,
+                          onRetry: _pager.retry,
+                        ),
+                      );
+                    }
+                    if (_pager.loading && _pager.docs.isEmpty) {
+                      return const Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Center(child: CircularProgressIndicator()),
+                      );
+                    }
+                    if (_pager.docs.isEmpty) {
+                      return Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text(
+                          'No admin activity recorded yet.',
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      );
+                    }
+                    final fmt = DateFormat('MMM d, y h:mm a');
+                    return Column(
+                      children: [
+                        for (final doc in _pager.docs) ...[
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 10,
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  flex: 2,
+                                  child: Text(
+                                    (doc.data()['timestamp'] as Timestamp?) ==
+                                            null
+                                        ? ''
+                                        : fmt.format(
+                                            (doc.data()['timestamp']
+                                                    as Timestamp)
+                                                .toDate(),
+                                          ),
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 2,
+                                  child: Text(
+                                    _actor(doc.data()),
+                                    style: theme.textTheme.bodySmall,
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 1,
+                                  child: Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: _typePill(
+                                      theme,
+                                      doc.data()['type'] as String? ?? 'UPDATE',
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 4,
+                                  child: Text(
+                                    doc.data()['action'] as String? ?? '',
+                                    style: theme.textTheme.bodySmall,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Divider(height: 1),
+                        ],
+                        AdminPager(controller: _pager),
+                      ],
+                    );
+                  },
+                ),
               ],
             ),
-          ),
-          const Divider(height: 1),
-          ListenableBuilder(
-            listenable: _pager,
-            builder: (context, _) {
-              if (_pager.error != null && _pager.docs.isEmpty) {
-                return SizedBox(
-                  height: 160,
-                  child: AdminPageError(
-                    error: _pager.error!,
-                    onRetry: _pager.retry,
-                  ),
-                );
-              }
-              if (_pager.loading && _pager.docs.isEmpty) {
-                return const Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Center(child: CircularProgressIndicator()),
-                );
-              }
-              if (_pager.docs.isEmpty) {
-                return Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Text(
-                    'No admin activity recorded yet.',
-                    style: theme.textTheme.bodySmall,
-                  ),
-                );
-              }
-              final fmt = DateFormat('MMM d, y h:mm a');
-              return Column(
-                children: [
-                  for (final doc in _pager.docs) ...[
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 10,
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            flex: 2,
-                            child: Text(
-                              (doc.data()['timestamp'] as Timestamp?) == null
-                                  ? ''
-                                  : fmt.format(
-                                      (doc.data()['timestamp'] as Timestamp)
-                                          .toDate(),
-                                    ),
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: Colors.grey,
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            flex: 2,
-                            child: Text(
-                              _actor(doc.data()),
-                              style: theme.textTheme.bodySmall,
-                            ),
-                          ),
-                          Expanded(
-                            flex: 1,
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: _typePill(
-                                theme,
-                                doc.data()['type'] as String? ?? 'UPDATE',
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            flex: 4,
-                            child: Text(
-                              doc.data()['action'] as String? ?? '',
-                              style: theme.textTheme.bodySmall,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Divider(height: 1),
-                  ],
-                  AdminPager(controller: _pager),
-                ],
-              );
-            },
           ),
         ],
       ),

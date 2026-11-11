@@ -51,7 +51,24 @@ void main() {
         find.textContaining('Dr. Deanne Asdala', findRichText: true),
         findsWidgets,
       );
-      expect(find.textContaining('March 11, 2026'), findsOneWidget);
+      expect(
+        find.textContaining('March 11, 2026', findRichText: true),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('October 22, 2026', findRichText: true),
+        findsOneWidget,
+      );
+      for (final name in [
+        'Dr. Deanne Asdala',
+        'Mr. Samuel Evan Pacamparra',
+        'Dr. Anthony Morallas',
+        'Mr. Alfred James Dorotan',
+        'Mr. Adrian L. Bacolod',
+        'Ms. Khelsea B. Ignacio',
+      ]) {
+        expect(find.text(name), findsOneWidget, reason: name);
+      }
       expect(find.text('MEET OUR EXPERTS'), findsOneWidget);
       expect(find.text('Get to know them?'), findsOneWidget);
       expect(find.text('Main Menu'), findsOneWidget);
@@ -71,6 +88,45 @@ void main() {
       expect(rect.right, lessThanOrEqualTo(1280), reason: label);
       expect(rect.top, lessThan(104), reason: label);
     }
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('header logo is static (no animation)', (tester) async {
+    tester.view.physicalSize = sizes['desktop']!;
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await pumpIgnoringFonts(tester, const MaterialApp(home: LandingPage()));
+    // The nav is the last child of the page Stack; its logo is a plain image.
+    final navLogo = find.bySemanticsLabel('Fine Aid').last;
+    expect(
+      find.ancestor(of: navLogo, matching: find.byType(AnimatedLogo)),
+      findsNothing,
+    );
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('EXPLORE PROFILES scrolls to the expert cards', (tester) async {
+    tester.view.physicalSize = sizes['desktop']!;
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await pumpIgnoringFonts(tester, const MaterialApp(home: LandingPage()));
+    final button = find.text('EXPLORE PROFILES');
+    // Centre it: plain ensureVisible would park it under the sticky nav bar.
+    await Scrollable.ensureVisible(tester.element(button), alignment: 0.5);
+    // Let the section's fade-in finish before tapping.
+    for (var i = 0; i < 3; i++) {
+      await tester.pump(const Duration(seconds: 1));
+    }
+    await tester.tap(button);
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(
+      tester.getRect(find.byType(MeetExpertsSection)).top,
+      closeTo(104, 2),
+    );
     await tester.pumpWidget(const SizedBox());
   });
 

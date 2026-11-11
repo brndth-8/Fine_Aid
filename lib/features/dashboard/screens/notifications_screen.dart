@@ -9,6 +9,7 @@ import '../../../i18n/notification_strings.dart';
 import '../../../core/network_error.dart';
 import '../../journal/screens/entry_detail_screen.dart';
 import '../../chatbot/screens/chatbot_screen.dart';
+import '../../../i18n/screen_text_strings.dart';
 
 /// A short type label + icon shown per notification, so a user can tell a
 /// healing reminder apart from an app update at a glance.
@@ -251,44 +252,36 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
+      appBar: AppBar(
+        centerTitle: true,
+        title: const Text('Notifications'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios, size: 18),
+          onPressed: () => Navigator.pop(context),
+        ),
+        actions: [
+          ListenableBuilder(
+            listenable: NotificationInboxStore.instance,
+            builder: (context, _) {
+              final hasUnread = NotificationInboxStore.instance.unreadCount > 0;
+              return SizedBox(
+                width: 48,
+                child: hasUnread
+                    ? IconButton(
+                        icon: const Icon(Icons.done_all, size: 20),
+                        tooltip: 'Mark all as read',
+                        onPressed: _markAllRead,
+                      )
+                    : null,
+              );
+            },
+          ),
+        ],
+      ),
+      backgroundColor: Colors.white,
       body: SafeArea(
         child: Column(
           children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back_ios, size: 18),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                  Expanded(
-                    child: Text(
-                      'Notifications',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.headlineSmall,
-                    ),
-                  ),
-                  ListenableBuilder(
-                    listenable: NotificationInboxStore.instance,
-                    builder: (context, _) {
-                      final hasUnread =
-                          NotificationInboxStore.instance.unreadCount > 0;
-                      return SizedBox(
-                        width: 48,
-                        child: hasUnread
-                            ? IconButton(
-                                icon: const Icon(Icons.done_all, size: 20),
-                                tooltip: 'Mark all as read',
-                                onPressed: _markAllRead,
-                              )
-                            : null,
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
             if (_showOfflineNotice)
               Container(
                 width: double.infinity,
@@ -662,7 +655,7 @@ class _NotificationDetailSheetState extends State<_NotificationDetailSheet> {
                 style: ElevatedButton.styleFrom(
                   minimumSize: const Size.fromHeight(46),
                 ),
-                child: const Text('Need More Help'),
+                child: Text(ScreenText.of(context).needMoreHelp),
               ),
             ] else if (item.type == AppNotificationType.healingMilestone &&
                 item.entryId != null) ...[
@@ -692,7 +685,7 @@ class _NotificationDetailSheetState extends State<_NotificationDetailSheet> {
               const SizedBox(height: 8),
               TextButton(
                 onPressed: _openEntry,
-                child: const Text('Open journal entry'),
+                child: Text(ScreenText.of(context).openJournalEntry),
               ),
             ] else if (item.type == AppNotificationType.update &&
                 item.actionUrl != null) ...[
@@ -709,7 +702,7 @@ class _NotificationDetailSheetState extends State<_NotificationDetailSheet> {
                 style: OutlinedButton.styleFrom(
                   minimumSize: const Size.fromHeight(46),
                 ),
-                child: const Text('Open journal entry'),
+                child: Text(ScreenText.of(context).openJournalEntry),
               ),
             ],
           ],

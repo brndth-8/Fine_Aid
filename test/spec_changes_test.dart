@@ -100,7 +100,9 @@ void main() {
     expect(key.currentState!.canPop(), isFalse);
   });
 
-  testWidgets('Skip Tour sits left of Next on the same row', (tester) async {
+  testWidgets('Skip Tour is a close (x) in the corner, above Next', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1200, 2400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -120,9 +122,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final skip = tester.getCenter(find.text('Skip'));
+    // no Skip button beside Next any more: the x is up in the corner
+    expect(find.text('Skip'), findsNothing);
+    final skip = tester.getCenter(find.byTooltip('Skip'));
     final next = tester.getCenter(find.text('Go'));
-    expect(skip.dx, lessThan(next.dx));
-    expect((skip.dy - next.dy).abs(), lessThan(4));
+    expect(skip.dy, lessThan(next.dy));
+    expect(skip.dx, greaterThan(next.dx - 60));
   });
 }

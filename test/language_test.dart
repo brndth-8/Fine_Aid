@@ -98,10 +98,13 @@ void main() {
       expect(TermsStrings.en.title, 'Terms & Conditions');
       expect(TermsStrings.en.agree, 'I Agree & Continue');
       expect(
-        TermsStrings.en.sections[1].header,
+        TermsStrings.en.sections[2].header,
         'MEDICAL DISCLAIMER & EMERGENCY SERVICES',
       );
-      expect(PermissionStrings.en.title, 'Camera Access Required');
+      expect(
+        PermissionStrings.en.title,
+        'CAMERA PERMISSION ACCESS & PRIVACY TERMS',
+      );
       expect(PermissionStrings.en.continueButton, 'Continue');
       expect(ChecklistStrings.en.title, 'Health Profile');
       expect(ChecklistStrings.en.hemophilia, 'Hemophilia or Blood Disorders');
@@ -114,48 +117,39 @@ void main() {
   });
 
   group('Tagalog is complete for every module', () {
-    String? blank(Iterable<String> all) {
-      for (final s in all) {
-        if (s.trim().isEmpty) return 'empty string';
-      }
-      return null;
-    }
-
-    test('Terms: same structure, nothing empty, actually translated', () {
-      const en = TermsStrings.en;
-      const tl = TermsStrings.tl;
-      expect(tl.sections.length, en.sections.length);
-      for (var i = 0; i < en.sections.length; i++) {
-        if (en.sections[i].header.isNotEmpty) {
-          expect(tl.sections[i].header, isNot(en.sections[i].header));
-        }
-        expect(tl.sections[i].subheader, en.sections[i].subheader);
-        expect(tl.sections[i].warning, en.sections[i].warning);
-        expect(tl.sections[i].bullets.length, en.sections[i].bullets.length);
-        expect(
-          tl.sections[i].paragraph == null,
-          en.sections[i].paragraph == null,
-        );
-      }
-      expect(
-        blank([
-          tl.title,
-          tl.scrollHint,
-          tl.agree,
-          tl.saveError,
-          for (final s in tl.sections) ...[
+    test(
+      'Terms: one bilingual body (English then Filipino), nothing empty',
+      () {
+        const en = TermsStrings.en;
+        const tl = TermsStrings.tl;
+        // the body is the PDF's, the same in both languages
+        expect(tl.sections, en.sections);
+        final all = [
+          for (final s in en.sections) ...[
             if (s.header.isNotEmpty) s.header,
             ?s.paragraph,
             ...s.bullets,
           ],
-        ]),
-        isNull,
-      );
-    });
+        ];
+        expect(all.where((t) => t.trim().isEmpty), isEmpty);
+        // the Filipino translation is in it, after its English paragraph
+        final text = all.join('\n');
+        expect(text, contains('HINDI PARA SA MGA EMERGENCY'));
+        expect(text, contains('MGA PAGBABAGO SA MGA TUNTUNING ITO'));
+        // the title and buttons still follow the language
+        expect(tl.title, isNot(en.title));
+        expect(tl.agree, isNot(en.agree));
+      },
+    );
 
     test('Permission, Checklist, Settings, camera message', () {
-      expect(PermissionStrings.tl.title, isNot(PermissionStrings.en.title));
-      expect(PermissionStrings.tl.intro, isNot(PermissionStrings.en.intro));
+      // the camera text is bilingual (English then Filipino), the same in both
+      expect(PermissionStrings.tl.title, PermissionStrings.en.title);
+      expect(PermissionStrings.tl.sections, PermissionStrings.en.sections);
+      expect(
+        PermissionStrings.tl.allowCamera,
+        isNot(PermissionStrings.en.allowCamera),
+      );
       expect(PermissionStrings.tl.continueButton, 'Magpatuloy');
       expect(ChecklistStrings.tl.intro, isNot(ChecklistStrings.en.intro));
       expect(
@@ -327,8 +321,20 @@ void main() {
       expect(find.text('Settings'), findsOneWidget);
       expect(find.text('Language'), findsOneWidget);
 
-      await tester.tap(find.text('Tagalog'));
-      await tester.pump();
+      // The Language row opens a choice of languages.
+      Future<void> choose(String tileLabel, String option) async {
+        await tester.tap(find.text(tileLabel));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.descendant(
+            of: find.byType(SimpleDialog),
+            matching: find.text(option),
+          ),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      await choose('Language', 'Tagalog');
       expect(AppLanguageController.instance.language, AppLanguage.tl);
       expect(find.text(SettingsStrings.tl.title), findsOneWidget);
       expect(find.text(SettingsStrings.tl.language), findsOneWidget);
@@ -339,8 +345,7 @@ void main() {
         'tl',
       );
 
-      await tester.tap(find.text('English'));
-      await tester.pump();
+      await choose(SettingsStrings.tl.language, 'English');
       expect(find.text('Settings'), findsOneWidget);
       expect(find.text('Sign in'), findsOneWidget);
     });

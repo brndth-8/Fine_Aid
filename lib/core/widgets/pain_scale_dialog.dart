@@ -7,11 +7,19 @@ import '../../i18n/pain_strings.dart';
 /// no skip button — and "Continue" stays disabled until a number is chosen.
 /// Returns the chosen score — or null only if the caller closed the pop-up
 /// itself (eg the scan behind it failed).
-Future<int?> showPainScaleDialog(BuildContext context) {
+///
+/// [title], [body] and [labels] (one per rating 0-5) swap in other wording, so
+/// the same pop-up can rate something other than pain, eg itchiness.
+Future<int?> showPainScaleDialog(
+  BuildContext context, {
+  String? title,
+  String? body,
+  List<String>? labels,
+}) {
   return showDialog<int>(
     context: context,
     barrierDismissible: false,
-    builder: (_) => const _PainScaleDialog(),
+    builder: (_) => _PainScaleDialog(title: title, body: body, labels: labels),
   );
 }
 
@@ -40,11 +48,15 @@ class PainScaleSelector extends StatelessWidget {
   /// Add Entry form.
   final bool monochrome;
 
+  /// Names under the numbers (index = rating); the pain names by default.
+  final List<String>? labels;
+
   const PainScaleSelector({
     super.key,
     this.value,
     required this.onChanged,
     this.monochrome = false,
+    this.labels,
   });
 
   @override
@@ -90,7 +102,7 @@ class PainScaleSelector extends StatelessWidget {
                 child: _step(
                   context,
                   n,
-                  label: s.rating(n).label,
+                  label: labels?[n] ?? s.rating(n).label,
                   selected: value == n,
                   slot: slot,
                 ),
@@ -116,7 +128,7 @@ class PainScaleSelector extends StatelessWidget {
     return Semantics(
       button: true,
       selected: selected,
-      label: 'Pain $n, $label',
+      label: '$n, $label',
       excludeSemantics: true,
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
@@ -183,7 +195,11 @@ class PainScaleSelector extends StatelessWidget {
 }
 
 class _PainScaleDialog extends StatefulWidget {
-  const _PainScaleDialog();
+  final String? title;
+  final String? body;
+  final List<String>? labels;
+
+  const _PainScaleDialog({this.title, this.body, this.labels});
 
   @override
   State<_PainScaleDialog> createState() => _PainScaleDialogState();
@@ -200,19 +216,26 @@ class _PainScaleDialogState extends State<_PainScaleDialog> {
     return PopScope(
       canPop: false,
       child: AlertDialog(
-        backgroundColor: const Color(0xFFFDEEEC),
+        backgroundColor: const Color(0xFFFFF0F0),
         insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(s.dialogTitle),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: Text(
+          widget.title ?? s.dialogTitle,
+          style: theme.textTheme.titleSmall?.copyWith(color: Colors.black),
+        ),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(s.dialogBody, style: theme.textTheme.bodyMedium),
+              Text(
+                widget.body ?? s.dialogBody,
+                style: theme.textTheme.bodyMedium,
+              ),
               const SizedBox(height: 16),
               PainScaleSelector(
                 monochrome: true,
+                labels: widget.labels,
                 value: _selected,
                 onChanged: (n) => setState(() => _selected = n),
               ),
@@ -220,7 +243,8 @@ class _PainScaleDialogState extends State<_PainScaleDialog> {
               Text(
                 _selected == null
                     ? s.chooseHint
-                    : '$_selected — ${s.rating(_selected!).label}',
+                    : '$_selected — '
+                          '${widget.labels?[_selected!] ?? s.rating(_selected!).label}',
                 style: _selected == null
                     ? theme.textTheme.bodySmall?.copyWith(
                         color: Colors.grey.shade600,

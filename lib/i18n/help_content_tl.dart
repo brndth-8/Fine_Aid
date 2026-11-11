@@ -404,7 +404,7 @@ const helpJournalTl = HelpSection(
     HelpHeading('HAKBANG 2: PAGSUKAT NG SAKIT AT PAGTATALA NG MGA DETALYE'),
     HelpList(numbered: true, [
       HelpItem(
-        'Gamitin ang built-in na Pain Rating Scale (0 hanggang 10) para '
+        'Gamitin ang built-in na Pain Rating Scale (0 hanggang 5) para '
         'ipakita ang kasalukuyang antas ng iyong hirap:',
         label: 'Interaktibong Pain Rating Scale',
         children: [
@@ -414,17 +414,17 @@ const helpJournalTl = HelpSection(
           ),
           HelpItem(
             'Bahagyang hirap, madaling hindi pansinin.',
-            label: '1–4 – Banayad na Sakit',
+            label: '1–2 – Banayad na Sakit',
           ),
           HelpItem(
             'Kapansin-pansing sakit na bahagyang nakaaabala sa pang-araw-araw '
             'na gawain.',
-            label: '5–7 – Katamtamang Sakit',
+            label: '3 – Katamtamang Sakit',
           ),
           HelpItem(
             'Matindi o pumipintig na sakit na nangangailangan ng agarang '
             'pahinga o propesyonal na atensyong medikal.',
-            label: '8–10 – Matinding Sakit',
+            label: '4–5 – Matinding Sakit',
           ),
         ],
       ),
@@ -676,6 +676,8 @@ const helpReferencesTl = HelpSection(
         'medikal ng Fine Aid at mga lokal na abiso sa sintomas ng sakit.',
       ),
     ]),
+    // Sariling seksyon, hiwalay sa mga beripikadong sanggunian sa itaas.
+    HelpHeading('Medikal na Pagsusuri at Klinikal na Pamamahala'),
     HelpGroup('Nilalamang Sinuri ng Doktor at Klinikal na Pamamahala', [
       HelpHeading(
         'Pangkalahatang-ideya ng Pangangasiwa at Klinikal na Pamamahala',

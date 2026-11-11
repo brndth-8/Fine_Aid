@@ -1,11 +1,93 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:intl/intl.dart';
 import '../widgets/admin_activity_report.dart';
 import '../widgets/admin_charts.dart';
+import '../widgets/admin_file_download_stub.dart'
+    if (dart.library.js_interop) '../widgets/admin_file_download_web.dart';
+import '../widgets/admin_performance_card.dart' show ScanTotals, loadScanTotals;
+import '../widgets/admin_report_pdf.dart';
 import '../widgets/admin_shared_widgets.dart';
 
+/// Every category name the app saves in a journal entry's `classification`,
+/// grouped into the lines of the "Injury scan types" chart. The AI scan saves
+/// the WoundCategories names (Laceration, Minor Cut, Scratch, Abrasion,
+/// Puncture Wound, Burn, Bruise, Swelling, Rash, Other Skin Issue, Unable to
+/// Classify); the manual journal form saves its own (Injury (Wounds/laceration/
+/// Abrasion), Burns, Skin Issues, Scratch, Animal Scratch). The chart used to
+/// count only four of the manual names, so almost every AI scan was missing.
+/// Each name is in exactly one group; anything not listed (an unknown name, an
+/// older version's category, "Unable to Classify", or no category at all) is
+/// caught by the last line, so the lines always add up to every entry.
+const List<(String, List<String>)> kInjuryGroups = [
+  (
+    'Cuts, scrapes & punctures',
+    [
+      'Laceration',
+      'Minor Cut',
+      'Puncture Wound',
+      'Abrasion',
+      'Scratch',
+      'Injury (Wounds/laceration/Abrasion)',
+    ],
+  ),
+  ('Burns', ['Burn', 'Burns']),
+  ('Bruises & swelling', ['Bruise', 'Swelling']),
+  ('Skin issues', ['Rash', 'Other Skin Issue', 'Skin Issues']),
+  ('Animal bites & scratches', ['Animal Scratch', 'Animal Bite/Scratch']),
+];
+
+/// The catch-all line's name.
+const String kInjuryOtherLabel = 'Unable to classify / other';
+
+/// The chart's lines: one per group, then the catch-all. Each differs in
+/// colour, marker AND line style, so they read without colour. Counted
+/// server-side per day or month (the journalEntries classification +
+/// createdAt index; `whereIn` is served by the same index).
+List<TrendSeries> _injurySeries(ColorScheme scheme) {
+  final entries = FirebaseFirestore.instance.collectionGroup('journalEntries');
+  final looks = <(Color, TrendMarker, TrendDash)>[
+    (scheme.primary, TrendMarker.circle, TrendDash.solid),
+    (Colors.deepOrange.shade700, TrendMarker.triangle, TrendDash.dotted),
+    (Colors.indigo.shade400, TrendMarker.diamond, TrendDash.dashed),
+    (Colors.teal.shade700, TrendMarker.square, TrendDash.solid),
+    (Colors.purple.shade400, TrendMarker.circle, TrendDash.dashed),
+  ];
+  return [
+    for (var i = 0; i < kInjuryGroups.length; i++)
+      TrendSeries(
+        name: kInjuryGroups[i].$1,
+        query: entries.where('classification', whereIn: kInjuryGroups[i].$2),
+        color: looks[i].$1,
+        marker: looks[i].$2,
+        dash: looks[i].$3,
+      ),
+    TrendSeries(
+      name: kInjuryOtherLabel,
+      query: entries, // everything; the lines above are taken off it
+      color: Colors.grey.shade600,
+      marker: TrendMarker.square,
+      dash: TrendDash.dotted,
+      remainder: true,
+    ),
+  ];
+}
+
 class AdminReportsAnalytics extends StatefulWidget {
-  const AdminReportsAnalytics({super.key});
+  const AdminReportsAnalytics({
+    super.key,
+    this.onOpenUsers,
+    this.onOpenAiScans,
+    this.onOpenAutoReferrals,
+    this.onOpenPerformance,
+  });
+
+  /// Where each summary card leads (null leaves a card as plain display).
+  final VoidCallback? onOpenUsers;
+  final VoidCallback? onOpenAiScans;
+  final VoidCallback? onOpenAutoReferrals;
+  final VoidCallback? onOpenPerformance;
 
   @override
   State<AdminReportsAnalytics> createState() => _AdminReportsAnalyticsState();
@@ -33,11 +115,7 @@ class _AdminReportsAnalyticsState extends State<AdminReportsAnalytics> {
         .where('source', isEqualTo: 'ai_camera'),
   );
 
-  // Still streamed in full: the injury breakdown tallies `classification`
-  // client-side. Counting it server-side would need a new collection-group
-  // index on `classification`, which is pending approval.
-  late final Stream<QuerySnapshot<Map<String, dynamic>>> _journalEntriesStream =
-      FirebaseFirestore.instance.collectionGroup('journalEntries').snapshots();
+  late final Future<ScanTotals> _scanTotals = loadScanTotals();
 
   late final Future<int?> _usersThisMonth = _count(
     FirebaseFirestore.instance
@@ -70,74 +148,89 @@ class _AdminReportsAnalyticsState extends State<AdminReportsAnalytics> {
   String _reportType = 'App usage summary';
   bool _generating = false;
 
-  // Only CSV is offered: the PDF and Excel options used to be listed but
-  // silently produced a CSV anyway, so they were removed rather than kept as
-  // choices that don't work.
+  /// Most rows a report PDF holds (readable, and quick to build in the
+  /// browser); a note on the PDF says when a report was cut off.
+  static const int _rowLimit = 5000;
+
+  static final _when = DateFormat('MMM d, y h:mm a');
+
+  String _stamp(Object? ts) => ts is Timestamp ? _when.format(ts.toDate()) : '';
+
+  /// Builds the chosen report as a PDF and downloads it.
   Future<void> _generateReport() async {
     setState(() => _generating = true);
     try {
+      late final String filename;
+      late final List<String> headers;
+      late final List<List<String>> rows;
+      late final List<int> flex;
+      var cutOff = false;
       switch (_reportType) {
         case 'User activity':
           final snapshot = await FirebaseFirestore.instance
               .collection('users')
               .where('registrationComplete', isEqualTo: true)
               .orderBy('createdAt', descending: true)
+              .limit(_rowLimit)
               .get();
-          await exportAdminCsv(
-            filename: 'fine_aid_user_activity.csv',
-            headers: const ['Username', 'Email', 'Joined', 'Status'],
-            rows: snapshot.docs.map((doc) {
-              final data = doc.data();
-              final ts = data['createdAt'] as Timestamp?;
-              return [
-                data['username'] ?? '',
-                data['email'] ?? '',
-                ts?.toDate().toIso8601String() ?? '',
-                data['deactivated'] == true ? 'Inactive' : 'Active',
-              ];
-            }).toList(),
-          );
+          cutOff = snapshot.docs.length >= _rowLimit;
+          filename = 'fine_aid_user_activity';
+          headers = const ['Username', 'Email', 'Joined', 'Status'];
+          flex = const [2, 3, 2, 1];
+          rows = snapshot.docs.map((doc) {
+            final data = doc.data();
+            return [
+              '${data['username'] ?? ''}',
+              '${data['email'] ?? ''}',
+              _stamp(data['createdAt']),
+              data['deactivated'] == true ? 'Inactive' : 'Active',
+            ];
+          }).toList();
         case 'Journal log':
           final snapshot = await FirebaseFirestore.instance
               .collectionGroup('journalEntries')
+              .limit(_rowLimit)
               .get();
-          await exportAdminCsv(
-            filename: 'fine_aid_journal_log.csv',
-            headers: const [
-              'Title',
-              'Classification',
-              'Created',
-              'Feeling better',
-            ],
-            rows: snapshot.docs.map((doc) {
-              final data = doc.data();
-              final ts = data['createdAt'] as Timestamp?;
-              return [
-                data['title'] ?? '',
-                data['classification'] ?? '',
-                ts?.toDate().toIso8601String() ?? '',
-                data['feelingBetter']?.toString() ?? '',
-              ];
-            }).toList(),
-          );
+          cutOff = snapshot.docs.length >= _rowLimit;
+          filename = 'fine_aid_journal_log';
+          headers = const [
+            'Title',
+            'Classification',
+            'Created',
+            'Feeling better',
+          ];
+          flex = const [3, 3, 2, 1];
+          rows = snapshot.docs.map((doc) {
+            final data = doc.data();
+            return [
+              '${data['title'] ?? ''}',
+              '${data['classification'] ?? ''}',
+              _stamp(data['createdAt']),
+              switch (data['feelingBetter']) {
+                true => 'Yes',
+                false => 'No',
+                _ => '',
+              },
+            ];
+          }).toList();
         case 'Auto-referral report':
           final snapshot = await FirebaseFirestore.instance
               .collectionGroup('journalEntries')
               .where('feelingBetter', isEqualTo: false)
+              .limit(_rowLimit)
               .get();
-          await exportAdminCsv(
-            filename: 'fine_aid_auto_referrals.csv',
-            headers: const ['Title', 'Classification', 'Created'],
-            rows: snapshot.docs.map((doc) {
-              final data = doc.data();
-              final ts = data['createdAt'] as Timestamp?;
-              return [
-                data['title'] ?? '',
-                data['classification'] ?? '',
-                ts?.toDate().toIso8601String() ?? '',
-              ];
-            }).toList(),
-          );
+          cutOff = snapshot.docs.length >= _rowLimit;
+          filename = 'fine_aid_auto_referrals';
+          headers = const ['Title', 'Classification', 'Created'];
+          flex = const [3, 3, 2];
+          rows = snapshot.docs.map((doc) {
+            final data = doc.data();
+            return [
+              '${data['title'] ?? ''}',
+              '${data['classification'] ?? ''}',
+              _stamp(data['createdAt']),
+            ];
+          }).toList();
         default: // 'App usage summary'
           final results = await Future.wait([
             FirebaseFirestore.instance
@@ -155,23 +248,44 @@ class _AdminReportsAnalyticsState extends State<AdminReportsAnalytics> {
                 .count()
                 .get(),
           ]);
-          await exportAdminCsv(
-            filename: 'fine_aid_app_usage_summary.csv',
-            headers: const ['Metric', 'Value'],
-            rows: [
-              ['Total users', results[0].count ?? 0],
-              ['Total journal entries', results[1].count ?? 0],
-              ['Pending escalations', results[2].count ?? 0],
-              ['Generated', DateTime.now().toIso8601String()],
-            ],
-          );
+          filename = 'fine_aid_app_usage_summary';
+          headers = const ['Metric', 'Value'];
+          flex = const [3, 1];
+          rows = [
+            ['Total users', '${results[0].count ?? 0}'],
+            ['Total journal entries', '${results[1].count ?? 0}'],
+            ['Pending escalations', '${results[2].count ?? 0}'],
+          ];
       }
-      logAdminAction('Generated report "$_reportType"');
-    } catch (e) {
+      final now = DateTime.now();
+      final bytes = await buildAdminReportPdf(
+        title: _reportType,
+        headers: headers,
+        rows: rows,
+        columnFlex: flex,
+        generatedAt: now,
+        generatedBy: FirebaseAuth.instance.currentUser?.email ?? 'an admin',
+        note: cutOff ? 'first $_rowLimit entries only' : null,
+      );
+      final name = '${filename}_${DateFormat('yyyy-MM-dd').format(now)}.pdf';
+      await downloadFile(
+        filename: name,
+        bytes: bytes,
+        mimeType: 'application/pdf',
+      );
+      logAdminAction('Generated report "$_reportType"', reason: 'pdf_export');
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Report generation failed: $e')));
+        ).showSnackBar(SnackBar(content: Text('Downloaded $name.')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Couldn't create the PDF: ${adminErrorMessage(e)}"),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _generating = false);
@@ -191,11 +305,12 @@ class _AdminReportsAnalyticsState extends State<AdminReportsAnalytics> {
         ),
         Expanded(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
+            padding: EdgeInsets.all(adminIsNarrow(context) ? 16 : 24),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Row(
+                AdminResponsiveRow(
+                  breakpoint: 880,
                   children: [
                     Expanded(
                       child: FutureBuilder<int?>(
@@ -205,6 +320,7 @@ class _AdminReportsAnalyticsState extends State<AdminReportsAnalytics> {
                           builder: (context, monthSnap) {
                             final month = monthSnap.data;
                             return AdminAnalyticsCard(
+                              onTap: widget.onOpenUsers,
                               label: 'Total users',
                               value: _countText(snap),
                               change: _countFailed(snap)
@@ -229,6 +345,7 @@ class _AdminReportsAnalyticsState extends State<AdminReportsAnalytics> {
                       child: FutureBuilder<int?>(
                         future: _aiScansCount,
                         builder: (context, snap) => AdminAnalyticsCard(
+                          onTap: widget.onOpenAiScans,
                           label: 'Total AI scans',
                           value: _countText(snap),
                           change: _countFailed(snap) ? 'Failed to load' : null,
@@ -241,6 +358,7 @@ class _AdminReportsAnalyticsState extends State<AdminReportsAnalytics> {
                       child: FutureBuilder<int?>(
                         future: _autoReferralsCount,
                         builder: (context, snap) => AdminAnalyticsCard(
+                          onTap: widget.onOpenAutoReferrals,
                           label: 'Auto-referrals',
                           value: _countText(snap),
                           change: _countFailed(snap) ? 'Failed to load' : null,
@@ -249,12 +367,43 @@ class _AdminReportsAnalyticsState extends State<AdminReportsAnalytics> {
                       ),
                     ),
                     const SizedBox(width: 16),
-                    const Expanded(
-                      child: AdminAnalyticsCard(
-                        label: 'AI accuracy',
-                        value: '—',
-                        change: 'Requires AI integration',
-                        changeColor: Colors.orange,
+                    Expanded(
+                      child: FutureBuilder<ScanTotals>(
+                        future: _scanTotals,
+                        builder: (context, snap) {
+                          if (snap.connectionState != ConnectionState.done) {
+                            return AdminAnalyticsCard(
+                              onTap: widget.onOpenPerformance,
+                              label: 'AI Scan Performance',
+                              value: '…',
+                            );
+                          }
+                          if (snap.hasError) {
+                            return AdminAnalyticsCard(
+                              onTap: widget.onOpenPerformance,
+                              label: 'AI Scan Performance',
+                              value: '—',
+                              change: 'Failed to load',
+                              changeColor: Colors.red,
+                            );
+                          }
+                          // (successful scans / total scans) x 100, between 0%
+                          // and 100%, and 0% when there are no scans yet.
+                          final scans = snap.data!;
+                          final pct = scans.performance;
+                          return AdminAnalyticsCard(
+                            onTap: widget.onOpenPerformance,
+                            label: 'AI Scan Performance',
+                            value: pct == pct.roundToDouble()
+                                ? '${pct.round()}%'
+                                : '${pct.toStringAsFixed(1)}%',
+                            change: scans.total == 0
+                                ? 'No scans yet'
+                                : '${scans.successful} of ${scans.total} '
+                                      'scans succeeded',
+                            changeColor: Colors.green,
+                          );
+                        },
                       ),
                     ),
                   ],
@@ -265,10 +414,19 @@ class _AdminReportsAnalyticsState extends State<AdminReportsAnalytics> {
                   caption: 'New users, journal entries and AI scans.',
                 ),
                 const SizedBox(height: 20),
-                Row(
+                AdminResponsiveRow(
+                  breakpoint: 900,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(flex: 3, child: _buildClassBreakdown(theme)),
+                    Expanded(
+                      flex: 3,
+                      child: const AdminTrendCard(
+                        title: 'Injury scan types',
+                        caption:
+                            'AI scans and manual entries saved to the journal, by type.',
+                        seriesBuilder: _injurySeries,
+                      ),
+                    ),
                     const SizedBox(width: 16),
                     Expanded(
                       flex: 2,
@@ -283,90 +441,6 @@ class _AdminReportsAnalyticsState extends State<AdminReportsAnalytics> {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildClassBreakdown(ThemeData theme) {
-    final classifications = [
-      'Injury (Wounds/laceration/Abrasion)',
-      'Burns',
-      'Skin Issues',
-      'Animal Bite/Scratch',
-    ];
-
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Injury scan types',
-            style: theme.textTheme.titleMedium?.copyWith(color: Colors.black),
-          ),
-          const SizedBox(height: 16),
-          StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: _journalEntriesStream,
-            builder: (context, snapshot) {
-              final fallback = adminSnapshotFallback(snapshot);
-              if (fallback != null) return fallback;
-
-              final docs = snapshot.data!.docs;
-              final Map<String, int> counts = {
-                for (var c in classifications) c: 0,
-              };
-              for (final doc in docs) {
-                final c = doc.data()['classification'] as String?;
-                if (c != null && counts.containsKey(c)) {
-                  counts[c] = counts[c]! + 1;
-                }
-              }
-              final total = counts.values.fold(0, (a, b) => a + b);
-
-              return Column(
-                children: counts.entries.map((e) {
-                  final pct = total > 0 ? e.value / total : 0.0;
-                  final label = e.key.split('(').first.trim();
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          flex: 3,
-                          child: Text(label, style: theme.textTheme.bodySmall),
-                        ),
-                        Expanded(
-                          flex: 5,
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: LinearProgressIndicator(
-                              value: pct,
-                              minHeight: 8,
-                              backgroundColor: Colors.grey.shade200,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                theme.colorScheme.primary,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '${(pct * 100).toInt()}%',
-                          style: theme.textTheme.bodySmall,
-                        ),
-                      ],
-                    ),
-                  );
-                }).toList(),
-              );
-            },
-          ),
-        ],
-      ),
     );
   }
 
@@ -403,45 +477,22 @@ class _AdminReportsAnalyticsState extends State<AdminReportsAnalytics> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Downloads as a CSV file.',
+            'Downloads as a PDF file.',
             style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey),
           ),
           const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: _generating ? null : _generateReport,
-                  child: _generating
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text('Generate'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          "Scheduled report runs aren't set up yet — this "
-                          'needs a backend job runner. Use Generate for an '
-                          'on-demand export instead.',
-                        ),
-                      ),
-                    );
-                  },
-                  child: const Text('Schedule'),
-                ),
-              ),
-            ],
+          ElevatedButton(
+            onPressed: _generating ? null : _generateReport,
+            child: _generating
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Text('Generate PDF'),
           ),
         ],
       ),

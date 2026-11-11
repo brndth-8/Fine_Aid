@@ -64,6 +64,12 @@ class FirstAidContentService {
 
   static const int _maxQueryKeywords = 10;
 
+  /// Articles an admin unpublished (or deleted, which also unpublishes) stay
+  /// in the database but must never reach users. Articles with no `status`
+  /// (the imported ones) are published.
+  static bool _isPublished(QueryDocumentSnapshot<Map<String, dynamic>> doc) =>
+      doc.data()['status'] != 'unpublished';
+
   static const Set<String> _stopWords = {
     'the',
     'a',
@@ -186,10 +192,11 @@ class FirstAidContentService {
           .get()
           .timeout(const Duration(seconds: 10));
 
-      if (snapshot.docs.isEmpty) return [];
+      final visible = snapshot.docs.where(_isPublished).toList();
+      if (visible.isEmpty) return [];
 
       final tokenSet = tokens.toSet();
-      final scored = snapshot.docs.map((doc) {
+      final scored = visible.map((doc) {
         final data = doc.data();
         final docKeywords =
             (data['keywords'] as List?)?.map((e) => e.toString()).toSet() ??
@@ -235,6 +242,7 @@ class FirstAidContentService {
             .get()
             .timeout(const Duration(seconds: 15));
         otcChunks = snapshot.docs
+            .where(_isPublished)
             .map((doc) => FirstAidChunk.fromDoc(doc))
             .toList();
         _otcCache = otcChunks;
